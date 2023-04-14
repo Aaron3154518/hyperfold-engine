@@ -18,6 +18,10 @@ use utils::{
     rect::{Align, Dimensions, Rect},
 };
 
+mod ecs;
+
+use ecs::{component::Component, system::greet, ECSDriver};
+
 const FPS: u32 = 60;
 const FRAME_TIME: u32 = 1000 / FPS;
 
@@ -42,6 +46,15 @@ fn main() {
 
     // Create a window
     let mut rs = RenderSystem::new(Window::new().title("Game Engine").dimensions(w, h));
+
+    // Create ECSDriver
+    let mut ecs = ECSDriver::new();
+    ecs.add_comp(Component {
+        name: "Aaron",
+        loc: "Boise, Idaho",
+    });
+    ecs.add_serv(&greet);
+    ecs.run();
 
     let screen = Dimensions { w, h };
     let camera = Rect {
