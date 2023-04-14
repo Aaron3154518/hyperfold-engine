@@ -1,4 +1,4 @@
-#![feature(specialization)]
+// #![feature(specialization)]
 #![feature(trait_alias)]
 
 mod sdl2_bindings;
@@ -25,13 +25,17 @@ use ecs::{component::Component, system::greet, ECSDriver};
 const FPS: u32 = 60;
 const FRAME_TIME: u32 = 1000 / FPS;
 
-use ecs_lib::add_hello_world;
+use ecs_lib::{add_hello_world, make_foo};
 
-#[add_hello_world]
+struct Foo {}
+
+#[make_foo(Foo)]
 fn foo() {}
 
 fn main() {
     foo();
+    let f = Foo {};
+    f.call_foo();
 
     // Initialize SDL2
     if unsafe { sdl2::SDL_Init(sdl2::SDL_INIT_EVERYTHING) } == 0 {
