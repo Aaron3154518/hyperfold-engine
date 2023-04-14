@@ -7,16 +7,16 @@ mod sdl2_image_bindings;
 use sdl2_image_bindings::sdl2_image_ as sdl2_image;
 
 use asset_manager::RenderSystem;
-use event::Event;
-use pointers::Window;
 
 mod asset_manager;
 
-mod pointers;
+mod utils;
 
-mod event;
-mod rect;
-use rect::{Dimensions, Rect};
+use utils::{
+    event::{Event, Mouse},
+    pointers::Window,
+    rect::{Align, Dimensions, Rect},
+};
 
 const FPS: u32 = 60;
 const FRAME_TIME: u32 = 1000 / FPS;
@@ -77,13 +77,13 @@ fn main() {
             None => (),
         }
 
-        let l = event.get_mouse(event::Mouse::Left);
+        let l = event.get_mouse(Mouse::Left);
         if l.clicked() {
             rect.set_pos(
                 l.click_pos.x as f32,
                 l.click_pos.y as f32,
-                rect::Align::Center,
-                rect::Align::Center,
+                Align::Center,
+                Align::Center,
             );
             rect.fit_within(&camera);
         }

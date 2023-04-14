@@ -1,5 +1,5 @@
-use crate::pointers::*;
 use crate::sdl2;
+use crate::utils::pointers::*;
 
 use std::collections::HashMap;
 

@@ -1,6 +1,6 @@
 use num_traits::FromPrimitive;
 
-use crate::rect::*;
+use super::rect::*;
 use crate::sdl2;
 use std::{collections::HashMap, mem};
 
