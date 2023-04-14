@@ -25,7 +25,14 @@ use ecs::{component::Component, system::greet, ECSDriver};
 const FPS: u32 = 60;
 const FRAME_TIME: u32 = 1000 / FPS;
 
+use ecs_lib::add_hello_world;
+
+#[add_hello_world]
+fn foo() {}
+
 fn main() {
+    foo();
+
     // Initialize SDL2
     if unsafe { sdl2::SDL_Init(sdl2::SDL_INIT_EVERYTHING) } == 0 {
         println!("SDL Initialized");
