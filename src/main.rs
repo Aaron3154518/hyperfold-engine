@@ -1,4 +1,4 @@
-// #![feature(specialization)]
+#![feature(specialization)]
 
 mod sdl2_bindings;
 use sdl2_bindings::sdl2_ as sdl2;
@@ -19,12 +19,12 @@ use utils::{
 
 mod ecs;
 
-use ecs::{component::Component, system::greet, ecs::ECSDriver};
+use ecs::{component::Component, ecs::ECSDriver, system::greet};
 
 const FPS: u32 = 60;
 const FRAME_TIME: u32 = 1000 / FPS;
 
-use ecs_lib::{add_hello_world, make_foo};
+use ecs_lib::{add_hello_world, component_manager, make_foo};
 
 struct Foo {}
 
