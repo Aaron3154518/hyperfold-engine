@@ -38,6 +38,7 @@ pub fn make_foo(attr: TokenStream, item: TokenStream) -> TokenStream {
     // Parse the input function
     let input = parse_macro_input!(item as syn::ItemFn);
 
+
     // Get the name of the function
     let name = &input.sig.ident;
 
@@ -58,4 +59,44 @@ pub fn make_foo(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     // Return the generated code as a TokenStream
     output.into()
+}
+
+#[proc_macro_attribute]
+pub fn encode_components(attr: TokenStream, item: TokenStream) -> TokenStream {
+    #[proc_macro_attribute]
+    /*pub fn add_member(attr: TokenStream, item: TokenStream) -> TokenStream {
+        // Parse the input struct
+        let mut input_struct = parse_macro_input!(item as syn::ItemStruct);
+    
+        // Parse the input attribute
+        let new_member = parse_macro_input!(attr as syn::Field);
+    
+        // Add the new member to the struct
+        match &mut input_struct.fields {
+            syn::Fields::Named(named_fields) => {
+                named_fields.named.push(new_member);
+            }
+            syn::Fields::Unnamed(unnamed_fields) => {
+                return syn::Error::new_spanned(
+                    unnamed_fields,
+                    "cannot add member to tuple struct",
+                )
+                .into_compile_error()
+                .into();
+            }
+            syn::Fields::Unit => {
+                return syn::Error::new_spanned(
+                    input_struct,
+                    "cannot add member to unit struct",
+                )
+                .into_compile_error()
+                .into();
+            }
+        }
+    
+        // Return the modified struct as a TokenStream
+        input_struct.into_token_stream().into()
+    }*/    
+
+    item
 }

@@ -23,5 +23,9 @@ version = "0.1.0"
 path = "./ecs-lib/"
 package = "ecs-lib"
 
+[build-dependencies.syn]
+version = "2.0.15"
+features = ["full"]
+
 [build-dependencies]
 bindgen = "0.65.1"

@@ -1,7 +1,12 @@
 use bindgen;
 use bindgen::callbacks::{DeriveInfo, ParseCallbacks};
-use std::env;
-use std::path::PathBuf;
+use std::fs::{File, OpenOptions};
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::{env, fs};
+
+use syn;
 
 #[derive(Default, Debug)]
 struct MyCallbacks;
@@ -75,4 +80,81 @@ fn main() {
         "cargo:rerun-if-changed={}/includes/SDL_Image.h",
         sdl2_image_path
     );
+
+    let mut file = File::open("src/main.rs").expect("Unable to open file");
+
+    let mut src = String::new();
+    file.read_to_string(&mut src).expect("Unable to read file");
+
+    let mut ast = syn::parse_file(&src).expect("Unable to parse file");
+    syn::visit_mut::visit_file_mut(&mut MyVisitor {}, &mut ast);
+
+    eprintln!("\n\n{:#?}", ast);
+}
+
+fn windows_to_linux_path(windows_path: PathBuf) -> PathBuf {
+    let mut linux_path = PathBuf::new();
+    for component in windows_path.components() {
+        match component {
+            std::path::Component::RootDir => {
+                linux_path.push("/");
+            }
+            std::path::Component::Normal(os_str) => {
+                let s = os_str.to_string_lossy();
+                linux_path.push(s.replace("\\", "/"));
+            }
+            _ => {}
+        }
+    }
+    linux_path
+}
+
+fn visit_mut(file: String) {
+    let f = format!("{}.rs", file);
+    let p = Path::new(f.as_str());
+    eprintln!("Visit: {}", p.display());
+    if p.exists() {
+        eprintln!("F {}", p.display());
+        match syn::parse_file(p.to_string_lossy().to_string().as_str()) {
+            Ok(mut ast) => syn::visit_mut::visit_file_mut(&mut MyVisitor {}, &mut ast),
+            Err(_) => {
+                eprintln!("Failed");
+                return;
+            }
+        }
+        eprintln!("Parsed");
+    } else {
+        let f = format!("{}", file);
+        let p = Path::new(f.as_str());
+        if p.exists() {
+            eprintln!("D {}", p.display());
+            let files = fs::read_dir(p).expect("msg");
+            for file in files {
+                let path = windows_to_linux_path(file.expect("msg").path());
+                let p_str = format!(
+                    "{}\\{}",
+                    path.parent().unwrap().to_str().unwrap(),
+                    path.file_stem().unwrap().to_str().unwrap()
+                )
+                .replace("\\", "/");
+                eprintln!("{}, {}", p_str, path.exists());
+                visit_mut(p_str);
+            }
+        }
+    }
+}
+
+struct MyVisitor {}
+
+impl syn::visit_mut::VisitMut for MyVisitor {
+    fn visit_item_mod_mut(&mut self, i: &mut syn::ItemMod) {
+        eprintln!("Visiting Mod: {}", i.ident);
+        visit_mut(format!("src/{}", i.ident.to_string()));
+        syn::visit_mut::visit_item_mod_mut(self, i);
+    }
+
+    fn visit_item_struct_mut(&mut self, i: &mut syn::ItemStruct) {
+        eprintln!("Visiting Item Struct: {}", i.ident);
+        syn::visit_mut::visit_item_struct_mut(self, i);
+    }
 }

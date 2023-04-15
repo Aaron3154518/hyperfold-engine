@@ -1,5 +1,4 @@
 // #![feature(specialization)]
-#![feature(trait_alias)]
 
 mod sdl2_bindings;
 use sdl2_bindings::sdl2_ as sdl2;
@@ -20,7 +19,7 @@ use utils::{
 
 mod ecs;
 
-use ecs::{component::Component, system::greet, ECSDriver};
+use ecs::{component::Component, system::greet, ecs::ECSDriver};
 
 const FPS: u32 = 60;
 const FRAME_TIME: u32 = 1000 / FPS;
