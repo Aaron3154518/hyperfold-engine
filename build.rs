@@ -83,49 +83,11 @@ fn main() {
 
     let mut vis = MyVisitor::new();
     vis.add_module(&"src".to_string());
-    visit_mut(&mut vis, &"main".to_string());
+    vis.visit(&"main".to_string());
     eprintln!("Component Manager:\n{}", vis.manager);
     eprintln!("\nComponents:");
     for comp in vis.components.iter() {
         eprintln!("{}", comp)
-    }
-}
-
-fn visit_mut(vis: &mut MyVisitor, name: &String) {
-    let f = vis.modules.prefix_file(&name);
-    let p = Path::new(f.as_str());
-    // eprintln!("Visit: {}", p.display());
-    if p.exists() {
-        // eprintln!("F {}", p.display());
-        let mut file = File::open(p).expect("Unable to open file");
-        let mut src = String::new();
-        file.read_to_string(&mut src).expect("Unable to read file");
-        match syn::parse_file(&src) {
-            Ok(mut ast) => {
-                syn::visit_mut::visit_file_mut(vis, &mut ast);
-            }
-            Err(e) => eprintln!("Failed: {}", e),
-        }
-    } else {
-        let d = vis.modules.prefix_dir(&name);
-        let p = Path::new(d.as_str());
-        if p.exists() {
-            // eprintln!("D {}", p.display());
-            let files = fs::read_dir(p).expect("msg");
-            for f in files {
-                let path = f.expect("msg").path();
-                let p_str = format!(
-                    "{}\\{}",
-                    path.parent().unwrap().to_str().unwrap(),
-                    path.file_stem().unwrap().to_str().unwrap()
-                )
-                .replace("\\", "/");
-                if p_str.ends_with("mod") {
-                    vis.add_module(name);
-                    visit_mut(vis, &"mod".to_string());
-                }
-            }
-        }
     }
 }
 
@@ -222,6 +184,44 @@ impl MyVisitor {
         self.manager.modules.add(m);
         self.modules.add(m);
     }
+
+    fn visit(&mut self, name: &String) {
+        let f = self.modules.prefix_file(&name);
+        let p = Path::new(f.as_str());
+        // eprintln!("Visit: {}", p.display());
+        if p.exists() {
+            // eprintln!("F {}", p.display());
+            let mut file = File::open(p).expect("Unable to open file");
+            let mut src = String::new();
+            file.read_to_string(&mut src).expect("Unable to read file");
+            match syn::parse_file(&src) {
+                Ok(mut ast) => {
+                    syn::visit_mut::visit_file_mut(self, &mut ast);
+                }
+                Err(e) => eprintln!("Failed: {}", e),
+            }
+        } else {
+            let d = self.modules.prefix_dir(&name);
+            let p = Path::new(d.as_str());
+            if p.exists() {
+                // eprintln!("D {}", p.display());
+                let files = fs::read_dir(p).expect("msg");
+                for f in files {
+                    let path = f.expect("msg").path();
+                    let p_str = format!(
+                        "{}\\{}",
+                        path.parent().unwrap().to_str().unwrap(),
+                        path.file_stem().unwrap().to_str().unwrap()
+                    )
+                    .replace("\\", "/");
+                    if p_str.ends_with("mod") {
+                        self.add_module(name);
+                        self.visit(&"mod".to_string());
+                    }
+                }
+            }
+        }
+    }
 }
 
 impl syn::visit_mut::VisitMut for MyVisitor {
@@ -229,7 +229,7 @@ impl syn::visit_mut::VisitMut for MyVisitor {
         // eprintln!("Mod: {}{}", self.modules.join_end("::"), i.ident);
         let mut vis = MyVisitor::new();
         vis.modules = self.modules.clone();
-        visit_mut(&mut vis, &i.ident.to_string());
+        vis.visit(&i.ident.to_string());
         self.append(vis);
         syn::visit_mut::visit_item_mod_mut(self, i);
     }
