@@ -1,9 +1,9 @@
 use bindgen;
 use bindgen::callbacks::{DeriveInfo, ParseCallbacks};
+use quote::{format_ident, quote};
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 use std::{env, fs};
 
 use syn;
@@ -89,6 +89,50 @@ fn main() {
     for comp in vis.components.iter() {
         eprintln!("{}", comp)
     }
+    let mut uses = vis
+        .components
+        .iter()
+        .map(|c| {
+            c.modules
+                .0
+                .iter()
+                .map(|m| format_ident!("{}", m))
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    uses.sort();
+    uses.dedup();
+    // TODO: uses in types
+    let types = vis
+        .components
+        .iter()
+        .map(|c| format_ident!("{}", c.name))
+        .collect::<Vec<_>>();
+    let vars = types
+        .iter()
+        .enumerate()
+        .map(|(i, _t)| format_ident!("c{}", i))
+        .collect::<Vec<_>>();
+    let code = quote!(
+        #(use #(#uses)::*;)*
+        struct ComponentManager {
+            #(
+                #vars: Vec<#types>
+            ),*
+        }
+    );
+    // TODO: Be smarter
+    let code = format!("{}", code)
+        .replace(" :: ", "::")
+        .replace(" ;", ";\n")
+        .replace(" < ", "<")
+        .replace(" > ", ">")
+        .replace("{ ", "{\n")
+        .replace(", ", ",\n")
+        .replace("}", "\n}")
+        .replace("\n ", "\n")
+        .replace("\nc", "\n\tc");
+    eprintln!("\nCode:\n{}", code);
 }
 
 #[derive(Debug)]
@@ -138,6 +182,13 @@ impl Modules {
         }
         s.to_string()
     }
+
+    pub fn get_use(&self) -> String {
+        if let Some(v) = self.0.get(1..) {
+            return format!("{}", v.join("::"),);
+        }
+        String::new()
+    }
 }
 
 struct Component {
@@ -145,10 +196,15 @@ struct Component {
     modules: Modules,
 }
 
+impl Component {
+    pub fn to_string(&self) -> String {
+        self.modules.prefix_modules(&self.name)
+    }
+}
+
 impl std::fmt::Display for Component {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let module = self.modules.join("::");
-        f.write_str(&self.modules.prefix_modules(&self.name).as_str())
+        f.write_str(self.to_string().as_str())
     }
 }
 

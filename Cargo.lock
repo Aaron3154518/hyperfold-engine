@@ -103,6 +103,8 @@ dependencies = [
  "ecs-lib",
  "num-derive",
  "num-traits",
+ "proc-macro2",
+ "quote",
  "syn 2.0.15",
  "uuid",
 ]

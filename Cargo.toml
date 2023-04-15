@@ -29,3 +29,5 @@ features = ["full"]
 
 [build-dependencies]
 bindgen = "0.65.1"
+proc-macro2 = "1.0.56"
+quote = "1.0.26"
