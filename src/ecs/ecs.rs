@@ -2,7 +2,7 @@ use ecs_lib::component_manager;
 
 use super::component::Component;
 
-#[component_manager]
+// #[component_manager]
 pub struct ComponentManager {
     comps: Vec<Component>,
 }

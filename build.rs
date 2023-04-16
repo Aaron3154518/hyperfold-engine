@@ -5,6 +5,7 @@ use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::{env, fs};
+use syn::spanned::Spanned;
 
 use syn;
 
@@ -81,9 +82,27 @@ fn main() {
         sdl2_image_path
     );
 
+    let vecs = entry();
+    let data = vecs.iter().map(|v| v.to_data()).collect::<Vec<_>>();
+    for v in vecs.iter() {
+        eprintln!("\n{}", v);
+    }
+    println!("cargo:rustc-env=COMPONENTS2={}", data.join(" "));
+
     let mut vis = MyVisitor::new();
     vis.add_module(&"src".to_string());
     vis.visit(&"main".to_string());
+    vis.pop_module();
+
+    println!(
+        "cargo:rustc-env=COMPONENTS={},{}",
+        vis.manager.to_string(),
+        vis.components
+            .iter()
+            .map(|c| c.to_string())
+            .collect::<Vec<_>>()
+            .join(",")
+    );
     eprintln!("Component Manager:\n{}", vis.manager);
     eprintln!("\nComponents:");
     for comp in vis.components.iter() {
@@ -132,6 +151,7 @@ fn main() {
         .replace("}", "\n}")
         .replace("\n ", "\n")
         .replace("\nc", "\n\tc");
+    // TODO: Write classes/uses to constant and use them in procedural macro on empty struct
     eprintln!("\nCode:\n{}", code);
 }
 
@@ -144,7 +164,11 @@ impl Modules {
     }
 
     fn clone(&self) -> Self {
-        Self(self.0.clone())
+        Self(self.0.to_vec())
+    }
+
+    fn clone_path(&self) -> Self {
+        Self(self.0[..self.0.len() - 1].to_vec())
     }
 
     pub fn join(&self, sep: &str) -> String {
@@ -163,12 +187,16 @@ impl Modules {
         self.0.push(m.to_string())
     }
 
-    pub fn prefix_file(&self, f: &String) -> String {
-        format!("{}{}.rs", self.join_end("/"), f,)
+    pub fn pop(&mut self) {
+        self.0.pop();
     }
 
-    pub fn prefix_dir(&self, f: &String) -> String {
-        format!("{}{}", self.join_end("/"), f,)
+    pub fn as_file(&self) -> String {
+        format!("{}.rs", self.join("/"))
+    }
+
+    pub fn as_dir(&self) -> String {
+        self.join("/")
     }
 
     pub fn prefix_modules(&self, s: &String) -> String {
@@ -188,6 +216,12 @@ impl Modules {
             return format!("{}", v.join("::"),);
         }
         String::new()
+    }
+}
+
+impl std::fmt::Display for Modules {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.get_use().as_str())
     }
 }
 
@@ -241,10 +275,20 @@ impl MyVisitor {
         self.modules.add(m);
     }
 
+    pub fn pop_module(&mut self) {
+        for comp in self.components.iter_mut() {
+            comp.modules.pop();
+        }
+        self.manager.modules.pop();
+        self.modules.pop();
+    }
+
+    // TODO: add name to modules only for components and manager
     fn visit(&mut self, name: &String) {
-        let f = self.modules.prefix_file(&name);
+        self.add_module(&name);
+        let f = self.modules.as_file();
         let p = Path::new(f.as_str());
-        // eprintln!("Visit: {}", p.display());
+        eprintln!("Visit: {}", p.display());
         if p.exists() {
             // eprintln!("F {}", p.display());
             let mut file = File::open(p).expect("Unable to open file");
@@ -257,7 +301,7 @@ impl MyVisitor {
                 Err(e) => eprintln!("Failed: {}", e),
             }
         } else {
-            let d = self.modules.prefix_dir(&name);
+            let d = self.modules.as_dir();
             let p = Path::new(d.as_str());
             if p.exists() {
                 // eprintln!("D {}", p.display());
@@ -271,7 +315,6 @@ impl MyVisitor {
                     )
                     .replace("\\", "/");
                     if p_str.ends_with("mod") {
-                        self.add_module(name);
                         self.visit(&"mod".to_string());
                     }
                 }
@@ -284,14 +327,21 @@ impl syn::visit_mut::VisitMut for MyVisitor {
     fn visit_item_mod_mut(&mut self, i: &mut syn::ItemMod) {
         // eprintln!("Mod: {}{}", self.modules.join_end("::"), i.ident);
         let mut vis = MyVisitor::new();
-        vis.modules = self.modules.clone();
+        // TODO: Not the last one
+        vis.modules = self.modules.clone_path();
         vis.visit(&i.ident.to_string());
+        eprintln!("Visit: {}", vis.modules);
         self.append(vis);
         syn::visit_mut::visit_item_mod_mut(self, i);
+        eprintln!("Code: {:#?}", i);
     }
 
     fn visit_item_struct_mut(&mut self, i: &mut syn::ItemStruct) {
-        // eprintln!("Visiting Item Struct: {}", i.ident);
+        eprintln!(
+            "Visiting Item Struct: {}::{}",
+            self.modules.to_string(),
+            i.ident
+        );
         match i.attrs.first() {
             Some(a) => {
                 for s in a.meta.path().segments.iter() {
@@ -312,4 +362,107 @@ impl syn::visit_mut::VisitMut for MyVisitor {
         }
         syn::visit_mut::visit_item_struct_mut(self, i);
     }
+}
+
+// Attempt 2
+struct Visitor2 {
+    components: Vec<String>,
+    modules: Vec<String>,
+    path: Vec<String>,
+}
+
+impl Visitor2 {
+    pub fn new() -> Self {
+        Self {
+            components: Vec::new(),
+            modules: Vec::new(),
+            path: Vec::new(),
+        }
+    }
+
+    pub fn to_file(&self) -> String {
+        format!("src/{}.rs", self.path.join("/"))
+    }
+
+    pub fn to_mod(&self) -> String {
+        format!("{}", self.path.join("::"))
+    }
+
+    pub fn to_data(&self) -> String {
+        format!("{}::{{{}}}", self.to_mod(), self.components.join(","))
+    }
+}
+
+impl std::fmt::Display for Visitor2 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(format!("File: {}\nComponents: {}", self.to_file(), self.to_data()).as_str())
+    }
+}
+
+impl syn::visit_mut::VisitMut for Visitor2 {
+    fn visit_item_mod_mut(&mut self, i: &mut syn::ItemMod) {
+        self.modules.push(i.ident.to_string());
+        syn::visit_mut::visit_item_mod_mut(self, i);
+    }
+
+    fn visit_item_struct_mut(&mut self, i: &mut syn::ItemStruct) {
+        match i.attrs.first() {
+            Some(a) => {
+                for s in a.meta.path().segments.iter() {
+                    if s.ident == "component" {
+                        self.components.push(i.ident.to_string());
+                    }
+                }
+            }
+            None => (),
+        }
+        syn::visit_mut::visit_item_struct_mut(self, i);
+    }
+}
+
+fn entry() -> Vec<Visitor2> {
+    find_structs(vec!["main".to_string()])
+}
+
+fn find_structs(path: Vec<String>) -> Vec<Visitor2> {
+    let mut res = Vec::new();
+
+    let dir_name = format!("src/{}", path.join("/"));
+    let dir_p = Path::new(&dir_name);
+    // If it is a folder, visit mod.rs
+    let (file_name, neighbor) = if dir_p.exists() {
+        (format!("{}/mod.rs", dir_name), false)
+    // Otherwise visit it as a file
+    } else {
+        (format!("{}.rs", dir_name), true)
+    };
+    let file_p = Path::new(&file_name);
+    if file_p.exists() {
+        let mut file = File::open(file_p).expect("Unable to open file");
+        let mut src = String::new();
+        file.read_to_string(&mut src).expect("Unable to read file");
+        match syn::parse_file(&src) {
+            Ok(mut ast) => {
+                let mut vis = Visitor2::new();
+                vis.path = path.to_vec();
+                syn::visit_mut::visit_file_mut(&mut vis, &mut ast);
+                let mods = vis.modules.to_vec();
+                res.push(vis);
+                for mod_name in mods.iter() {
+                    // If it is a neighbor, replace the last element of path
+                    let mut new_path = if neighbor {
+                        path[1..].to_vec()
+                    // Otherwise just extend the path
+                    } else {
+                        path.to_vec()
+                    };
+                    new_path.push(mod_name.to_string());
+                    res.append(&mut find_structs(new_path));
+                }
+            }
+            Err(e) => eprintln!("Failed: {}", e),
+        }
+    }
+
+    res
 }
