@@ -111,20 +111,7 @@ struct Module {
 impl Module {
     pub fn new(path: Vec<String>, components: Vec<String>) -> Self {
         Self {
-            // Remove main
-            path: {
-                let mut v = if path.len() == 1
-                    && match path.first() {
-                        Some(p) => p == "main",
-                        None => false,
-                    } {
-                    Vec::new()
-                } else {
-                    path
-                };
-                v.insert(0, "crate".to_string());
-                v
-            },
+            path: path,
             components,
         }
     }
@@ -181,16 +168,15 @@ pub fn component_manager(item: TokenStream) -> TokenStream {
 
     let manager = parse_macro_input!(item as syn::Ident);
 
-    // TODO: relative to this
     let code = quote!(
         use ecs_macros::{manager, ComponentManager};
         manager!(#manager, #(#vars, #types),*);
     );
 
     // Open out.txt to print stuff
-    // let mut f = Out::new();
-    // f.write(format!("Data: {}\n", data));
-    // f.write(format!("Code:\n{}\n", code));
+    let mut f = Out::new();
+    f.write(format!("Data: {}\n", data));
+    f.write(format!("Code:\n{}\n", code));
 
     code.into()
 }

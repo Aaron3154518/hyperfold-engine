@@ -83,11 +83,60 @@ fn main() {
 
     // TODO: Doesn't work if a module is declared manually
     let vecs = entry();
-    let data = vecs.iter().map(|v| v.to_data()).collect::<Vec<_>>();
+    let mut comps = Vec::new();
+    for v in vecs.iter() {
+        comps.append(
+            &mut v
+                .components
+                .iter()
+                .map(|c| concat(v.get_mod_path(), vec![c.to_string()]))
+                .collect(),
+        );
+    }
+    let mut serv_args = Vec::new();
+    for v in vecs.iter() {
+        serv_args.append(
+            &mut v
+                .services
+                .iter()
+                .map(|s| s.map_to_components(&v.uses, &comps))
+                .collect(),
+        );
+    }
+    let comp_data = comps
+        .iter()
+        .map(|v| v.join("::"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let serv_data = serv_args
+        .iter()
+        .map(|idxs| {
+            idxs.iter()
+                .map(|i| i.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
     for v in vecs.iter() {
         eprintln!("\n{}", v);
     }
-    println!("cargo:rustc-env=COMPONENTS={}", data.join(" "));
+    eprintln!("\n{}", comp_data);
+    eprintln!("{}", serv_data);
+    println!("cargo:rustc-env=COMPONENTS={}", comp_data);
+}
+
+fn concat<T: Clone>(mut v1: Vec<T>, mut v2: Vec<T>) -> Vec<T> {
+    v1.append(&mut v2);
+    v1
+}
+
+fn end<T>(v: &Vec<T>) -> usize {
+    if v.is_empty() {
+        0
+    } else {
+        v.len() - 1
+    }
 }
 
 // Attempt 2
@@ -96,7 +145,8 @@ struct Visitor {
     modules: Vec<String>,
     services: Vec<Fn>,
     path: Vec<String>,
-    uses: Vec<Vec<String>>,
+    // Vec<Use Path, Alias>
+    uses: Vec<(Vec<String>, String)>,
     build_use: Vec<String>,
 }
 
@@ -106,18 +156,36 @@ impl Visitor {
             components: Vec::new(),
             modules: Vec::new(),
             services: Vec::new(),
+            // This is empty for main.rs
             path: Vec::new(),
-            uses: Vec::new(),
+            // Add use paths from using "crate::"
+            uses: vec![(vec!["crate".to_string()], String::new())],
             build_use: Vec::new(),
         }
     }
 
+    pub fn has_data(&self) -> bool {
+        !self.components.is_empty() || !self.services.is_empty()
+    }
+
     pub fn to_file(&self) -> String {
-        format!("src/{}.rs", self.path.join("/"))
+        format!(
+            "src/{}.rs",
+            if self.path.is_empty() {
+                // Add main
+                "main".to_string()
+            } else {
+                self.path.join("/")
+            }
+        )
+    }
+
+    pub fn get_mod_path(&self) -> Vec<String> {
+        concat(vec!["crate".to_string()], self.path.to_vec())
     }
 
     pub fn to_mod(&self) -> String {
-        format!("{}", self.path.join("::"))
+        format!("{}", self.get_mod_path().join("::"))
     }
 
     pub fn to_data(&self) -> String {
@@ -133,7 +201,15 @@ impl std::fmt::Display for Visitor {
                 self.to_file(),
                 self.uses
                     .iter()
-                    .map(|u| u.join("::"))
+                    .map(|u| format!(
+                        "{}{}",
+                        u.0.join("::"),
+                        if u.1.is_empty() {
+                            String::new()
+                        } else {
+                            format!(" as {}", u.1)
+                        }
+                    ))
                     .collect::<Vec<_>>()
                     .join("\n      "),
                 self.to_data(),
@@ -198,15 +274,15 @@ impl syn::visit_mut::VisitMut for Visitor {
 
     // Use Statements
     fn visit_item_use_mut(&mut self, i: &mut syn::ItemUse) {
-        self.build_use = Vec::new();
+        self.build_use = vec!["crate".to_string()];
         syn::visit_mut::visit_item_use_mut(self, i);
     }
 
     fn visit_use_path_mut(&mut self, i: &mut syn::UsePath) {
         if i.ident == "super" {
-            if self.build_use.is_empty() {
+            if self.build_use.len() <= 1 {
                 self.build_use
-                    .append(&mut self.path[..self.path.len() - 1].to_vec());
+                    .append(&mut self.path[..end(&self.path)].to_vec());
             } else {
                 self.build_use.pop();
             }
@@ -220,21 +296,22 @@ impl syn::visit_mut::VisitMut for Visitor {
     fn visit_use_name_mut(&mut self, i: &mut syn::UseName) {
         // Push
         self.build_use.push(i.ident.to_string());
-        self.uses.push(self.build_use.to_vec());
+        self.uses.push((self.build_use.to_vec(), String::new()));
         self.build_use.pop();
         syn::visit_mut::visit_use_name_mut(self, i);
     }
 
     fn visit_use_rename_mut(&mut self, i: &mut syn::UseRename) {
         self.build_use.push(i.rename.to_string());
-        self.uses.push(self.build_use.to_vec());
+        self.uses
+            .push((self.build_use.to_vec(), i.ident.to_string()));
         self.build_use.pop();
         syn::visit_mut::visit_use_rename_mut(self, i);
     }
 
     fn visit_use_glob_mut(&mut self, i: &mut syn::UseGlob) {
         self.build_use.push("*".to_string());
-        self.uses.push(self.build_use.to_vec());
+        self.uses.push((self.build_use.to_vec(), String::new()));
         self.build_use.pop();
         syn::visit_mut::visit_use_glob_mut(self, i);
     }
@@ -257,6 +334,17 @@ impl Fn {
                 .join(",")
         )
     }
+
+    pub fn map_to_components(
+        &self,
+        use_paths: &Vec<(Vec<String>, String)>,
+        comp_paths: &Vec<Vec<String>>,
+    ) -> Vec<i32> {
+        self.args
+            .iter()
+            .map(|arg| arg.map_to_component(use_paths, comp_paths))
+            .collect()
+    }
 }
 
 impl std::fmt::Display for Fn {
@@ -270,6 +358,7 @@ struct FnArg {
     name: String,
     ref_cnt: usize,
 }
+
 impl FnArg {
     pub fn new() -> Self {
         Self {
@@ -288,6 +377,44 @@ impl FnArg {
         )
     }
 
+    pub fn map_to_component(
+        &self,
+        use_paths: &Vec<(Vec<String>, String)>,
+        comp_paths: &Vec<Vec<String>>,
+    ) -> i32 {
+        let poss_paths = use_paths
+            .iter()
+            .map(|(path, alias)| match (path.last(), self.ty.first()) {
+                (Some(u), Some(t)) => {
+                    if u == "*" {
+                        concat(path[..end(&path)].to_vec(), self.ty.to_vec())
+                    } else if t == u {
+                        if alias.is_empty() {
+                            concat(path.to_vec(), self.ty[1..].to_vec())
+                        } else {
+                            concat(
+                                path[..end(&path)].to_vec(),
+                                concat(vec![alias.to_string()], self.ty[1..].to_vec()),
+                            )
+                        }
+                    } else {
+                        Vec::new()
+                    }
+                }
+                _ => Vec::new(),
+            })
+            .filter(|path| !path.is_empty())
+            .collect::<Vec<_>>();
+        eprintln!("{:#?}", poss_paths);
+        match comp_paths
+            .iter()
+            .position(|path| poss_paths.iter().find(|path2| &path == path2).is_some())
+        {
+            Some(i) => i as i32,
+            None => -1,
+        }
+    }
+
     pub fn parse_arg(&mut self, super_path: &Vec<String>, arg: &syn::PatType) {
         if let syn::Pat::Ident(n) = &*arg.pat {
             self.name = n.ident.to_string();
@@ -301,8 +428,7 @@ impl FnArg {
                 for s in p.path.segments.iter() {
                     if s.ident == "super" {
                         if self.ty.is_empty() {
-                            self.ty
-                                .append(&mut super_path[..super_path.len() - 1].to_vec());
+                            self.ty.append(&mut super_path[..end(super_path)].to_vec());
                         } else {
                             self.ty.pop();
                         }
@@ -350,7 +476,22 @@ fn find_structs(path: Vec<String>) -> Vec<Visitor> {
         match syn::parse_file(&src) {
             Ok(mut ast) => {
                 let mut vis = Visitor::new();
-                vis.path = path.to_vec();
+                if !path.first().is_some_and(|p| p == "main") {
+                    vis.path = path.to_vec();
+                    // Add implicit use paths derived from using "super::"
+                    vis.uses.append(
+                        &mut path[..end(&path)]
+                            .iter()
+                            .enumerate()
+                            .map(|(i, _)| {
+                                (
+                                    concat(vec!["crate".to_string()], path[..i + 1].to_vec()),
+                                    String::new(),
+                                )
+                            })
+                            .collect(),
+                    );
+                }
                 syn::visit_mut::visit_file_mut(&mut vis, &mut ast);
                 let mods = vis.modules.to_vec();
                 res.push(vis);
