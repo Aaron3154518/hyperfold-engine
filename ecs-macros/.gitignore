@@ -2,5 +2,3 @@
 *.dll
 sdl
 .vscode
-out.txt
-test.*

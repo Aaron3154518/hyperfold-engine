@@ -29,10 +29,7 @@ use ecs_lib::{add_hello_world, component, component_manager, make_foo};
 #[component]
 pub struct MainComponent {}
 
-#[component_manager]
-struct Foo {
-    lol: u32,
-}
+component_manager!(Foo);
 
 #[make_foo(Foo)]
 fn foo() {}

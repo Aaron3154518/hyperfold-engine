@@ -1,11 +1,9 @@
 use bindgen;
 use bindgen::callbacks::{DeriveInfo, ParseCallbacks};
-use quote::{format_ident, quote};
+use std::env;
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::{env, fs};
-use syn::spanned::Spanned;
 
 use syn;
 
@@ -82,6 +80,7 @@ fn main() {
         sdl2_image_path
     );
 
+    // TODO: Doesn't work if a module is declared manually
     let vecs = entry();
     let data = vecs.iter().map(|v| v.to_data()).collect::<Vec<_>>();
     for v in vecs.iter() {

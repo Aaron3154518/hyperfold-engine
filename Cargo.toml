@@ -23,6 +23,11 @@ version = "0.1.0"
 path = "./ecs-lib/"
 package = "ecs-lib"
 
+[dependencies.ecs-macros]
+version = "0.1.0"
+path = "./ecs-macros/"
+package = "ecs-macros"
+
 [build-dependencies.syn]
 version = "2.0.15"
 features = ["full"]

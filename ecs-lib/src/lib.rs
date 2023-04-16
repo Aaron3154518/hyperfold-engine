@@ -7,26 +7,6 @@ use quote::{format_ident, quote};
 use regex::Regex;
 use syn;
 use syn::parse_macro_input;
-use syn::punctuated::Punctuated;
-
-macro_rules! path_segment {
-    ($s: ident) => {
-        syn::PathSegment::from(format_ident!("{}", $s))
-    };
-
-    ($s: literal) => {
-        syn::PathSegment::from(format_ident!("{}", $s))
-    };
-}
-
-fn copy_push_segment(
-    segments: &syn::punctuated::Punctuated<syn::PathSegment, syn::token::PathSep>,
-    name: &String,
-) -> syn::punctuated::Punctuated<syn::PathSegment, syn::token::PathSep> {
-    let mut segments = segments.clone();
-    segments.push(path_segment!(name));
-    segments
-}
 
 #[proc_macro_attribute]
 pub fn add_hello_world(_attr: TokenStream, input: TokenStream) -> TokenStream {
@@ -118,31 +98,17 @@ impl Module {
         }
     }
 
-    pub fn to_path(&self) -> Vec<syn::Path> {
-        let segments = self
-            .path
-            .iter()
-            .map(|p| path_segment!(p))
-            .collect::<Punctuated<_, syn::token::PathSep>>();
+    pub fn get_types(&self) -> Vec<String> {
         self.components
             .iter()
-            .map(|c| syn::Path {
-                leading_colon: None,
-                segments: copy_push_segment(&segments, c),
-            })
-            .collect::<Vec<_>>()
-    }
-
-    pub fn get_vec_types(&self) -> Vec<String> {
-        self.components
-            .iter()
-            .map(|c| format!("Vec<{}::{}>", self.path.join("::"), c))
+            .map(|c| format!("{}::{}", self.path.join("::"), c))
             .collect()
     }
 }
 
-#[proc_macro_attribute]
-pub fn component_manager(_attr: TokenStream, item: TokenStream) -> TokenStream {
+#[proc_macro]
+pub fn component_manager(item: TokenStream) -> TokenStream {
+    // Open out.txt to print stuff
     let mut f = std::fs::OpenOptions::new()
         .create(true)
         .write(true)
@@ -150,13 +116,15 @@ pub fn component_manager(_attr: TokenStream, item: TokenStream) -> TokenStream {
         .open("out.txt")
         .expect("Nope");
 
+    // Get the data
     let data = std::env::var("COMPONENTS").unwrap_or_else(|_| "COMPONENTS".to_string());
     f.write(format!("Data: {}\n", data).as_bytes())
         .expect("Nope");
 
+    // Parse out the paths and components
     let path_r = Regex::new(r"(\w+)::").expect("msg");
     let comps_r = Regex::new(r"(\w+)[,\}]").expect("msg");
-    let mut mods = data
+    let mods = data
         .split(" ")
         .map(|s| {
             Module::new(
@@ -173,50 +141,29 @@ pub fn component_manager(_attr: TokenStream, item: TokenStream) -> TokenStream {
         .filter(|m| !m.components.is_empty())
         .collect::<Vec<_>>();
 
+    // Contruct types
     let mut types = Vec::new();
     for m in mods {
-        types.append(&mut m.get_vec_types());
+        types.append(&mut m.get_types());
     }
+    let types = types
+        .iter()
+        .map(|t| syn::parse_str::<syn::Type>(t).expect("Stoopid"))
+        .collect::<Vec<_>>();
 
+    // Construct variable names
     let vars = types
         .iter()
         .enumerate()
         .map(|(i, _t)| format_ident!("c{}", i))
         .collect::<Vec<_>>();
 
-    let mut manager = parse_macro_input!(item as syn::ItemStruct);
-
-    // Overwrite fields
-    if let syn::Fields::Named(named_fields) = &mut manager.fields {
-        named_fields.named = vars
-            .iter()
-            .zip(types.iter())
-            .map(|(v, t)| syn::Field {
-                attrs: Vec::new(),
-                vis: syn::Visibility::Inherited,
-                mutability: syn::FieldMutability::None,
-                ident: Some(v.clone()),
-                colon_token: Some(syn::token::Colon {
-                    spans: [proc_macro2::Span::call_site()],
-                }),
-                ty: syn::parse_str(&t).expect("Stoopid"),
-            })
-            .collect();
-    }
-
-    let manager_ident = manager.ident.clone();
+    let manager = parse_macro_input!(item as syn::Ident);
 
     // TODO: relative to this
     let code = quote!(
-        #manager
-
-        impl #manager_ident {
-            pub fn new() -> Self {
-                Self {
-                    #(#vars: Vec::new()),*
-                }
-            }
-        }
+        use ecs_macros::{manager, ComponentManager};
+        manager!(#manager, #(#vars, #types),*);
     );
 
     f.write(format!("Code:\n{}\n", code).as_bytes())
