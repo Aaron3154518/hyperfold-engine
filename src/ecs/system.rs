@@ -1,5 +1,8 @@
+use ecs_lib::system;
+
 use super::component::Component;
 
-pub fn greet(comp: (&Component,)) {
-    println!("Hi {} from {}", comp.0.name, comp.0.loc)
+#[system]
+pub fn greet(comp: &Component, comp2: &&&super::component::Component) {
+    println!("Hi {} from {}", comp.name, comp.loc)
 }

@@ -8,59 +8,27 @@ use regex::Regex;
 use syn;
 use syn::parse_macro_input;
 
-#[proc_macro_attribute]
-pub fn add_hello_world(_attr: TokenStream, input: TokenStream) -> TokenStream {
-    // Parse the input tokens into an AST
-    let input_fn = parse_macro_input!(input as syn::ItemFn);
-
-    // Extract the name of the function
-    let fn_name = input_fn.sig.ident;
-
-    // Extract the body of the function
-    let fn_body = input_fn.block;
-
-    // Create a new block that adds the `println!("Hello World");` statement
-    let new_fn_body = quote! {
-        {
-            #fn_body
-            println!("Hello World");
-        }
-    };
-
-    // Generate the new function definition with the modified body
-    let output = quote! {
-        fn #fn_name() #new_fn_body
-    };
-
-    // Parse the generated output tokens back into a TokenStream and return it
-    output.into()
+struct Out {
+    f: std::fs::File,
 }
 
-#[proc_macro_attribute]
-pub fn make_foo(attr: TokenStream, item: TokenStream) -> TokenStream {
-    // Parse the input function
-    let input = parse_macro_input!(item as syn::ItemFn);
-
-    // Get the name of the function
-    let name = &input.sig.ident;
-
-    let t = syn::Ident::new(attr.to_string().as_str(), Span::call_site());
-    let strct_fun = syn::Ident::new(format!("call_{}", name).as_str(), Span::call_site());
-
-    // Generate a struct with a `Foo` method that calls the input function
-    let output = quote! {
-        #[add_hello_world]
-        #input
-
-        impl #t {
-            pub fn #strct_fun(&self) {
-                #name();
-            }
+impl Out {
+    pub fn new() -> Self {
+        Self {
+            f: std::fs::OpenOptions::new()
+                .create(true)
+                .write(true)
+                .truncate(true)
+                .open("out.txt")
+                .expect("Could not open out.txt"),
         }
-    };
+    }
 
-    // Return the generated code as a TokenStream
-    output.into()
+    pub fn write(&mut self, s: String) {
+        self.f
+            .write(s.as_bytes())
+            .expect("Could not write to out.txt");
+    }
 }
 
 #[proc_macro_attribute]
@@ -69,6 +37,69 @@ pub fn component(_attr: TokenStream, item: TokenStream) -> TokenStream {
     strct.vis = syn::parse_quote!(pub);
 
     quote!(#strct).into()
+}
+
+#[proc_macro_attribute]
+pub fn system(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    let mut fun = parse_macro_input!(item as syn::ItemFn);
+
+    // Open out.txt to print stuff
+    let mut f = Out::new();
+    // f.write(format!("Fn: {:#?}\n", fun));
+
+    // Get the function name and visibility
+    let name = &fun.sig.ident;
+    let vis = &fun.vis;
+
+    // Extract the argument types and their names
+    let args = fun
+        .sig
+        .inputs
+        .iter()
+        .filter_map(|arg| match arg {
+            syn::FnArg::Typed(arg) => Some((arg.ty.clone(), quote!(#arg).to_string())),
+            _ => None,
+        })
+        .map(|(ty, name)| {
+            let module_path = match *ty {
+                syn::Type::Path(type_path) => {
+                    let mut segments = type_path.path.segments.iter();
+                    if let Some(first_segment) = segments.next() {
+                        let mut resolved = first_segment.clone();
+                        let mut path = first_segment.ident.to_string();
+                        // for segment in segments {
+                        //     path.push_str("::");
+                        //     path.push_str(&segment.ident.to_string());
+                        //     if let Some(res) = resolved
+                        //         .arguments
+                        //         .as_mut()
+                        //         .map(|args| args.as_mut().iter_mut().next())
+                        //         .flatten()
+                        //     {
+                        //         *res = PathArguments::None;
+                        //     }
+                        //     resolved.ident = segment.ident.clone();
+                        //     resolved.arguments = None;
+                        //     if let Ok((_, res)) = type_path
+                        //         .path
+                        //         .clone()
+                        //         .resolved_at(resolved.span(), quote!(self).into())
+                        //     {
+                        //         resolved = res;
+                        //     } else {
+                        //         break;
+                        //     }
+                        // }
+                        Some(quote!(Some(#path.to_string())))
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            };
+        });
+
+    quote!(#fun).into()
 }
 
 #[derive(Debug)]
@@ -108,18 +139,8 @@ impl Module {
 
 #[proc_macro]
 pub fn component_manager(item: TokenStream) -> TokenStream {
-    // Open out.txt to print stuff
-    let mut f = std::fs::OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(true)
-        .open("out.txt")
-        .expect("Nope");
-
     // Get the data
     let data = std::env::var("COMPONENTS").unwrap_or_else(|_| "COMPONENTS".to_string());
-    f.write(format!("Data: {}\n", data).as_bytes())
-        .expect("Nope");
 
     // Parse out the paths and components
     let path_r = Regex::new(r"(\w+)::").expect("msg");
@@ -166,8 +187,10 @@ pub fn component_manager(item: TokenStream) -> TokenStream {
         manager!(#manager, #(#vars, #types),*);
     );
 
-    f.write(format!("Code:\n{}\n", code).as_bytes())
-        .expect("msg");
+    // Open out.txt to print stuff
+    // let mut f = Out::new();
+    // f.write(format!("Data: {}\n", data));
+    // f.write(format!("Code:\n{}\n", code));
 
     code.into()
 }

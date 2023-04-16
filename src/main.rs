@@ -1,11 +1,14 @@
 #![feature(specialization)]
 
+use ecs::component::Component;
+use ecs::{ecs::ECSDriver, system::greet};
+
 mod sdl2_bindings;
 use sdl2_bindings::sdl2_ as sdl2;
 mod sdl2_image_bindings;
 use sdl2_image_bindings::sdl2_image_ as sdl2_image;
 
-use asset_manager::RenderSystem;
+use asset_manager::*;
 
 mod asset_manager;
 
@@ -19,25 +22,18 @@ use utils::{
 
 mod ecs;
 
-use ecs::{component::Component, ecs::ECSDriver, system::greet};
-
 const FPS: u32 = 60;
 const FRAME_TIME: u32 = 1000 / FPS;
 
-use ecs_lib::{add_hello_world, component, component_manager, make_foo};
+use ecs_lib::{component, component_manager};
 
 #[component]
 pub struct MainComponent {}
 
 component_manager!(Foo);
 
-#[make_foo(Foo)]
-fn foo() {}
-
 fn main() {
-    foo();
     let f = Foo::new();
-    f.call_foo();
 
     // Initialize SDL2
     if unsafe { sdl2::SDL_Init(sdl2::SDL_INIT_EVERYTHING) } == 0 {

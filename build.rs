@@ -1,5 +1,6 @@
 use bindgen;
 use bindgen::callbacks::{DeriveInfo, ParseCallbacks};
+use quote::ToTokens;
 use std::env;
 use std::fs::File;
 use std::io::Read;
@@ -93,7 +94,10 @@ fn main() {
 struct Visitor {
     components: Vec<String>,
     modules: Vec<String>,
+    services: Vec<Fn>,
     path: Vec<String>,
+    uses: Vec<Vec<String>>,
+    build_use: Vec<String>,
 }
 
 impl Visitor {
@@ -101,7 +105,10 @@ impl Visitor {
         Self {
             components: Vec::new(),
             modules: Vec::new(),
+            services: Vec::new(),
             path: Vec::new(),
+            uses: Vec::new(),
+            build_use: Vec::new(),
         }
     }
 
@@ -120,7 +127,24 @@ impl Visitor {
 
 impl std::fmt::Display for Visitor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(format!("File: {}\nComponents: {}", self.to_file(), self.to_data()).as_str())
+        f.write_str(
+            format!(
+                "File: {}\nUses: {}\nComponents: {}\nServices: {}",
+                self.to_file(),
+                self.uses
+                    .iter()
+                    .map(|u| u.join("::"))
+                    .collect::<Vec<_>>()
+                    .join("\n      "),
+                self.to_data(),
+                self.services
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            )
+            .as_str(),
+        )
     }
 }
 
@@ -142,6 +166,163 @@ impl syn::visit_mut::VisitMut for Visitor {
             None => (),
         }
         syn::visit_mut::visit_item_struct_mut(self, i);
+    }
+
+    // Functions
+    fn visit_item_fn_mut(&mut self, i: &mut syn::ItemFn) {
+        i.attrs.iter().find(|a| {
+            if let Some(_) = a.meta.path().segments.iter().find(|s| s.ident == "system") {
+                self.services.push(Fn {
+                    name: i.sig.ident.to_string(),
+                    args: i
+                        .sig
+                        .inputs
+                        .iter()
+                        .map(|arg| match arg {
+                            syn::FnArg::Typed(t) => {
+                                let mut fn_arg = FnArg::new();
+                                fn_arg.parse_arg(&self.path, &t);
+                                fn_arg
+                            }
+                            _ => FnArg::new(),
+                        })
+                        .filter(|arg| !arg.ty.is_empty())
+                        .collect(),
+                });
+                return true;
+            }
+            false
+        });
+        syn::visit_mut::visit_item_fn_mut(self, i);
+    }
+
+    // Use Statements
+    fn visit_item_use_mut(&mut self, i: &mut syn::ItemUse) {
+        self.build_use = Vec::new();
+        syn::visit_mut::visit_item_use_mut(self, i);
+    }
+
+    fn visit_use_path_mut(&mut self, i: &mut syn::UsePath) {
+        if i.ident == "super" {
+            if self.build_use.is_empty() {
+                self.build_use
+                    .append(&mut self.path[..self.path.len() - 1].to_vec());
+            } else {
+                self.build_use.pop();
+            }
+        } else {
+            self.build_use.push(i.ident.to_string());
+        }
+        syn::visit_mut::visit_use_path_mut(self, i);
+        self.build_use.pop();
+    }
+
+    fn visit_use_name_mut(&mut self, i: &mut syn::UseName) {
+        // Push
+        self.build_use.push(i.ident.to_string());
+        self.uses.push(self.build_use.to_vec());
+        self.build_use.pop();
+        syn::visit_mut::visit_use_name_mut(self, i);
+    }
+
+    fn visit_use_rename_mut(&mut self, i: &mut syn::UseRename) {
+        self.build_use.push(i.rename.to_string());
+        self.uses.push(self.build_use.to_vec());
+        self.build_use.pop();
+        syn::visit_mut::visit_use_rename_mut(self, i);
+    }
+
+    fn visit_use_glob_mut(&mut self, i: &mut syn::UseGlob) {
+        self.build_use.push("*".to_string());
+        self.uses.push(self.build_use.to_vec());
+        self.build_use.pop();
+        syn::visit_mut::visit_use_glob_mut(self, i);
+    }
+}
+
+struct Fn {
+    name: String,
+    args: Vec<FnArg>,
+}
+
+impl Fn {
+    pub fn to_string(&self) -> String {
+        format!(
+            "{}({})",
+            self.name,
+            self.args
+                .iter()
+                .map(|a| a.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
+        )
+    }
+}
+
+impl std::fmt::Display for Fn {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.to_string().as_str())
+    }
+}
+
+struct FnArg {
+    ty: Vec<String>,
+    name: String,
+    ref_cnt: usize,
+}
+impl FnArg {
+    pub fn new() -> Self {
+        Self {
+            ty: Vec::new(),
+            name: String::new(),
+            ref_cnt: 0,
+        }
+    }
+
+    pub fn to_string(&self) -> String {
+        format!(
+            "{}:{}{}",
+            self.name,
+            "&".repeat(self.ref_cnt),
+            self.ty.join("::")
+        )
+    }
+
+    pub fn parse_arg(&mut self, super_path: &Vec<String>, arg: &syn::PatType) {
+        if let syn::Pat::Ident(n) = &*arg.pat {
+            self.name = n.ident.to_string();
+        }
+        self.parse_type(super_path, &arg.ty);
+    }
+
+    pub fn parse_type(&mut self, super_path: &Vec<String>, ty: &syn::Type) {
+        match ty {
+            syn::Type::Path(p) => {
+                for s in p.path.segments.iter() {
+                    if s.ident == "super" {
+                        if self.ty.is_empty() {
+                            self.ty
+                                .append(&mut super_path[..super_path.len() - 1].to_vec());
+                        } else {
+                            self.ty.pop();
+                        }
+                    } else {
+                        self.ty.push(s.ident.to_string());
+                    }
+                }
+            }
+            syn::Type::Reference(r) => {
+                self.ref_cnt += 1;
+                self.parse_type(super_path, &r.elem);
+            }
+            _ => (),
+        }
+    }
+}
+
+impl std::fmt::Display for FnArg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.to_string().as_str())
     }
 }
 
