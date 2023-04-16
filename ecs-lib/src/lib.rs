@@ -150,7 +150,7 @@ pub fn component_manager(_attr: TokenStream, item: TokenStream) -> TokenStream {
         .open("out.txt")
         .expect("Nope");
 
-    let data = std::env::var("COMPONENTS2").unwrap_or_else(|_| "COMPONENTS2".to_string());
+    let data = std::env::var("COMPONENTS").unwrap_or_else(|_| "COMPONENTS".to_string());
     f.write(format!("Data: {}\n", data).as_bytes())
         .expect("Nope");
 
