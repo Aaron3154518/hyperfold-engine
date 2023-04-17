@@ -83,6 +83,8 @@ fn main() {
 
     // TODO: Doesn't work if a module is declared manually
     let vecs = entry();
+
+    // Get Component data
     let mut comps = Vec::new();
     for v in vecs.iter() {
         comps.append(
@@ -93,37 +95,35 @@ fn main() {
                 .collect(),
         );
     }
-    let mut serv_args = Vec::new();
-    for v in vecs.iter() {
-        serv_args.append(
-            &mut v
-                .services
-                .iter()
-                .map(|s| s.map_to_components(&v.uses, &comps))
-                .collect(),
-        );
-    }
     let comp_data = comps
         .iter()
         .map(|v| v.join("::"))
         .collect::<Vec<_>>()
         .join(" ");
-    let serv_data = serv_args
-        .iter()
-        .map(|idxs| {
-            idxs.iter()
-                .map(|i| i.to_string())
-                .collect::<Vec<_>>()
-                .join(",")
-        })
-        .collect::<Vec<_>>()
-        .join(" ");
+
+    // Get Service data
+    let mut servs = Vec::new();
+    let mut serv_data = Vec::new();
+    for v in vecs.iter() {
+        servs.append(&mut v.services.to_vec());
+        serv_data.append(
+            &mut v
+                .services
+                .iter()
+                .map(|f| f.to_data(&v.uses, &comps))
+                .collect(),
+        );
+    }
+    let serv_data = serv_data.join(" ");
+
+    // Print
     for v in vecs.iter() {
         eprintln!("\n{}", v);
     }
     eprintln!("\n{}", comp_data);
     eprintln!("{}", serv_data);
     println!("cargo:rustc-env=COMPONENTS={}", comp_data);
+    println!("cargo:rustc-env=SERVICES={}", serv_data);
 }
 
 fn concat<T: Clone>(mut v1: Vec<T>, mut v2: Vec<T>) -> Vec<T> {
@@ -249,7 +249,7 @@ impl syn::visit_mut::VisitMut for Visitor {
         i.attrs.iter().find(|a| {
             if let Some(_) = a.meta.path().segments.iter().find(|s| s.ident == "system") {
                 self.services.push(Fn {
-                    name: i.sig.ident.to_string(),
+                    path: concat(self.path.to_vec(), vec![i.sig.ident.to_string()]),
                     args: i
                         .sig
                         .inputs
@@ -317,16 +317,18 @@ impl syn::visit_mut::VisitMut for Visitor {
     }
 }
 
+// TODO: No duplicate arg types
+#[derive(Clone)]
 struct Fn {
-    name: String,
+    path: Vec<String>,
     args: Vec<FnArg>,
 }
 
 impl Fn {
     pub fn to_string(&self) -> String {
         format!(
-            "{}({})",
-            self.name,
+            "crate::{}({})",
+            self.path.join("::"),
             self.args
                 .iter()
                 .map(|a| a.to_string())
@@ -339,11 +341,37 @@ impl Fn {
         &self,
         use_paths: &Vec<(Vec<String>, String)>,
         comp_paths: &Vec<Vec<String>>,
-    ) -> Vec<i32> {
+    ) -> Vec<Option<usize>> {
         self.args
             .iter()
             .map(|arg| arg.map_to_component(use_paths, comp_paths))
             .collect()
+    }
+
+    pub fn to_data(
+        &self,
+        use_paths: &Vec<(Vec<String>, String)>,
+        comp_paths: &Vec<Vec<String>>,
+    ) -> String {
+        let idxs = self.map_to_components(use_paths, comp_paths);
+        format!(
+            "crate::{}({})",
+            self.path.join("::"),
+            self.args
+                .iter()
+                .zip(idxs)
+                .filter_map(|(a, i)| match i {
+                    Some(i) => Some(format!(
+                        "{}:{}:{}",
+                        a.name,
+                        if a.mutable { "1" } else { "0" },
+                        i
+                    )),
+                    None => None,
+                })
+                .collect::<Vec<_>>()
+                .join(",")
+        )
     }
 }
 
@@ -353,10 +381,11 @@ impl std::fmt::Display for Fn {
     }
 }
 
+#[derive(Clone)]
 struct FnArg {
     ty: Vec<String>,
     name: String,
-    ref_cnt: usize,
+    mutable: bool,
 }
 
 impl FnArg {
@@ -364,15 +393,15 @@ impl FnArg {
         Self {
             ty: Vec::new(),
             name: String::new(),
-            ref_cnt: 0,
+            mutable: false,
         }
     }
 
     pub fn to_string(&self) -> String {
         format!(
-            "{}:{}{}",
+            "{}:&{}{}",
             self.name,
-            "&".repeat(self.ref_cnt),
+            if self.mutable { "mut " } else { "" },
             self.ty.join("::")
         )
     }
@@ -381,7 +410,7 @@ impl FnArg {
         &self,
         use_paths: &Vec<(Vec<String>, String)>,
         comp_paths: &Vec<Vec<String>>,
-    ) -> i32 {
+    ) -> Option<usize> {
         let poss_paths = use_paths
             .iter()
             .map(|(path, alias)| match (path.last(), self.ty.first()) {
@@ -410,8 +439,8 @@ impl FnArg {
             .iter()
             .position(|path| poss_paths.iter().find(|path2| &path == path2).is_some())
         {
-            Some(i) => i as i32,
-            None => -1,
+            Some(i) => Some(i as usize),
+            None => None,
         }
     }
 
@@ -438,7 +467,7 @@ impl FnArg {
                 }
             }
             syn::Type::Reference(r) => {
-                self.ref_cnt += 1;
+                self.mutable = r.mutability.is_some();
                 self.parse_type(super_path, &r.elem);
             }
             _ => (),

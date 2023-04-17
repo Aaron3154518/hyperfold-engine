@@ -30,10 +30,22 @@ use ecs_lib::{component, component_manager};
 #[component]
 pub struct MainComponent {}
 
-component_manager!(Foo);
+component_manager!(SFoo, Foo);
 
 fn main() {
-    let f = Foo::new();
+    let f = SFoo::new();
+    f.component_manager
+        .add_component(ecs::component::Component {
+            name: "Aaron",
+            loc: "Boise, Idaho",
+        });
+    f.component_manager
+        .add_component(ecs::component::MyComponent {
+            msg: "You should stop coding".to_string(),
+        });
+    f.component_manager
+        .add_component(ecs::test::tmp::Component { i: 69 });
+    f.component_manager.add_component(MainComponent {});
 
     // Initialize SDL2
     if unsafe { sdl2::SDL_Init(sdl2::SDL_INIT_EVERYTHING) } == 0 {
@@ -57,13 +69,13 @@ fn main() {
     let mut rs = RenderSystem::new(Window::new().title("Game Engine").dimensions(w, h));
 
     // Create ECSDriver
-    let mut ecs = ECSDriver::new();
-    ecs.add_comp(Component {
-        name: "Aaron",
-        loc: "Boise, Idaho",
-    });
-    ecs.add_serv(&greet);
-    ecs.run();
+    // let mut ecs = ECSDriver::new();
+    // ecs.add_comp(Component {
+    //     name: "Aaron",
+    //     loc: "Boise, Idaho",
+    // });
+    // ecs.add_serv(&greet);
+    // ecs.run();
 
     let screen = Dimensions { w, h };
     let camera = Rect {
