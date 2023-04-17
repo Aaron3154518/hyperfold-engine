@@ -14,3 +14,18 @@ pub fn greet(
         comp3.i, comp2.name, comp2.loc, comp4.msg
     )
 }
+
+#[system]
+pub fn super_mut(comp: &mut super::super::MainComponent) {
+    println!("Super Duper Mutable")
+}
+
+#[system]
+pub fn super_immut(comp: &super::super::MainComponent) {
+    println!("Super Duper Immutable")
+}
+
+#[system]
+pub fn super_duped(comp: &mut super::super::MainComponent) {
+    println!("Super Duped")
+}

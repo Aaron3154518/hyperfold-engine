@@ -1,4 +1,5 @@
 extern crate proc_macro;
+use std::cmp::Ordering;
 use std::io::Write;
 
 use proc_macro::TokenStream;
@@ -55,6 +56,53 @@ pub fn component(_attr: TokenStream, item: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn system(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut fun = parse_macro_input!(item as syn::ItemFn);
+
+    // // Extract function names
+    // let regex = Regex::new(r"\w+(::\w+)*").expect("msg");
+    // let s_names = services
+    //     .iter()
+    //     .map(|s| match regex.find(s) {
+    //         Some(m) => m.as_str(),
+    //         None => "",
+    //     })
+    //     .filter(|s| !s.is_empty())
+    //     .map(|s| to_path(s, "::"))
+    //     .collect::<Vec<_>>();
+
+    // let (s_names, s_arg_vs, s_arg_ts) = (Vec::new(), Vec::new(), Vec::new());
+    // for s in services.iter() {
+    //     let (a_vec, m_vec, t_vec) = (Vec::new(), Vec::new(), Vec::new());
+    //     for m in regex.captures_iter(s) {
+    //         match (m.name("arg"), m.name("mut"), m.name("type")) {
+    //             (Some(a), Some(m), Some(t)) => {
+    //                 let tidx = t.as_str().parse::<usize>().expect("Could not parse type");
+    //                 match (c_vars.get(tidx), c_types.get(tidx)) {
+    //                     (Some(v), Some(ty)) => {
+    //                         a_vec.push(a.as_str());
+    //                         m_vec.push(v.to_owned());
+    //                         let mutable =
+    //                             m.as_str().parse::<u8>().expect("Could not parse mut") != 0;
+    //                         t_vec.push(
+    //                             syn::parse_str::<syn::Type>(
+    //                                 format!(
+    //                                     "&{}{}",
+    //                                     if mutable { "mut " } else { "" },
+    //                                     ty.to_token_stream().to_string()
+    //                                 )
+    //                                 .as_str(),
+    //                             )
+    //                             .expect("Stoopid"),
+    //                         );
+    //                     }
+    //                     _ => (),
+    //                 }
+    //             }
+    //             _ => (),
+    //         }
+    //     }
+    //     s_names.push(a_vec);
+    //     s_arg_vs.push(value)
+    // }
 
     // Open out.txt to print stuff
     // let mut f = Out::new();
@@ -127,53 +175,115 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
         .map(|s| s.to_string())
         .collect::<Vec<_>>();
 
-    // Extract function names
-    let regex = Regex::new(r"\w+(::\w+)*").expect("msg");
-    let s_names = services
-        .iter()
-        .map(|s| match regex.find(s) {
-            Some(m) => m.as_str(),
-            None => "",
-        })
-        .filter(|s| !s.is_empty())
-        .map(|s| to_path(s, "::"))
-        .collect::<Vec<_>>();
-
     // Split function into args
     let regex = Regex::new(r"(?P<arg>\w+):(?P<mut>[01]):(?P<type>\d+)(,|\)$)").expect("msg");
-    let (s_arg_vs, s_arg_ts) = services
+    let mut s_arg_types = services
         .iter()
         .map(|s| {
-            regex
+            let mut types = regex
                 .captures_iter(s)
-                .filter_map(|m| match (m.name("arg"), m.name("mut"), m.name("type")) {
-                    (Some(a), Some(m), Some(t)) => {
-                        let tidx = t.as_str().parse::<usize>().expect("Could not parse type");
-                        match (c_vars.get(tidx), c_types.get(tidx)) {
-                            (Some(v), Some(ty)) => {
-                                let mutable =
-                                    m.as_str().parse::<u8>().expect("Could not parse mut") != 0;
-                                Some((
-                                    v.to_owned(),
-                                    syn::parse_str::<syn::Type>(
-                                        format!(
-                                            "&{}{}",
-                                            if mutable { "mut " } else { "" },
-                                            ty.to_token_stream().to_string()
-                                        )
-                                        .as_str(),
-                                    )
-                                    .expect("Stoopid"),
-                                ))
-                            }
-                            _ => None,
-                        }
-                    }
+                .filter_map(|m| match (m.name("mut"), m.name("type")) {
+                    (Some(m), Some(t)) => Some((
+                        m.as_str().parse::<u8>().expect("Could not parse mut") != 0,
+                        t.as_str().parse::<usize>().expect("Could not parse type"),
+                    )),
                     _ => None,
+                })
+                .collect::<Vec<_>>();
+            types.sort_by(|arg1, arg2| arg1.1.partial_cmp(&arg2.1).unwrap());
+            types
+        })
+        .collect::<Vec<_>>();
+    // Sort
+    s_arg_types.sort_by(|args1, args2| {
+        // Sort length first
+        if args1.len() < args2.len() {
+            Ordering::Less
+        } else if args1.len() > args2.len() {
+            Ordering::Greater
+        } else {
+            // Sort by type indices
+            for (a1, a2) in args1.iter().zip(args2.iter()) {
+                if a1.1 < a2.1 {
+                    return Ordering::Less;
+                } else if a1.1 > a2.1 {
+                    return Ordering::Greater;
+                }
+            }
+            // Sort by mutability
+            for (a1, a2) in args1.iter().zip(args2.iter()) {
+                if !a1.0 && a2.0 {
+                    return Ordering::Less;
+                } else if a1.0 && !a2.0 {
+                    return Ordering::Greater;
+                }
+            }
+            Ordering::Equal
+        }
+    });
+    // Remove duplicate signatures
+    s_arg_types.dedup();
+
+    // Convert to types
+    let (s_arg_vs, s_arg_ts) = s_arg_types
+        .iter()
+        .map(|args| {
+            args.iter()
+                .map(|arg| {
+                    (
+                        format_ident!("c{}", arg.1),
+                        syn::parse_str::<syn::Type>(
+                            format!(
+                                "&{}{}",
+                                if arg.0 { "mut " } else { "" },
+                                c_types
+                                    .get(arg.1)
+                                    .expect(format!("Invalid component index: {}", arg.1).as_str())
+                                    .to_token_stream()
+                                    .to_string()
+                            )
+                            .as_str(),
+                        )
+                        .expect("Could not parse type"),
+                    )
                 })
                 .unzip::<_, _, Vec<_>, Vec<_>>()
         })
         .unzip::<_, _, Vec<_>, Vec<_>>();
+
+    // let (s_arg_vs, s_arg_ts) = services
+    //     .iter()
+    //     .map(|s| {
+    //         regex
+    //             .captures_iter(s)
+    //             .filter_map(|m| match (m.name("arg"), m.name("mut"), m.name("type")) {
+    //                 (Some(_a), Some(m), Some(t)) => {
+    //                     let tidx = t.as_str().parse::<usize>().expect("Could not parse type");
+    //                     match (c_vars.get(tidx), c_types.get(tidx)) {
+    //                         (Some(v), Some(ty)) => {
+    //                             let mutable =
+    //                                 m.as_str().parse::<u8>().expect("Could not parse mut") != 0;
+    //                             Some((
+    //                                 v.to_owned(),
+    //                                 syn::parse_str::<syn::Type>(
+    //                                     format!(
+    //                                         "&{}{}",
+    //                                         if mutable { "mut " } else { "" },
+    //                                         ty.to_token_stream().to_string()
+    //                                     )
+    //                                     .as_str(),
+    //                                 )
+    //                                 .expect("Stoopid"),
+    //                             ))
+    //                         }
+    //                         _ => None,
+    //                     }
+    //                 }
+    //                 _ => None,
+    //             })
+    //             .unzip::<_, _, Vec<_>, Vec<_>>()
+    //     })
+    //     .unzip::<_, _, Vec<_>, Vec<_>>();
 
     let (sm, cm) = parse_macro_input!(input as Input).get();
 
@@ -185,13 +295,6 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
 
     // Open out.txt to print stuff
     let mut f = Out::new();
-    f.write(format!(
-        "{:#?}\n",
-        s_names
-            .iter()
-            .map(|s| s.to_token_stream().to_string())
-            .collect::<Vec<_>>()
-    ));
     f.write(format!("Components:\n{:#?}\n", components));
     f.write(format!("Services:\n{:#?}\n", services));
     f.write(format!("Code:\n{}\n", code));
