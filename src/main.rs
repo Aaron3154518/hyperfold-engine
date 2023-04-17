@@ -1,7 +1,6 @@
 #![feature(specialization)]
 
-use ecs::component::Component;
-use ecs::{ecs::ECSDriver, system::greet};
+use ecs::system::greet;
 
 mod sdl2_bindings;
 use sdl2_bindings::sdl2_ as sdl2;
@@ -34,30 +33,42 @@ component_manager!(SFoo, Foo);
 
 fn main() {
     let mut f = SFoo::new();
-    f.component_manager
-        .add_component(ecs::component::Component {
+    let e1 = ecs::entity::Entity::new();
+    let e2 = ecs::entity::Entity::new();
+
+    f.component_manager.add_component(
+        e1,
+        ecs::component::Component {
             name: "Aaron",
             loc: "Boise, Idaho",
-        });
-    f.component_manager
-        .add_component(ecs::component::MyComponent {
+        },
+    );
+    f.component_manager.add_component(
+        e1,
+        ecs::component::MyComponent {
             msg: "You should stop coding".to_string(),
-        });
+        },
+    );
     f.component_manager
-        .add_component(ecs::test::tmp::Component { i: 666 });
-    f.component_manager.add_component(MainComponent {});
-    f.component_manager
-        .add_component(ecs::component::Component {
+        .add_component(e1, ecs::test::tmp::Component { i: 666 });
+    f.component_manager.add_component(e1, MainComponent {});
+
+    f.component_manager.add_component(
+        e2,
+        ecs::component::Component {
             name: "Ur Mom",
             loc: "Stoopidville",
-        });
-    f.component_manager
-        .add_component(ecs::component::MyComponent {
+        },
+    );
+    f.component_manager.add_component(
+        e2,
+        ecs::component::MyComponent {
             msg: "Lmao git gud".to_string(),
-        });
+        },
+    );
     f.component_manager
-        .add_component(ecs::test::tmp::Component { i: 69 });
-    f.component_manager.add_component(MainComponent {});
+        .add_component(e2, ecs::test::tmp::Component { i: 69 });
+    // f.component_manager.add_component(e2, MainComponent {});
     f.add_system(&greet);
     f.tick();
 

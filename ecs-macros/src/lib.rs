@@ -1,26 +1,31 @@
-pub trait ComponentManager<T> {
-    fn add_component(&mut self, t: T);
+use std::{
+    collections::{HashMap, HashSet},
+    hash::Hash,
+};
+
+pub trait ComponentManager<E, T> {
+    fn add_component(&mut self, e: E, t: T);
 }
 
 #[macro_export]
 macro_rules! manager {
     ($cm: ident, $($v: ident, $t: ty),*) => {
         pub struct $cm {
-            $($v: Vec<$t>),*
+            $($v:  std::collections::HashMap<crate::ecs::entity::Entity, $t>),*
         }
 
         impl $cm {
             pub fn new() -> Self {
                 Self {
-                    $($v: Vec::new()),*
+                    $($v: std::collections::HashMap::new()),*
                 }
             }
         }
 
         $(
-            impl ComponentManager<$t> for $cm {
-                fn add_component(&mut self, t: $t) {
-                    self.$v.push(t)
+            impl ComponentManager<crate::ecs::entity::Entity, $t> for $cm {
+                fn add_component(&mut self, e: crate::ecs::entity::Entity, t: $t) {
+                    self.$v.insert(e, t);
                 }
             }
         )*
@@ -31,34 +36,24 @@ pub trait ComponentSystems<F> {
     fn add_system(&mut self, f: F);
 }
 
-#[macro_export]
-macro_rules! zip_tuple {
-    // Zip
-    ($v1: ident) => {
-        $v1
-    };
+pub fn intersect_keys<K: Eq + Hash + Clone>(keys: &[HashSet<&K>]) -> HashSet<K> {
+    if let Some(k1) = keys.first() {
+        let mut k1 = k1.clone();
+        keys[1..]
+            .iter()
+            .for_each(|k| k1 = k1.intersection(k).map(|k| *k).collect::<HashSet<_>>());
+        return k1.iter().map(|k| (*k).clone()).collect();
+    }
+    HashSet::new()
+}
 
-    ($v1: ident, $v2: ident) => {
-        ($v2, $v1)
-    };
-
-    ($v1: ident $(,$vs: ident)+) => {
-        (zip_tuple!($($vs),*), $v1)
-    };
-
-    // Reverse
-    ((), $($vs: ident),*) => {
-        zip_tuple!($($vs),*)
-    };
-
-    (($v1: ident $(,$vs: ident)*) $(,$vs2: ident)*) => {
-        zip_tuple!(($($vs),*), $v1 $(,$vs2)*)
-    };
+pub fn get_keys<'a, K: Eq + Hash + Clone, V>(map: &'a HashMap<K, V>) -> HashSet<&'a K> {
+    map.keys().collect()
 }
 
 #[macro_export]
 macro_rules! systems {
-    ($sm: ident, $cm: ident, $(($v1: ident, $t1: ty $(,$vs: ident, $ts: ty)*)),+) => {
+    ($sm: ident, $cm: ident, $(($($vs: ident, $ts: ty),+)),+) => {
         struct $sm {
             pub component_manager: $cm,
             systems: Vec<Box<dyn Fn(&mut $cm)>>,
@@ -80,28 +75,25 @@ macro_rules! systems {
         }
 
         $(
-            impl ComponentSystems<&'static dyn Fn($t1 $(,$ts)*)> for $sm {
-                fn add_system(&mut self, f: &'static dyn Fn($t1 $(,$ts)*)) {
+            impl ComponentSystems<&'static dyn Fn($($ts),*)> for $sm {
+                fn add_system(&mut self, f: &'static dyn Fn($($ts),*)) {
                     self.systems.push(
                         Box::new(|cm: &mut $cm| {
-                            for zip_tuple!(($v1 $(,$vs)*)) in cm.$v1.iter_mut()$(.zip(cm.$vs.iter_mut()))* {
-                                (f)($v1 $(,$vs)*)
+                            for key in intersect_keys(&[$(get_keys(&cm.$vs)),*]).iter() {
+                                if let ($(Some($vs)),*) = ($(cm.$vs.get_mut(key)),*) {
+                                    (f)($($vs),*)
+                                }
                             }
                         })
-                    )
+                    );
                 }
             }
         )*
     };
 }
 
-// struct Component;
-// struct MyComponent;
+// struct C;
+// struct C2;
 
-// manager!(Foo, c0, Component, c1, MyComponent);
-// systems!(
-//     SFoo,
-//     Foo,
-//     (c0, &mut Component, c1, &MyComponent),
-//     (c1, &MyComponent)
-// );
+// manager!(Foo, c0, C, c1, C2);
+// systems!(SFoo, Foo, (c0, &C, c1, &mut C2));

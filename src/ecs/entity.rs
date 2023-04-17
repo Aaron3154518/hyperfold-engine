@@ -1,6 +1,8 @@
+use std::hash::Hash;
 use uuid::Uuid;
 
-struct Entity(Uuid);
+#[derive(Eq, PartialEq, Hash, Copy, Clone, Debug)]
+pub struct Entity(Uuid);
 
 impl Entity {
     pub fn new() -> Self {
