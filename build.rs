@@ -1,6 +1,7 @@
 use bindgen;
 use bindgen::callbacks::{DeriveInfo, ParseCallbacks};
 use quote::ToTokens;
+use std::collections::HashSet;
 use std::env;
 use std::fs::File;
 use std::io::Read;
@@ -82,7 +83,7 @@ fn main() {
     );
 
     // TODO: Doesn't work if a module is declared manually
-    let vecs = entry();
+    let mut vecs = entry();
 
     // Get Component data
     let mut comps = Vec::new();
@@ -104,15 +105,13 @@ fn main() {
     // Get Service data
     let mut servs = Vec::new();
     let mut serv_data = Vec::new();
-    for v in vecs.iter() {
+    for v in vecs.iter_mut() {
+        v.services.retain_mut(|s| {
+            s.map_to_components(&v.uses, &comps);
+            s.is_valid()
+        });
         servs.append(&mut v.services.to_vec());
-        serv_data.append(
-            &mut v
-                .services
-                .iter()
-                .map(|f| f.to_data(&v.uses, &comps))
-                .collect(),
-        );
+        serv_data.append(&mut v.services.iter().map(|f| f.to_data()).collect());
     }
     let serv_data = serv_data.join(" ");
 
@@ -257,7 +256,7 @@ impl syn::visit_mut::VisitMut for Visitor {
                         .map(|arg| match arg {
                             syn::FnArg::Typed(t) => {
                                 let mut fn_arg = FnArg::new();
-                                fn_arg.parse_arg(&self.path, &t);
+                                fn_arg.parse_arg(&self.get_mod_path(), &t);
                                 fn_arg
                             }
                             _ => FnArg::new(),
@@ -317,7 +316,37 @@ impl syn::visit_mut::VisitMut for Visitor {
     }
 }
 
-// TODO: No duplicate arg types
+// Get all possible paths to `path` give the set of use paths/aliases
+fn get_possible_use_paths(
+    path: &Vec<String>,
+    use_paths: &Vec<(Vec<String>, String)>,
+) -> Vec<Vec<String>> {
+    use_paths
+        .iter()
+        .map(|(u_path, alias)| match (u_path.last(), path.first()) {
+            (Some(u), Some(t)) => {
+                if u == "*" {
+                    concat(u_path[..end(&u_path)].to_vec(), path.to_vec())
+                } else if t == u {
+                    if alias.is_empty() {
+                        concat(u_path.to_vec(), path[1..].to_vec())
+                    } else {
+                        concat(
+                            u_path[..end(&u_path)].to_vec(),
+                            concat(vec![alias.to_string()], path[1..].to_vec()),
+                        )
+                    }
+                } else {
+                    Vec::new()
+                }
+            }
+            _ => Vec::new(),
+        })
+        .filter(|path| !path.is_empty())
+        .collect::<Vec<_>>()
+}
+
+// Functions
 #[derive(Clone)]
 struct Fn {
     path: Vec<String>,
@@ -337,30 +366,33 @@ impl Fn {
         )
     }
 
-    pub fn map_to_components(
-        &self,
-        use_paths: &Vec<(Vec<String>, String)>,
-        comp_paths: &Vec<Vec<String>>,
-    ) -> Vec<Option<usize>> {
-        self.args
-            .iter()
-            .map(|arg| arg.map_to_component(use_paths, comp_paths))
-            .collect()
+    pub fn is_valid(&self) -> bool {
+        let mut set = HashSet::new();
+        for arg in self.args.iter() {
+            if arg.ty_idx.is_none() || !set.insert(arg.ty_idx) {
+                return false;
+            }
+        }
+        true
     }
 
-    pub fn to_data(
-        &self,
+    pub fn map_to_components(
+        &mut self,
         use_paths: &Vec<(Vec<String>, String)>,
         comp_paths: &Vec<Vec<String>>,
-    ) -> String {
-        let idxs = self.map_to_components(use_paths, comp_paths);
+    ) {
+        for arg in self.args.iter_mut() {
+            arg.map_to_component(use_paths, comp_paths);
+        }
+    }
+
+    pub fn to_data(&self) -> String {
         format!(
             "crate::{}({})",
             self.path.join("::"),
             self.args
                 .iter()
-                .zip(idxs)
-                .filter_map(|(a, i)| match i {
+                .filter_map(|a| match a.ty_idx {
                     Some(i) => Some(format!(
                         "{}:{}:{}",
                         a.name,
@@ -384,6 +416,7 @@ impl std::fmt::Display for Fn {
 #[derive(Clone)]
 struct FnArg {
     ty: Vec<String>,
+    ty_idx: Option<usize>,
     name: String,
     mutable: bool,
 }
@@ -392,6 +425,7 @@ impl FnArg {
     pub fn new() -> Self {
         Self {
             ty: Vec::new(),
+            ty_idx: None,
             name: String::new(),
             mutable: false,
         }
@@ -407,41 +441,17 @@ impl FnArg {
     }
 
     pub fn map_to_component(
-        &self,
+        &mut self,
         use_paths: &Vec<(Vec<String>, String)>,
         comp_paths: &Vec<Vec<String>>,
-    ) -> Option<usize> {
-        let poss_paths = use_paths
-            .iter()
-            .map(|(path, alias)| match (path.last(), self.ty.first()) {
-                (Some(u), Some(t)) => {
-                    if u == "*" {
-                        concat(path[..end(&path)].to_vec(), self.ty.to_vec())
-                    } else if t == u {
-                        if alias.is_empty() {
-                            concat(path.to_vec(), self.ty[1..].to_vec())
-                        } else {
-                            concat(
-                                path[..end(&path)].to_vec(),
-                                concat(vec![alias.to_string()], self.ty[1..].to_vec()),
-                            )
-                        }
-                    } else {
-                        Vec::new()
-                    }
-                }
-                _ => Vec::new(),
-            })
-            .filter(|path| !path.is_empty())
-            .collect::<Vec<_>>();
+    ) {
+        eprintln!("{:#?}, {:#?}", self.ty, use_paths);
+        let poss_paths = get_possible_use_paths(&self.ty, use_paths);
         eprintln!("{:#?}", poss_paths);
-        match comp_paths
+        self.ty_idx = comp_paths
             .iter()
-            .position(|path| poss_paths.iter().find(|path2| &path == path2).is_some())
-        {
-            Some(i) => Some(i as usize),
-            None => None,
-        }
+            .position(|path| poss_paths.iter().find(|path2| &path == path2).is_some());
+        eprintln!("{:#?}", self.ty_idx);
     }
 
     pub fn parse_arg(&mut self, super_path: &Vec<String>, arg: &syn::PatType) {

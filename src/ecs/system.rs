@@ -4,7 +4,7 @@ use super::component::Component as Comp2;
 
 #[system]
 pub fn greet(
-    comp: &mut crate::MainComponent,
+    comp: &mut super::super::MainComponent,
     comp2: &Comp2,
     comp3: &mut super::test::tmp::Component,
     comp4: &mut crate::ecs::component::MyComponent,
