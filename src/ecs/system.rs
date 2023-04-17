@@ -4,10 +4,10 @@ use super::component::Component as Comp2;
 
 #[system]
 pub fn greet(
-    comp: &crate::MainComponent,
+    comp: &mut crate::MainComponent,
     comp2: &Comp2,
     comp3: &mut super::test::tmp::Component,
-    comp4: crate::ecs::component::MyComponent,
+    comp4: &mut crate::ecs::component::MyComponent,
 ) {
     println!(
         "#{}: Hi {} from {}. I have a message: \"{}\"",

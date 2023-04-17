@@ -33,7 +33,7 @@ pub struct MainComponent {}
 component_manager!(SFoo, Foo);
 
 fn main() {
-    let f = SFoo::new();
+    let mut f = SFoo::new();
     f.component_manager
         .add_component(ecs::component::Component {
             name: "Aaron",
@@ -44,8 +44,22 @@ fn main() {
             msg: "You should stop coding".to_string(),
         });
     f.component_manager
+        .add_component(ecs::test::tmp::Component { i: 666 });
+    f.component_manager.add_component(MainComponent {});
+    f.component_manager
+        .add_component(ecs::component::Component {
+            name: "Ur Mom",
+            loc: "Stoopidville",
+        });
+    f.component_manager
+        .add_component(ecs::component::MyComponent {
+            msg: "Lmao git gud".to_string(),
+        });
+    f.component_manager
         .add_component(ecs::test::tmp::Component { i: 69 });
     f.component_manager.add_component(MainComponent {});
+    f.add_system(&greet);
+    f.tick();
 
     // Initialize SDL2
     if unsafe { sdl2::SDL_Init(sdl2::SDL_INIT_EVERYTHING) } == 0 {

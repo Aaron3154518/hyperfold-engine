@@ -178,7 +178,7 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
     let (sm, cm) = parse_macro_input!(input as Input).get();
 
     let code = quote!(
-        use ecs_macros::{manager, ComponentManager, zip_tuple, systems, ComponentSystems};
+        use ecs_macros::*;
         manager!(#cm, #(#c_vars, #c_types),*);
         systems!(#sm, #cm, #((#(#s_arg_vs, #s_arg_ts),*)),*);
     );

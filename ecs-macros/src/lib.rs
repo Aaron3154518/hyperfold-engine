@@ -84,7 +84,7 @@ macro_rules! systems {
                 fn add_system(&mut self, f: &'static dyn Fn($t1 $(,$ts)*)) {
                     self.systems.push(
                         Box::new(|cm: &mut $cm| {
-                            for zip_tuple!(($v1 $(,$vs)*)) in cm.$v1.iter()$(.zip(cm.$vs.iter()))* {
+                            for zip_tuple!(($v1 $(,$vs)*)) in cm.$v1.iter_mut()$(.zip(cm.$vs.iter_mut()))* {
                                 (f)($v1 $(,$vs)*)
                             }
                         })
@@ -95,13 +95,13 @@ macro_rules! systems {
     };
 }
 
-struct Component;
-struct MyComponent;
+// struct Component;
+// struct MyComponent;
 
-manager!(Foo, c0, Component, c1, MyComponent);
-systems!(
-    SFoo,
-    Foo,
-    (c0, &Component, c1, &MyComponent),
-    (c1, &MyComponent)
-);
+// manager!(Foo, c0, Component, c1, MyComponent);
+// systems!(
+//     SFoo,
+//     Foo,
+//     (c0, &mut Component, c1, &MyComponent),
+//     (c1, &MyComponent)
+// );
