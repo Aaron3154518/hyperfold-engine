@@ -245,8 +245,9 @@ impl syn::visit_mut::VisitMut for Visitor {
 
     // Functions
     fn visit_item_fn_mut(&mut self, i: &mut syn::ItemFn) {
-        i.attrs.iter().find(|a| {
+        for a in i.attrs.iter() {
             if let Some(_) = a.meta.path().segments.iter().find(|s| s.ident == "system") {
+                eprintln!("Func: {:#?}", i);
                 self.services.push(Fn {
                     path: concat(self.path.to_vec(), vec![i.sig.ident.to_string()]),
                     args: i
@@ -264,10 +265,9 @@ impl syn::visit_mut::VisitMut for Visitor {
                         .filter(|arg| !arg.ty.is_empty())
                         .collect(),
                 });
-                return true;
+                break;
             }
-            false
-        });
+        }
         syn::visit_mut::visit_item_fn_mut(self, i);
     }
 

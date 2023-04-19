@@ -52,8 +52,15 @@ pub fn get_keys<'a, K: Eq + Hash + Clone, V>(map: &'a HashMap<K, V>) -> HashSet<
 }
 
 #[macro_export]
+macro_rules! test {
+    (i: ident) => {
+        fn $i() {}
+    };
+}
+
+#[macro_export]
 macro_rules! systems {
-    ($sm: ident, $cm: ident, $(($($vs: ident, $ts: ty),+)),+) => {
+    ($sm: ident, $cm: ident, $((($($f: path),+), $($vs: ident, $ts: ty),+)),+) => {
         struct $sm {
             pub component_manager: $cm,
             systems: Vec<Box<dyn Fn(&mut $cm)>>,
@@ -72,23 +79,40 @@ macro_rules! systems {
                     (system)(&mut self.component_manager);
                 }
             }
+
+            pub fn add_systems(&mut self) {
+            $(
+                let f = |cm: &mut $cm, f: &dyn Fn($($ts),*)| {
+                    for key in intersect_keys(&[$(get_keys(&cm.$vs)),*]).iter() {
+                        if let ($(Some($vs)),*) = ($(cm.$vs.get_mut(key)),*) {
+                            f($($vs),*)
+                        }
+                    }
+                };
+                $(
+                    self.systems.push(Box::new(move |cm: &mut $cm| f(cm, &$f)));
+                )*
+            )*
+            }
         }
 
-        $(
-            impl ComponentSystems<&'static dyn Fn($($ts),*)> for $sm {
-                fn add_system(&mut self, f: &'static dyn Fn($($ts),*)) {
-                    self.systems.push(
-                        Box::new(|cm: &mut $cm| {
-                            for key in intersect_keys(&[$(get_keys(&cm.$vs)),*]).iter() {
-                                if let ($(Some($vs)),*) = ($(cm.$vs.get_mut(key)),*) {
-                                    (f)($($vs),*)
-                                }
-                            }
-                        })
-                    );
-                }
-            }
-        )*
+        // impl<F> ComponentSystems<F> for $sm {
+        //     default fn add_system(&mut self, f: &F) {}
+        // }
+
+        // $(impl<F: Fn($($ts),*)> ComponentSystems<F> for $sm {
+        //     fn add_system(&mut self, f: &F) {
+        //         self.systems.push(
+        //             Box::new(|cm: &mut $cm| {
+        //                 for key in intersect_keys(&[$(get_keys(&cm.$vs)),*]).iter() {
+        //                     if let ($(Some($vs)),*) = ($(cm.$vs.get_mut(key)),*) {
+        //                         (f)($($vs),*)
+        //                     }
+        //                 }
+        //             })
+        //         );
+        //     }
+        // })*
     };
 }
 

@@ -1,6 +1,6 @@
 #![feature(specialization)]
 
-use ecs::system::greet;
+use ecs::system::{greet, super_mut};
 
 mod sdl2_bindings;
 use sdl2_bindings::sdl2_ as sdl2;
@@ -69,7 +69,7 @@ fn main() {
     f.component_manager
         .add_component(e2, ecs::test::tmp::Component { i: 69 });
     // f.component_manager.add_component(e2, MainComponent {});
-    f.add_system(&greet);
+    f.add_systems();
     f.tick();
 
     // Initialize SDL2

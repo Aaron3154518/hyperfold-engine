@@ -6,8 +6,8 @@ use super::component::Component as Comp2;
 pub fn greet(
     comp: &mut super::super::MainComponent,
     comp2: &Comp2,
-    comp3: &mut super::test::tmp::Component,
     comp4: &mut crate::ecs::component::MyComponent,
+    comp3: &mut super::test::tmp::Component,
 ) {
     println!(
         "#{}: Hi {} from {}. I have a message: \"{}\"",
