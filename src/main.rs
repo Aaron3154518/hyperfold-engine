@@ -1,7 +1,5 @@
 #![feature(specialization)]
 
-use ecs::system::{greet, super_mut};
-
 mod sdl2_bindings;
 use sdl2_bindings::sdl2_ as sdl2;
 mod sdl2_image_bindings;

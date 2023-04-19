@@ -1,6 +1,5 @@
 use bindgen;
 use bindgen::callbacks::{DeriveInfo, ParseCallbacks};
-use quote::ToTokens;
 use std::collections::HashSet;
 use std::env;
 use std::fs::File;

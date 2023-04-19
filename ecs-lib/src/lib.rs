@@ -7,8 +7,6 @@ use std::io::Write;
 use std::path::PathBuf;
 
 use proc_macro::TokenStream;
-use proc_macro2::Span;
-use quote::spanned::Spanned;
 use quote::{format_ident, quote, ToTokens};
 use regex::Regex;
 use syn;
@@ -38,19 +36,6 @@ impl Out {
     }
 }
 
-fn to_path(s: &str, sep: &'static str) -> syn::Path {
-    syn::Path {
-        leading_colon: None,
-        segments: s
-            .split(sep)
-            .map(|s| syn::PathSegment {
-                ident: format_ident!("{}", s),
-                arguments: syn::PathArguments::None,
-            })
-            .collect(),
-    }
-}
-
 #[proc_macro_attribute]
 pub fn component(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut strct = parse_macro_input!(item as syn::ItemStruct);
@@ -61,7 +46,7 @@ pub fn component(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
 #[proc_macro_attribute]
 pub fn system(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    let mut fun = parse_macro_input!(item as syn::ItemFn);
+    let fun = parse_macro_input!(item as syn::ItemFn);
 
     // Get service functions
     let services = std::env::var("SERVICES")
@@ -72,7 +57,7 @@ pub fn system(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
     // Extract function paths
     let regex = Regex::new(r"\w+(::\w+)*").expect("msg");
-    let mut s_names = services
+    let s_names = services
         .iter()
         .map(|s| match regex.find(s) {
             Some(m) => m.as_str().split("::").collect::<Vec<_>>(),
