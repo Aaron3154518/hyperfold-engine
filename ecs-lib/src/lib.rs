@@ -198,8 +198,8 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
         .map(|s| s.to_string())
         .collect::<Vec<_>>();
 
-    let r =
-        Regex::new(r"(?P<name>\w+(::\w)*)\((?P<args>[\w,]*)\)").expect("Could not construct regex");
+    let r = Regex::new(r"(?P<name>\w+(::\w+)*)\((?P<args>[\w,]*)\)")
+        .expect("Could not construct regex");
     let (c_names, c_args) = components
         .iter()
         .filter_map(|s| {
@@ -225,7 +225,7 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
         })
         .unzip::<_, _, Vec<_>, Vec<_>>();
 
-    f.write(format!("{:#?}\n", c_args));
+    f.write(format!("{:#?}\n", c_types));
 
     // Services
     let services = std::env::var("SERVICES")
