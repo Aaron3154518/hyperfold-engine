@@ -36,8 +36,40 @@ impl Out {
     }
 }
 
+#[derive(Debug)]
+struct ComponentInput {
+    args: Vec<String>,
+}
+
+impl ComponentInput {
+    pub fn get(self) -> Vec<String> {
+        self.args
+    }
+}
+
+impl syn::parse::Parse for ComponentInput {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let mut args = Vec::new();
+        loop {
+            match input.parse::<syn::Ident>() {
+                Ok(i) => args.push(i.to_string()),
+                Err(_) => break,
+            };
+            if let Err(_) = input.parse::<syn::Token![,]>() {
+                break;
+            }
+        }
+        Ok(Self { args })
+    }
+}
+
 #[proc_macro_attribute]
-pub fn component(_attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn component(input: TokenStream, item: TokenStream) -> TokenStream {
+    let mut out = Out::new("out.txt", true);
+
+    let args = parse_macro_input!(input as ComponentInput).get();
+    out.write(format!("{:#?}\n", args));
+
     let mut strct = parse_macro_input!(item as syn::ItemStruct);
     strct.vis = syn::parse_quote!(pub);
 
@@ -157,6 +189,8 @@ impl syn::parse::Parse for Input {
 
 #[proc_macro]
 pub fn component_manager(input: TokenStream) -> TokenStream {
+    let mut f = Out::new("out3.txt", false);
+
     // Components
     let components = std::env::var("COMPONENTS")
         .unwrap_or_else(|_| "COMPONENTS".to_string())
@@ -164,18 +198,34 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
         .map(|s| s.to_string())
         .collect::<Vec<_>>();
 
-    // Contruct types
-    let c_types = components
+    let r =
+        Regex::new(r"(?P<name>\w+(::\w)*)\((?P<args>[\w,]*)\)").expect("Could not construct regex");
+    let (c_names, c_args) = components
         .iter()
-        .map(|t| syn::parse_str::<syn::Type>(t).expect("Stoopid"))
-        .collect::<Vec<_>>();
+        .filter_map(|s| {
+            if let Some(c) = r.captures(s) {
+                if let (Some(name), Some(args)) = (c.name("name"), c.name("args")) {
+                    return Some((name.as_str().to_string(), args.as_str().to_string()));
+                }
+            }
+            None
+        })
+        .unzip::<_, _, Vec<_>, Vec<_>>();
 
-    // Construct variable names
-    let c_vars = c_types
+    // Contruct vars and types
+    let (c_vars, c_types) = c_names
         .iter()
         .enumerate()
-        .map(|(i, _t)| format_ident!("c{}", i))
-        .collect::<Vec<_>>();
+        .map(|(i, t)| {
+            (
+                format_ident!("c{}", i),
+                syn::parse_str::<syn::Type>(t)
+                    .expect(format!("Could not parse Component type: {}", t).as_str()),
+            )
+        })
+        .unzip::<_, _, Vec<_>, Vec<_>>();
+
+    f.write(format!("{:#?}\n", c_args));
 
     // Services
     let services = std::env::var("SERVICES")
@@ -310,7 +360,6 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
     );
 
     // Open out.txt to print stuff
-    let mut f = Out::new("out3.txt", false);
     // f.write(format!("Args:\n{:#?}\n", s_arg_ts));
     // f.write(format!("Components:\n{:#?}\n", components));
     // f.write(format!("Services:\n{:#?}\n", services));

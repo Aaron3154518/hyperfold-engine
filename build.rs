@@ -1,5 +1,6 @@
 use bindgen;
 use bindgen::callbacks::{DeriveInfo, ParseCallbacks};
+use quote::ToTokens;
 use std::collections::HashSet;
 use std::env;
 use std::fs::File;
@@ -87,17 +88,11 @@ fn main() {
     // Get Component data
     let mut comps = Vec::new();
     for v in vecs.iter() {
-        comps.append(
-            &mut v
-                .components
-                .iter()
-                .map(|c| concat(v.get_mod_path(), vec![c.to_string()]))
-                .collect(),
-        );
+        comps.append(&mut v.get_components());
     }
     let comp_data = comps
         .iter()
-        .map(|v| v.join("::"))
+        .map(|c| c.to_data())
         .collect::<Vec<_>>()
         .join(" ");
 
@@ -137,9 +132,22 @@ fn end<T>(v: &Vec<T>) -> usize {
     }
 }
 
-// Attempt 2
+// Component
+#[derive(Clone)]
+struct Component {
+    path: Vec<String>,
+    args: Vec<String>,
+}
+
+impl Component {
+    pub fn to_data(&self) -> String {
+        format!("{}({})", self.path.join("::"), self.args.join(","))
+    }
+}
+
+// Visitor
 struct Visitor {
-    components: Vec<String>,
+    components: Vec<Component>,
     modules: Vec<String>,
     services: Vec<Fn>,
     path: Vec<String>,
@@ -182,12 +190,27 @@ impl Visitor {
         concat(vec!["crate".to_string()], self.path.to_vec())
     }
 
+    pub fn get_components(&self) -> Vec<Component> {
+        let mut v = self.components.to_vec();
+        v.iter_mut()
+            .for_each(|c| c.path = concat(self.get_mod_path(), c.path.to_vec()));
+        v
+    }
+
     pub fn to_mod(&self) -> String {
         format!("{}", self.get_mod_path().join("::"))
     }
 
-    pub fn to_data(&self) -> String {
-        format!("{}::{{{}}}", self.to_mod(), self.components.join(","))
+    pub fn to_string(&self) -> String {
+        format!(
+            "{}::{{{}}}",
+            self.to_mod(),
+            self.components
+                .iter()
+                .map(|c| c.path.join("::"))
+                .collect::<Vec<_>>()
+                .join(",")
+        )
     }
 }
 
@@ -210,7 +233,7 @@ impl std::fmt::Display for Visitor {
                     ))
                     .collect::<Vec<_>>()
                     .join("\n      "),
-                self.to_data(),
+                self.to_string(),
                 self.services
                     .iter()
                     .map(|s| s.to_string())
@@ -231,10 +254,31 @@ impl syn::visit_mut::VisitMut for Visitor {
     fn visit_item_struct_mut(&mut self, i: &mut syn::ItemStruct) {
         match i.attrs.first() {
             Some(a) => {
-                for s in a.meta.path().segments.iter() {
-                    if s.ident == "component" {
-                        self.components.push(i.ident.to_string());
+                let mut is_comp = false;
+                let mut args = Vec::new();
+                for t in a.meta.to_token_stream() {
+                    match t {
+                        proc_macro2::TokenTree::Group(g) => {
+                            for tt in g.stream() {
+                                match tt {
+                                    proc_macro2::TokenTree::Ident(i) => args.push(i.to_string()),
+                                    _ => (),
+                                }
+                            }
+                        }
+                        proc_macro2::TokenTree::Ident(i) => {
+                            if i.to_string() == "component" {
+                                is_comp = true;
+                            }
+                        }
+                        _ => (),
                     }
+                }
+                if is_comp {
+                    self.components.push(Component {
+                        path: vec![i.ident.to_string()],
+                        args,
+                    });
                 }
             }
             None => (),
@@ -246,7 +290,6 @@ impl syn::visit_mut::VisitMut for Visitor {
     fn visit_item_fn_mut(&mut self, i: &mut syn::ItemFn) {
         for a in i.attrs.iter() {
             if let Some(_) = a.meta.path().segments.iter().find(|s| s.ident == "system") {
-                eprintln!("Func: {:#?}", i);
                 self.services.push(Fn {
                     path: concat(self.path.to_vec(), vec![i.sig.ident.to_string()]),
                     args: i
@@ -378,7 +421,7 @@ impl Fn {
     pub fn map_to_components(
         &mut self,
         use_paths: &Vec<(Vec<String>, String)>,
-        comp_paths: &Vec<Vec<String>>,
+        comp_paths: &Vec<Component>,
     ) {
         for arg in self.args.iter_mut() {
             arg.map_to_component(use_paths, comp_paths);
@@ -442,15 +485,12 @@ impl FnArg {
     pub fn map_to_component(
         &mut self,
         use_paths: &Vec<(Vec<String>, String)>,
-        comp_paths: &Vec<Vec<String>>,
+        comp_paths: &Vec<Component>,
     ) {
-        eprintln!("{:#?}, {:#?}", self.ty, use_paths);
         let poss_paths = get_possible_use_paths(&self.ty, use_paths);
-        eprintln!("{:#?}", poss_paths);
         self.ty_idx = comp_paths
             .iter()
-            .position(|path| poss_paths.iter().find(|path2| &path == path2).is_some());
-        eprintln!("{:#?}", self.ty_idx);
+            .position(|c| poss_paths.iter().find(|path2| c.path == **path2).is_some());
     }
 
     pub fn parse_arg(&mut self, super_path: &Vec<String>, arg: &syn::PatType) {

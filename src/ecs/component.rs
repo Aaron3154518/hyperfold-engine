@@ -10,3 +10,8 @@ pub struct Component {
 pub struct MyComponent {
     pub msg: String,
 }
+
+#[component(Global)]
+pub struct Resource {
+    pub cnt: i32
+}
