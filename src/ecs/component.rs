@@ -13,5 +13,11 @@ pub struct MyComponent {
 
 #[component(Global)]
 pub struct Resource {
-    pub cnt: i32
+    pub cnt: i32,
+}
+
+impl Resource {
+    pub fn new() -> Self {
+        Self { cnt: 0 }
+    }
 }

@@ -10,6 +10,8 @@ crate-type = ["proc-macro"]
 proc-macro = true
 
 [dependencies]
+num-derive = "0.3.3"
+num-traits = "0.2.15"
 proc-macro2 = "1.0.56"
 quote = "1.0.26"
 regex = "1.7.3"
@@ -17,3 +19,8 @@ regex = "1.7.3"
 [dependencies.syn]
 version = "2.0.15"
 features = ["full"]
+
+[dependencies.ecs-macros]
+version = "0.1.0"
+path = "../ecs-macros/"
+package = "ecs-macros"

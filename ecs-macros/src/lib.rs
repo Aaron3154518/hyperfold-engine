@@ -3,29 +3,33 @@ use std::{
     hash::Hash,
 };
 
+pub mod structs;
+
 pub trait ComponentManager<E, T> {
     fn add_component(&mut self, e: E, t: T);
 }
 
 #[macro_export]
 macro_rules! manager {
-    ($cm: ident, $($v: ident, $t: ty),*) => {
+    ($cm: ident, c($($c_v: ident, $c_t: ty),*), g($($g_v: ident, $g_t: ty),*)) => {
         pub struct $cm {
-            $($v:  std::collections::HashMap<crate::ecs::entity::Entity, $t>),*
+            $($g_v: $g_t,)*
+            $($c_v: std::collections::HashMap<crate::ecs::entity::Entity, $c_t>,)*
         }
 
         impl $cm {
             pub fn new() -> Self {
                 Self {
-                    $($v: std::collections::HashMap::new()),*
+                    $($g_v: <$g_t>::new(),)*
+                    $($c_v: std::collections::HashMap::new(),)*
                 }
             }
         }
 
         $(
-            impl ComponentManager<crate::ecs::entity::Entity, $t> for $cm {
-                fn add_component(&mut self, e: crate::ecs::entity::Entity, t: $t) {
-                    self.$v.insert(e, t);
+            impl ComponentManager<crate::ecs::entity::Entity, $c_t> for $cm {
+                fn add_component(&mut self, e: crate::ecs::entity::Entity, t: $c_t) {
+                    self.$c_v.insert(e, t);
                 }
             }
         )*
@@ -60,7 +64,15 @@ macro_rules! test {
 
 #[macro_export]
 macro_rules! systems {
-    ($sm: ident, $cm: ident, $((($($f: path),+), $($vs: ident, $ts: ty),+)),+) => {
+    ($sm: ident, $cm: ident,
+        $(
+            (
+                ($($f: path),+),
+                c($($c_vs: ident, $c_ts: ty),*),
+                g($($g_vs: ident, $g_ts: ty),*)
+            )
+        ),+
+    ) => {
         struct $sm {
             pub component_manager: $cm,
             systems: Vec<Box<dyn Fn(&mut $cm)>>,
@@ -82,10 +94,10 @@ macro_rules! systems {
 
             pub fn add_systems(&mut self) {
             $(
-                let f = |cm: &mut $cm, f: &dyn Fn($($ts),*)| {
-                    for key in intersect_keys(&[$(get_keys(&cm.$vs)),*]).iter() {
-                        if let ($(Some($vs)),*) = ($(cm.$vs.get_mut(key)),*) {
-                            f($($vs),*)
+                let f = |cm: &mut $cm, f: &dyn Fn($($c_ts),*,$($g_ts),*)| {
+                    for key in intersect_keys(&[$(get_keys(&cm.$c_vs)),*]).iter() {
+                        if let ($(Some($c_vs)),*) = ($(cm.$c_vs.get_mut(key)),*) {
+                            f($($c_vs),*,$(&mut cm.$g_vs),*)
                         }
                     }
                 };
@@ -95,24 +107,6 @@ macro_rules! systems {
             )*
             }
         }
-
-        // impl<F> ComponentSystems<F> for $sm {
-        //     default fn add_system(&mut self, f: &F) {}
-        // }
-
-        // $(impl<F: Fn($($ts),*)> ComponentSystems<F> for $sm {
-        //     fn add_system(&mut self, f: &F) {
-        //         self.systems.push(
-        //             Box::new(|cm: &mut $cm| {
-        //                 for key in intersect_keys(&[$(get_keys(&cm.$vs)),*]).iter() {
-        //                     if let ($(Some($vs)),*) = ($(cm.$vs.get_mut(key)),*) {
-        //                         (f)($($vs),*)
-        //                     }
-        //                 }
-        //             })
-        //         );
-        //     }
-        // })*
     };
 }
 

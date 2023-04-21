@@ -28,11 +28,16 @@ version = "0.1.0"
 path = "./ecs-macros/"
 package = "ecs-macros"
 
-[build-dependencies.syn]
-version = "2.0.15"
-features = ["full"]
-
 [build-dependencies]
 bindgen = "0.65.1"
 proc-macro2 = "1.0.56"
 quote = "1.0.26"
+
+[build-dependencies.ecs-macros]
+version = "0.1.0"
+path = "./ecs-macros/"
+package = "ecs-macros"
+
+[build-dependencies.syn]
+version = "2.0.15"
+features = ["full"]

@@ -76,6 +76,9 @@ dependencies = [
 name = "ecs-lib"
 version = "0.1.0"
 dependencies = [
+ "ecs-macros",
+ "num-derive",
+ "num-traits",
  "proc-macro2",
  "quote",
  "regex",
@@ -85,6 +88,10 @@ dependencies = [
 [[package]]
 name = "ecs-macros"
 version = "0.1.0"
+dependencies = [
+ "num-derive",
+ "num-traits",
+]
 
 [[package]]
 name = "either"

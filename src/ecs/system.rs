@@ -8,16 +8,19 @@ pub fn greet(
     comp2: &Comp2,
     comp4: &mut crate::ecs::component::MyComponent,
     comp3: &mut super::test::tmp::Component,
+    res: &mut super::component::Resource,
 ) {
     println!(
-        "#{}: Hi {} from {}. I have a message: \"{}\"",
-        comp3.i, comp2.name, comp2.loc, comp4.msg
-    )
+        "#{}: Hi {} from {}. I have a message: The count is {} and \"{}\"",
+        comp3.i, comp2.name, comp2.loc, res.cnt, comp4.msg
+    );
+    res.cnt += 1;
 }
 
 #[system]
-pub fn super_mut(comp: &mut super::super::MainComponent) {
-    println!("Super Duper Mutable")
+pub fn super_mut(comp: &mut super::super::MainComponent, res: &mut super::component::Resource) {
+    println!("Super Duper Mutable and the count is {}", res.cnt);
+    res.cnt += 1;
 }
 
 #[system]

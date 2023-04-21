@@ -1,5 +1,6 @@
 use bindgen;
 use bindgen::callbacks::{DeriveInfo, ParseCallbacks};
+use ecs_macros::structs::ComponentArgs;
 use quote::ToTokens;
 use std::collections::HashSet;
 use std::env;
@@ -87,8 +88,10 @@ fn main() {
 
     // Get Component data
     let mut comps = Vec::new();
-    for v in vecs.iter() {
-        comps.append(&mut v.get_components());
+    for i in [ComponentArgs::None, ComponentArgs::Global] {
+        for v in vecs.iter() {
+            comps.append(&mut v.get_components(i));
+        }
     }
     let comp_data = comps
         .iter()
@@ -136,12 +139,12 @@ fn end<T>(v: &Vec<T>) -> usize {
 #[derive(Clone)]
 struct Component {
     path: Vec<String>,
-    args: Vec<String>,
+    args: ComponentArgs,
 }
 
 impl Component {
     pub fn to_data(&self) -> String {
-        format!("{}({})", self.path.join("::"), self.args.join(","))
+        format!("{}({})", self.path.join("::"), self.args as u8)
     }
 }
 
@@ -190,8 +193,13 @@ impl Visitor {
         concat(vec!["crate".to_string()], self.path.to_vec())
     }
 
-    pub fn get_components(&self) -> Vec<Component> {
-        let mut v = self.components.to_vec();
+    pub fn get_components(&self, a: ComponentArgs) -> Vec<Component> {
+        let mut v = self
+            .components
+            .iter()
+            .filter(|c| c.args == a)
+            .map(|c| c.to_owned())
+            .collect::<Vec<_>>();
         v.iter_mut()
             .for_each(|c| c.path = concat(self.get_mod_path(), c.path.to_vec()));
         v
@@ -255,14 +263,16 @@ impl syn::visit_mut::VisitMut for Visitor {
         match i.attrs.first() {
             Some(a) => {
                 let mut is_comp = false;
-                let mut args = Vec::new();
+                let mut args = ComponentArgs::None;
                 for t in a.meta.to_token_stream() {
                     match t {
                         proc_macro2::TokenTree::Group(g) => {
                             for tt in g.stream() {
-                                match tt {
-                                    proc_macro2::TokenTree::Ident(i) => args.push(i.to_string()),
-                                    _ => (),
+                                if let proc_macro2::TokenTree::Ident(i) = tt {
+                                    match i.to_string().as_str() {
+                                        "Global" => args = ComponentArgs::Global,
+                                        _ => (),
+                                    }
                                 }
                             }
                         }
