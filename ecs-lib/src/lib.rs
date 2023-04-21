@@ -184,6 +184,20 @@ pub fn system(_attr: TokenStream, item: TokenStream) -> TokenStream {
     quote!(#fun).into()
 }
 
+#[proc_macro_attribute]
+pub fn event(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    let en = parse_macro_input!(item as syn::ItemEnum);
+
+    let mut f = Out::new("out_en.txt", false);
+
+    let code = quote!(
+        #en
+    );
+    f.write(format!("{:#?}\n", code));
+
+    code.into()
+}
+
 #[derive(Debug)]
 struct Input {
     sm: syn::Ident,

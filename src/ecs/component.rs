@@ -1,4 +1,4 @@
-use ecs_lib::component;
+use ecs_lib::{component, event};
 
 #[component]
 pub struct Component {
@@ -20,4 +20,11 @@ impl Resource {
     pub fn new() -> Self {
         Self { cnt: 0 }
     }
+}
+
+#[event]
+pub enum OtherEvent {
+    O1,
+    O2(String, i32),
+    O3,
 }

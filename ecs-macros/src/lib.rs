@@ -56,13 +56,6 @@ pub fn get_keys<'a, K: Eq + Hash + Clone, V>(map: &'a HashMap<K, V>) -> HashSet<
 }
 
 #[macro_export]
-macro_rules! test {
-    (i: ident) => {
-        fn $i() {}
-    };
-}
-
-#[macro_export]
 macro_rules! systems {
     ($sm: ident, $cm: ident,
         $(
@@ -108,6 +101,23 @@ macro_rules! systems {
             }
         }
     };
+}
+
+#[macro_export]
+macro_rules! events {
+    ($ev: ident, $($evs: ident ($ets: path)),*) => {
+        pub enum $ev {
+            $($evs($ets)),*
+        }
+
+        $(
+            impl From<$ets> for $ev {
+                fn from(v: $ets) -> Self {
+                    Self::$evs(v)
+                }
+            }
+        )*
+    }
 }
 
 // struct C;
