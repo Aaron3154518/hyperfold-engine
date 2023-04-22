@@ -5,8 +5,6 @@ extern crate proc_macro;
 use std::cmp::Ordering;
 use std::io::Write;
 use std::path::PathBuf;
-use std::process::CommandArgs;
-use std::str::FromStr;
 
 use ecs_macros::structs::ComponentArgs;
 use num_traits::FromPrimitive;
@@ -15,22 +13,6 @@ use quote::{format_ident, quote, ToTokens};
 use regex::Regex;
 use syn;
 use syn::parse_macro_input;
-
-fn partition<T, U, F>(mut v: Vec<(T, U)>, f: F) -> Vec<(Vec<T>, U)>
-where
-    T: Clone,
-    U: Ord + Eq + Clone,
-    F: FnMut(&(T, U), &(T, U)) -> Ordering,
-{
-    v.sort_by(f);
-    v.group_by(|v1, v2| v1.1 == v2.1)
-        .map(|s| s.to_vec().into_iter().unzip::<_, _, Vec<_>, Vec<_>>())
-        .filter_map(|v| match v.1.into_iter().next() {
-            Some(u) => Some((v.0, u)),
-            None => None,
-        })
-        .collect::<Vec<_>>()
-}
 
 struct Out {
     f: std::fs::File,
@@ -56,35 +38,238 @@ impl Out {
     }
 }
 
-#[derive(Debug)]
-struct ComponentInput {
-    args: Vec<String>,
+// Component parser
+#[derive(Clone, Debug)]
+struct Component {
+    var: syn::Ident,
+    ty: syn::Type,
+    arg_type: ComponentArgs,
 }
 
-impl ComponentInput {
-    pub fn get(self) -> Vec<String> {
-        self.args
+impl Component {
+    pub fn parse(data: String) -> Vec<Self> {
+        // Extract component names, types, and args
+        let r = Regex::new(r"(?P<name>\w+(::\w+)*)\((?P<args>\d+)\)")
+            .expect("Could not construct regex");
+        data.split(" ")
+            .filter_map(|s| {
+                if let Some(c) = r.captures(s) {
+                    if let (Some(name), Some(args)) = (c.name("name"), c.name("args")) {
+                        if let Some(a) = <ComponentArgs as FromPrimitive>::from_u8(
+                            args.as_str()
+                                .parse::<u8>()
+                                .expect("Could not parse component type code"),
+                        ) {
+                            return Some((name.as_str().to_string(), a));
+                        }
+                    }
+                }
+                None
+            })
+            .enumerate()
+            .map(|(i, (s, t))| Component {
+                var: format_ident!("c{}", i),
+                ty: syn::parse_str::<syn::Type>(s.as_str())
+                    .expect(format!("Could not parse Component type: {:#?}", t).as_str()),
+                arg_type: t,
+            })
+            .collect::<Vec<_>>()
     }
 }
 
-impl syn::parse::Parse for ComponentInput {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let mut args = Vec::new();
-        loop {
-            match input.parse::<syn::Ident>() {
-                Ok(i) => args.push(i.to_string()),
-                Err(_) => break,
-            };
-            if let Err(_) = input.parse::<syn::Token![,]>() {
-                break;
+// Services parser
+#[derive(Clone, Debug)]
+struct ServiceArg {
+    name: String,
+    is_mut: bool,
+    comp_idx: usize,
+}
+
+impl ServiceArg {
+    pub fn eq_ty(&self, other: &Self) -> bool {
+        self.is_mut == other.is_mut && self.comp_idx == other.comp_idx
+    }
+}
+
+#[derive(Clone, Debug)]
+struct Service {
+    path: Vec<String>,
+    events: Vec<Vec<String>>,
+    args: Vec<ServiceArg>,
+}
+
+impl Service {
+    pub fn new() -> Self {
+        Self {
+            path: Vec::new(),
+            events: Vec::new(),
+            args: Vec::new(),
+        }
+    }
+
+    pub fn sort_args(&mut self) {
+        // Sort by component index
+        self.args.sort_by(|a1, a2| a1.comp_idx.cmp(&a2.comp_idx))
+    }
+
+    pub fn parse(data: String) -> Vec<Self> {
+        let parser = ServiceParser::new();
+        data.split(" ").map(|s| parser.parse(s)).collect::<Vec<_>>()
+    }
+
+    pub fn eq_sig(&self, other: &Self) -> bool {
+        if self.args.len() != other.args.len() {
+            return false;
+        }
+        for (a1, a2) in self.args.iter().zip(other.args.iter()) {
+            if !a1.eq_ty(a2) {
+                return false;
             }
         }
-        Ok(Self { args })
+        true
+    }
+
+    pub fn cmp(&self, other: &Self) -> Ordering {
+        // Sort length first
+        if self.args.len() < other.args.len() {
+            return Ordering::Less;
+        } else if self.args.len() > other.args.len() {
+            return Ordering::Equal;
+        }
+        // Sort by type indices
+        for (a1, a2) in self.args.iter().zip(other.args.iter()) {
+            if a1.comp_idx < a2.comp_idx {
+                return Ordering::Less;
+            } else if a1.comp_idx > a2.comp_idx {
+                return Ordering::Greater;
+            }
+        }
+        // Sort by mutability
+        for (a1, a2) in self.args.iter().zip(self.args.iter()) {
+            if !a1.is_mut && a2.is_mut {
+                return Ordering::Less;
+            } else if a1.is_mut && !a2.is_mut {
+                return Ordering::Greater;
+            }
+        }
+        Ordering::Equal
+    }
+
+    pub fn get_path(&self) -> syn::Path {
+        syn::Path {
+            leading_colon: None,
+            segments: self
+                .path
+                .iter()
+                .map(|s| syn::PathSegment {
+                    ident: format_ident!("{}", s),
+                    arguments: syn::PathArguments::None,
+                })
+                .collect(),
+        }
+    }
+
+    pub fn get_args(&self, components: &Vec<Component>) -> Vec<Component> {
+        self.args
+            .iter()
+            .map(|a| {
+                let c = components.get(a.comp_idx).expect("Invalid component index");
+                Component {
+                    var: c.var.to_owned(),
+                    ty: syn::parse_str::<syn::Type>(
+                        format!(
+                            "&{}{}",
+                            if a.is_mut { "mut " } else { "" },
+                            c.ty.to_token_stream().to_string()
+                        )
+                        .as_str(),
+                    )
+                    .expect("Could not parse type"),
+                    arg_type: c.arg_type,
+                }
+            })
+            .collect::<Vec<_>>()
+    }
+}
+struct ServiceParser {
+    full_r: Regex,
+    path_r: Regex,
+    events_r: Regex,
+    args_r: Regex,
+}
+
+impl ServiceParser {
+    pub fn new() -> Self {
+        Self {
+            full_r: Regex::new(
+                format!(
+                    "{}{}{}",
+                    r"(?P<path>\w+(::\w+)*)",
+                    r"<(?P<events>\w+(::\w+)*(,\w+(::\w+)*)*)?>",
+                    r"\((?P<args>\w+:\d+:\d+(,\w+:\d+:\d+)*)?\)"
+                )
+                .as_str(),
+            )
+            .expect("Could not parse regex"),
+            path_r: Regex::new(r"\w+").expect("Could not parse regex"),
+            events_r: Regex::new(r"\w+(::\w+)*").expect("Could not parse regex"),
+            args_r: Regex::new(r"(?P<var>\w+):(?P<mut>\d+):(?P<idx>\d+)")
+                .expect("Could not parse regex"),
+        }
+    }
+
+    fn parse(&self, data: &str) -> Service {
+        let mut s = match self.full_r.captures(data) {
+            Some(c) => Service {
+                path: match c.name("path") {
+                    Some(p) => self
+                        .path_r
+                        .find_iter(p.as_str())
+                        .map(|m| m.as_str().to_string())
+                        .collect::<Vec<_>>(),
+                    None => Vec::new(),
+                },
+                events: match c.name("events") {
+                    Some(e) => self
+                        .events_r
+                        .find_iter(e.as_str())
+                        .map(|m| {
+                            self.path_r
+                                .find_iter(m.as_str())
+                                .map(|m| m.as_str().to_string())
+                                .collect::<Vec<_>>()
+                        })
+                        .collect::<Vec<_>>(),
+                    None => Vec::new(),
+                },
+                args: match c.name("args") {
+                    Some(a) => self
+                        .args_r
+                        .captures_iter(a.as_str())
+                        .filter_map(|c| match (c.name("var"), c.name("mut"), c.name("idx")) {
+                            (Some(v), Some(m), Some(i)) => Some(ServiceArg {
+                                name: v.as_str().to_string(),
+                                is_mut: m.as_str() == "1",
+                                comp_idx: i
+                                    .as_str()
+                                    .parse::<usize>()
+                                    .expect("Could not parse component index"),
+                            }),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>(),
+                    None => Vec::new(),
+                },
+            },
+            _ => Service::new(),
+        };
+        s.sort_args();
+        s
     }
 }
 
 #[proc_macro_attribute]
-pub fn component(input: TokenStream, item: TokenStream) -> TokenStream {
+pub fn component(_input: TokenStream, item: TokenStream) -> TokenStream {
     let mut strct = parse_macro_input!(item as syn::ItemStruct);
     strct.vis = syn::parse_quote!(pub);
 
@@ -222,163 +407,30 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
     let mut f = Out::new("out3.txt", false);
 
     // Components
-    let components = std::env::var("COMPONENTS")
-        .expect("COMPONENTS")
-        .split(" ")
-        .map(|s| s.to_string())
-        .collect::<Vec<_>>();
-
-    // Extract component names, types, and args
-    let r =
-        Regex::new(r"(?P<name>\w+(::\w+)*)\((?P<args>\d+)\)").expect("Could not construct regex");
-    let comps = components
-        .iter()
-        .filter_map(|s| {
-            if let Some(c) = r.captures(s) {
-                if let (Some(name), Some(args)) = (c.name("name"), c.name("args")) {
-                    if let Some(a) = <ComponentArgs as FromPrimitive>::from_u8(
-                        args.as_str()
-                            .parse::<u8>()
-                            .expect("Could not parse component type code"),
-                    ) {
-                        return Some((name.as_str().to_string(), a));
-                    }
-                }
-            }
-            None
-        })
-        .enumerate()
-        .map(|(i, (s, t))| {
-            (
-                (
-                    format_ident!("c{}", i),
-                    syn::parse_str::<syn::Type>(s.as_str())
-                        .expect(format!("Could not parse Component type: {:#?}", t).as_str()),
-                ),
-                t,
-            )
-        })
-        .collect::<Vec<_>>();
+    let components = Component::parse(std::env::var("COMPONENTS").expect("COMPONENTS"));
 
     // Services
-    let services = std::env::var("SERVICES")
-        .expect("SERVICES")
-        .split(" ")
-        .map(|s| s.to_string())
+    let mut services = Service::parse(std::env::var("SERVICES").expect("SERVICES"));
+
+    // Partition by signature
+    services.sort_by(|s1, s2| s1.cmp(s2));
+    let s = services
+        .group_by(|v1, v2| v1.eq_sig(v2))
+        .map(|s| s.to_vec())
         .collect::<Vec<_>>();
 
-    // Split function into args
-    let path_r = Regex::new(r"(?P<path>\w+)(::|\()").expect("Could not construct regex");
-    let args_r = Regex::new(r"(?P<arg>\w+):(?P<mut>[01]):(?P<type>\d+)(,|\)$)").expect("msg");
-    let s_args = services
+    // Get service names and signatures for each signature bin
+    let (s_names, s_args) = s
         .iter()
-        .map(|s| {
-            let mut types = (
-                path_r
-                    .captures_iter(s)
-                    .filter_map(|c| match c.name("path") {
-                        Some(p) => Some(format_ident!("{}", p.as_str())),
-                        None => None,
-                    })
-                    .collect::<Vec<_>>(),
-                args_r
-                    .captures_iter(s)
-                    .filter_map(|c| match (c.name("mut"), c.name("type")) {
-                        (Some(m), Some(t)) => Some((
-                            m.as_str().parse::<u8>().expect("Could not parse mut") != 0,
-                            t.as_str().parse::<usize>().expect("Could not parse type"),
-                        )),
-                        _ => None,
-                    })
-                    .collect::<Vec<_>>(),
-            );
-            types.1.sort_by(|arg1, arg2| {
-                arg1.1
-                    .partial_cmp(&arg2.1)
-                    .expect(format!("Could not compare {} and {}", arg1.1, arg2.1).as_str())
-            });
-            types
+        .map(|v| {
+            (
+                v.iter().map(|s| s.get_path()).collect::<Vec<_>>(),
+                v.first().map_or(Vec::new(), |s| s.get_args(&components)),
+            )
         })
-        .collect::<Vec<_>>();
-    // Partition services by signature
-    let (s_names, s_args) = partition(s_args, |args1, args2| {
-        // Sort length first
-        if args1.1.len() < args2.1.len() {
-            Ordering::Less
-        } else if args1.1.len() > args2.1.len() {
-            Ordering::Greater
-        } else {
-            // Sort by type indices
-            for (a1, a2) in args1.1.iter().zip(args2.1.iter()) {
-                if a1.1 < a2.1 {
-                    return Ordering::Less;
-                } else if a1.1 > a2.1 {
-                    return Ordering::Greater;
-                }
-            }
-            // Sort by mutability
-            for (a1, a2) in args1.1.iter().zip(args2.1.iter()) {
-                if !a1.0 && a2.0 {
-                    return Ordering::Less;
-                } else if a1.0 && !a2.0 {
-                    return Ordering::Greater;
-                }
-            }
-            Ordering::Equal
-        }
-    })
-    .into_iter()
-    .unzip::<_, _, Vec<_>, Vec<_>>();
+        .unzip::<_, _, Vec<_>, Vec<_>>();
 
-    // Convert function name path to path
-    let s_names = s_names
-        .into_iter()
-        .map(|names| {
-            names
-                .into_iter()
-                .map(|n| syn::Path {
-                    leading_colon: None,
-                    segments: n
-                        .into_iter()
-                        .map(|i| syn::PathSegment {
-                            ident: i,
-                            arguments: syn::PathArguments::None,
-                        })
-                        .collect(),
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>();
-
-    // Construct argument types from signatures
-    let s_args = s_args
-        .iter()
-        .map(|s| {
-            s.iter()
-                .map(|(m, a)| {
-                    let comp = comps
-                        .get(*a)
-                        .expect(format!("Invalid component index: {}", a).as_str());
-                    (
-                        (
-                            comp.0 .0.to_owned(),
-                            syn::parse_str::<syn::Type>(
-                                format!(
-                                    "&{}{}",
-                                    if *m { "mut " } else { "" },
-                                    comp.0 .1.to_token_stream().to_string()
-                                )
-                                .as_str(),
-                            )
-                            .expect("Could not parse type"),
-                        ),
-                        comp.1,
-                    )
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>();
-
+    // Split args types by component type
     let (mut s_carg_vs, mut s_carg_ts, mut s_garg_vs, mut s_garg_ts) =
         (Vec::new(), Vec::new(), Vec::new(), Vec::new());
     s_args.into_iter().for_each(|v| {
@@ -386,44 +438,43 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
         s_carg_ts.push(Vec::new());
         s_garg_vs.push(Vec::new());
         s_garg_ts.push(Vec::new());
-        partition(v, |c1, c2| c1.1.cmp(&c2.1))
-            .into_iter()
-            .for_each(|(c, a)| {
-                let (vars, types) = c.into_iter().unzip::<_, _, Vec<_>, Vec<_>>();
-                let (vs, ts) = match a {
+        v.group_by(|c1, c2| c1.arg_type == c2.arg_type)
+            .for_each(|v| {
+                let (vs, ts) = match v.first().map_or(ComponentArgs::None, |c| c.arg_type) {
                     ComponentArgs::None => (&mut s_carg_vs, &mut s_carg_ts),
                     ComponentArgs::Global => (&mut s_garg_vs, &mut s_garg_ts),
                 };
                 vs.pop();
-                vs.push(vars);
+                vs.push(v.iter().map(|c| c.var.to_owned()).collect::<Vec<_>>());
                 ts.pop();
-                ts.push(types);
-            })
+                ts.push(v.iter().map(|c| c.ty.to_owned()).collect::<Vec<_>>());
+            });
     });
 
     // Partition components into types
     let (mut c_vars, mut c_types, mut g_vars, mut g_types) =
         (Vec::new(), Vec::new(), Vec::new(), Vec::new());
-    partition(comps, |c1, c2| c1.1.cmp(&c2.1))
-        .into_iter()
-        .for_each(|(c, a)| {
-            let c = c.into_iter().unzip::<_, _, Vec<_>, Vec<_>>();
-            match a {
-                ComponentArgs::None => (c_vars, c_types) = c,
-                ComponentArgs::Global => (g_vars, g_types) = c,
-            }
+    components
+        .group_by(|c1, c2| c1.arg_type == c2.arg_type)
+        .for_each(|v| {
+            let (vs, ts) = match v.first().map_or(ComponentArgs::None, |c| c.arg_type) {
+                ComponentArgs::None => (&mut c_vars, &mut c_types),
+                ComponentArgs::Global => (&mut g_vars, &mut g_types),
+            };
+            vs.pop();
+            vs.extend(v.iter().map(|c| c.var.to_owned()).collect::<Vec<_>>());
+            ts.pop();
+            ts.extend(v.iter().map(|c| c.ty.to_owned()).collect::<Vec<_>>());
         });
-
-    f.write(format!(
-        "{:#?}\n{:#?}\n{:#?}\n{:#?}\n",
-        s_carg_vs, s_carg_ts, s_garg_vs, s_garg_ts
-    ));
 
     let (sm, cm) = parse_macro_input!(input as Input).get();
 
     let code = quote!(
         use ecs_macros::*;
-        manager!(#cm, c(#(#c_vars, #c_types),*), g(#(#g_vars, #g_types),*));
+        manager!(#cm,
+            c(#(#c_vars, #c_types),*),
+            g(#(#g_vars, #g_types),*)
+        );
         systems!(#sm, #cm,
             #(
                 ((#(#s_names),*),

@@ -1,8 +1,9 @@
 use ecs_lib::system;
 
 use super::component::Component as Comp2;
+use super::event::CoreEvent;
 
-#[system]
+#[system(CoreEvent::Render, CoreEvent::Update)]
 pub fn greet(
     comp: &mut super::super::MainComponent,
     comp2: &Comp2,
@@ -29,6 +30,6 @@ pub fn super_immut(comp: &super::super::MainComponent) {
 }
 
 #[system]
-pub fn super_duped(comp: &mut super::super::MainComponent) {
+pub fn super_duped(comp: &super::super::MainComponent) {
     println!("Super Duped")
 }

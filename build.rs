@@ -115,7 +115,7 @@ fn main() {
                     t
                 }
                 None => {
-                    ev_names.insert(k, 1);
+                    ev_names.insert(k, 1 as u8);
                     (e, 0)
                 }
             },
@@ -133,8 +133,8 @@ fn main() {
     let mut serv_data = Vec::new();
     for v in vecs.iter_mut() {
         v.services.retain_mut(|s| {
-            s.map_to_components(&v.uses, &comps);
-            s.is_valid()
+            s.map_to_objects(&v.uses, &comps, &events);
+            s.func.is_valid()
         });
         servs.append(&mut v.services.to_vec());
         serv_data.append(&mut v.services.iter().map(|f| f.to_data()).collect());
@@ -183,7 +183,7 @@ impl Component {
 struct Visitor {
     components: Vec<Component>,
     modules: Vec<String>,
-    services: Vec<Fn>,
+    services: Vec<Service>,
     events: Vec<Vec<String>>,
     path: Vec<String>,
     uses: Vec<(Vec<String>, String)>,
@@ -343,8 +343,9 @@ impl syn::visit_mut::VisitMut for Visitor {
     // Functions
     fn visit_item_fn_mut(&mut self, i: &mut syn::ItemFn) {
         for a in i.attrs.iter() {
-            if let Some(_) = a.meta.path().segments.iter().find(|s| s.ident == "system") {
-                self.services.push(Fn {
+            if let Some(_) = a.path().segments.iter().find(|s| s.ident == "system") {
+                // Parse function path and args
+                let func = Fn {
                     path: concat(self.path.to_vec(), vec![i.sig.ident.to_string()]),
                     args: i
                         .sig
@@ -360,7 +361,32 @@ impl syn::visit_mut::VisitMut for Visitor {
                         })
                         .filter(|arg| !arg.ty.is_empty())
                         .collect(),
-                });
+                };
+                match &a.meta {
+                    syn::Meta::List(l) => {
+                        // Parse events
+                        let mut events = Vec::new();
+                        l.parse_nested_meta(|l| {
+                            events.push(
+                                l.path
+                                    .segments
+                                    .iter()
+                                    .map(|s| s.ident.to_string())
+                                    .collect::<Vec<_>>(),
+                            );
+                            Ok(())
+                        })
+                        .expect("Could not parse nested meta");
+                        self.services.push(Service { func, events });
+                    }
+                    syn::Meta::Path(p) => {
+                        self.services.push(Service {
+                            func,
+                            events: Vec::new(),
+                        });
+                    }
+                    _ => (),
+                }
                 break;
             }
         }
@@ -470,6 +496,67 @@ fn get_possible_use_paths(
         .collect::<Vec<_>>()
 }
 
+// Services
+#[derive(Clone)]
+struct Service {
+    func: Fn,
+    events: Vec<Vec<String>>,
+}
+
+impl Service {
+    pub fn new(func: Fn) -> Self {
+        Self {
+            func,
+            events: Vec::new(),
+        }
+    }
+
+    pub fn to_string(&self) -> String {
+        self.to_data()
+    }
+
+    pub fn map_to_objects(
+        &mut self,
+        use_paths: &Vec<(Vec<String>, String)>,
+        comp_paths: &Vec<Component>,
+        event_paths: &Vec<(Vec<String>, u8)>,
+    ) {
+        self.func.map_to_components(use_paths, comp_paths);
+    }
+
+    pub fn to_data(&self) -> String {
+        format!(
+            "crate::{}<{}>({})",
+            self.func.path.join("::"),
+            self.events
+                .iter()
+                .map(|e| e.join("::"))
+                .collect::<Vec<_>>()
+                .join(","),
+            self.func
+                .args
+                .iter()
+                .filter_map(|a| match a.ty_idx {
+                    Some(i) => Some(format!(
+                        "{}:{}:{}",
+                        a.name,
+                        if a.mutable { "1" } else { "0" },
+                        i
+                    )),
+                    None => None,
+                })
+                .collect::<Vec<_>>()
+                .join(",")
+        )
+    }
+}
+
+impl std::fmt::Display for Service {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.to_string().as_str())
+    }
+}
+
 // Functions
 #[derive(Clone)]
 struct Fn {
@@ -478,18 +565,6 @@ struct Fn {
 }
 
 impl Fn {
-    pub fn to_string(&self) -> String {
-        format!(
-            "crate::{}({})",
-            self.path.join("::"),
-            self.args
-                .iter()
-                .map(|a| a.to_string())
-                .collect::<Vec<_>>()
-                .join(",")
-        )
-    }
-
     pub fn is_valid(&self) -> bool {
         let mut set = HashSet::new();
         for arg in self.args.iter() {
@@ -508,32 +583,6 @@ impl Fn {
         for arg in self.args.iter_mut() {
             arg.map_to_component(use_paths, comp_paths);
         }
-    }
-
-    pub fn to_data(&self) -> String {
-        format!(
-            "crate::{}({})",
-            self.path.join("::"),
-            self.args
-                .iter()
-                .filter_map(|a| match a.ty_idx {
-                    Some(i) => Some(format!(
-                        "{}:{}:{}",
-                        a.name,
-                        if a.mutable { "1" } else { "0" },
-                        i
-                    )),
-                    None => None,
-                })
-                .collect::<Vec<_>>()
-                .join(",")
-        )
-    }
-}
-
-impl std::fmt::Display for Fn {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.to_string().as_str())
     }
 }
 
@@ -603,12 +652,6 @@ impl FnArg {
             }
             _ => (),
         }
-    }
-}
-
-impl std::fmt::Display for FnArg {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.to_string().as_str())
     }
 }
 

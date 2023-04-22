@@ -119,9 +119,3 @@ macro_rules! events {
         )*
     }
 }
-
-// struct C;
-// struct C2;
-
-// manager!(Foo, c0, C, c1, C2);
-// systems!(SFoo, Foo, (c0, &C, c1, &mut C2));
