@@ -105,26 +105,23 @@ fn main() {
         events.append(&mut v.get_events());
     }
     let mut ev_names = HashMap::new();
-    let events = events
-        .into_iter()
-        .map(|e| match e.last().cloned() {
+    events
+        .iter_mut()
+        .for_each(|e| match e.path.last().cloned() {
             Some(k) => match ev_names.get_mut(&k) {
                 Some(c) => {
-                    let t = (e, *c);
+                    e.cnt = *c;
                     *c += 1;
-                    t
                 }
                 None => {
                     ev_names.insert(k, 1 as u8);
-                    (e, 0)
                 }
             },
-            None => (e, 0),
-        })
-        .collect::<Vec<_>>();
+            None => (),
+        });
     let events_data = events
         .iter()
-        .map(|(v, i)| format!("{},{}", v.join("::"), i))
+        .map(|e| format!("{},{}", e.path.join("::"), e.cnt))
         .collect::<Vec<_>>()
         .join(" ");
 
@@ -184,7 +181,7 @@ struct Visitor {
     components: Vec<Component>,
     modules: Vec<String>,
     services: Vec<Service>,
-    events: Vec<Vec<String>>,
+    events: Vec<Event>,
     path: Vec<String>,
     uses: Vec<(Vec<String>, String)>,
     build_use: Vec<String>,
@@ -203,10 +200,6 @@ impl Visitor {
             uses: vec![(vec!["crate".to_string()], String::new())],
             build_use: Vec::new(),
         }
-    }
-
-    pub fn has_data(&self) -> bool {
-        !self.components.is_empty() || !self.services.is_empty()
     }
 
     pub fn to_file(&self) -> String {
@@ -237,10 +230,10 @@ impl Visitor {
         v
     }
 
-    pub fn get_events(&self) -> Vec<Vec<String>> {
+    pub fn get_events(&self) -> Vec<Event> {
         let mut v = self.events.clone();
         v.iter_mut()
-            .for_each(|e| *e = concat(self.get_mod_path(), e.clone()));
+            .for_each(|e| e.path = concat(self.get_mod_path(), e.path.to_vec()));
         v
     }
 
@@ -288,7 +281,7 @@ impl std::fmt::Display for Visitor {
                     .join(","),
                 self.events
                     .iter()
-                    .map(|s| s.join("::"))
+                    .map(|e| e.path.join("::"))
                     .collect::<Vec<_>>()
                     .join(",")
             )
@@ -377,13 +370,14 @@ impl syn::visit_mut::VisitMut for Visitor {
                             Ok(())
                         })
                         .expect("Could not parse nested meta");
-                        self.services.push(Service { func, events });
-                    }
-                    syn::Meta::Path(p) => {
                         self.services.push(Service {
                             func,
-                            events: Vec::new(),
+                            events,
+                            event_idxs: Vec::new(),
                         });
+                    }
+                    syn::Meta::Path(_) => {
+                        self.services.push(Service::new(func));
                     }
                     _ => (),
                 }
@@ -397,24 +391,15 @@ impl syn::visit_mut::VisitMut for Visitor {
     fn visit_item_enum_mut(&mut self, i: &mut syn::ItemEnum) {
         for a in i.attrs.iter() {
             if let Some(_) = a.meta.path().segments.iter().find(|s| s.ident == "event") {
-                self.events.push(vec![i.ident.to_string()]);
-                // self.services.push(Fn {
-                //     path: concat(self.path.to_vec(), vec![i.sig.ident.to_string()]),
-                //     args: i
-                //         .sig
-                //         .inputs
-                //         .iter()
-                //         .map(|arg| match arg {
-                //             syn::FnArg::Typed(t) => {
-                //                 let mut fn_arg = FnArg::new();
-                //                 fn_arg.parse_arg(&self.get_mod_path(), &t);
-                //                 fn_arg
-                //             }
-                //             _ => FnArg::new(),
-                //         })
-                //         .filter(|arg| !arg.ty.is_empty())
-                //         .collect(),
-                // });
+                self.events.push(Event {
+                    path: vec![i.ident.to_string()],
+                    variants: i
+                        .variants
+                        .iter()
+                        .map(|v| v.ident.to_string())
+                        .collect::<Vec<_>>(),
+                    cnt: 0,
+                });
                 break;
             }
         }
@@ -496,11 +481,20 @@ fn get_possible_use_paths(
         .collect::<Vec<_>>()
 }
 
+// Event
+#[derive(Clone)]
+struct Event {
+    path: Vec<String>,
+    variants: Vec<String>,
+    cnt: u8,
+}
+
 // Services
 #[derive(Clone)]
 struct Service {
     func: Fn,
     events: Vec<Vec<String>>,
+    event_idxs: Vec<Option<usize>>,
 }
 
 impl Service {
@@ -508,6 +502,7 @@ impl Service {
         Self {
             func,
             events: Vec::new(),
+            event_idxs: Vec::new(),
         }
     }
 
@@ -519,32 +514,46 @@ impl Service {
         &mut self,
         use_paths: &Vec<(Vec<String>, String)>,
         comp_paths: &Vec<Component>,
-        event_paths: &Vec<(Vec<String>, u8)>,
+        event_paths: &Vec<Event>,
     ) {
         self.func.map_to_components(use_paths, comp_paths);
+        self.event_idxs = self
+            .events
+            .iter()
+            .map(|e| {
+                let poss_paths = get_possible_use_paths(e, use_paths);
+                event_paths.iter().position(|e| {
+                    poss_paths
+                        .iter()
+                        .find(|path2| e.path == path2[..end(path2)])
+                        .is_some()
+                })
+            })
+            .collect();
     }
 
     pub fn to_data(&self) -> String {
         format!(
             "crate::{}<{}>({})",
             self.func.path.join("::"),
-            self.events
+            self.event_idxs
                 .iter()
-                .map(|e| e.join("::"))
+                .zip(self.events.iter())
+                .filter_map(|(i, v)| match (*i, v.last()) {
+                    (Some(i), Some(v)) => Some(format!("{}::{}", i, v)),
+                    _ => None,
+                })
                 .collect::<Vec<_>>()
                 .join(","),
             self.func
                 .args
                 .iter()
-                .filter_map(|a| match a.ty_idx {
-                    Some(i) => Some(format!(
-                        "{}:{}:{}",
-                        a.name,
-                        if a.mutable { "1" } else { "0" },
-                        i
-                    )),
-                    None => None,
-                })
+                .filter_map(|a| a.ty_idx.map(|i| format!(
+                    "{}:{}:{}",
+                    a.name,
+                    if a.mutable { "1" } else { "0" },
+                    i
+                )))
                 .collect::<Vec<_>>()
                 .join(",")
         )

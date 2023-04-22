@@ -61,7 +61,7 @@ impl ServiceArg {
 #[derive(Clone, Debug)]
 pub struct Service {
     pub path: Vec<String>,
-    pub events: Vec<Vec<String>>,
+    pub events: Vec<(usize, String)>,
     pub args: Vec<ServiceArg>,
 }
 
@@ -158,6 +158,7 @@ impl Service {
             .collect::<Vec<_>>()
     }
 }
+
 struct ServiceParser {
     full_r: Regex,
     path_r: Regex,
@@ -179,7 +180,7 @@ impl ServiceParser {
             )
             .expect("Could not parse regex"),
             path_r: Regex::new(r"\w+").expect("Could not parse regex"),
-            events_r: Regex::new(r"\w+(::\w+)*").expect("Could not parse regex"),
+            events_r: Regex::new(r"(?P<idx>\d+)::(?P<var>\w+)").expect("Could not parse regex"),
             args_r: Regex::new(r"(?P<var>\w+):(?P<mut>\d+):(?P<idx>\d+)")
                 .expect("Could not parse regex"),
         }
@@ -199,12 +200,15 @@ impl ServiceParser {
                 events: match c.name("events") {
                     Some(e) => self
                         .events_r
-                        .find_iter(e.as_str())
-                        .map(|m| {
-                            self.path_r
-                                .find_iter(m.as_str())
-                                .map(|m| m.as_str().to_string())
-                                .collect::<Vec<_>>()
+                        .captures_iter(e.as_str())
+                        .filter_map(|c| match (c.name("idx"), c.name("var")) {
+                            (Some(i), Some(v)) => Some((
+                                i.as_str()
+                                    .parse::<usize>()
+                                    .expect("Couldn't pares event index"),
+                                v.as_str().to_string(),
+                            )),
+                            _ => None,
                         })
                         .collect::<Vec<_>>(),
                     None => Vec::new(),
