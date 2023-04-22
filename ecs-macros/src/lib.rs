@@ -57,10 +57,10 @@ pub fn get_keys<'a, K: Eq + Hash + Clone, V>(map: &'a HashMap<K, V>) -> HashSet<
 
 #[macro_export]
 macro_rules! systems {
-    ($sm: ident, $cm: ident,
+    ($sm: ident, $cm: ident, $em: ident,
         $(
             (
-                ($($f: path),+),
+                ($($f: path [$($e_v: path),*]),+),
                 c($($c_vs: ident, $c_ts: ty),*),
                 g($($g_vs: ident, $g_ts: ty),*)
             )
@@ -68,20 +68,30 @@ macro_rules! systems {
     ) => {
         struct $sm {
             pub component_manager: $cm,
-            systems: Vec<Box<dyn Fn(&mut $cm)>>,
+            systems: std::collections::HashMap<$em, Vec<Box<dyn Fn(&mut $cm)>>>,
         }
 
         impl $sm {
             pub fn new() -> Self {
                 Self {
                     component_manager: $cm::new(),
-                    systems: Vec::new()
+                    systems: std::collections::HashMap::new()
                 }
             }
 
             pub fn tick(&mut self) {
-                for system in self.systems.iter() {
-                    (system)(&mut self.component_manager);
+                for (e, sys_vec) in self.systems.iter() {
+                    for system in sys_vec.iter() {
+                        (system)(&mut self.component_manager);
+                    }
+                }
+            }
+
+            fn add_system(&mut self, e: $em, f: Box<dyn Fn(&mut $cm)>) {
+                if let Some(v) = self.systems.get_mut(&e) {
+                    v.push(f);
+                } else {
+                    self.systems.insert(e, vec![f]);
                 }
             }
 
@@ -95,7 +105,10 @@ macro_rules! systems {
                     }
                 };
                 $(
-                    self.systems.push(Box::new(move |cm: &mut $cm| f(cm, &$f)));
+                    $(
+                        self.add_system(EFoo::from($e_v), Box::new(move |cm: &mut $cm| f(cm, &$f)));
+                    )*
+                    // self.systems.push(Box::new(move |cm: &mut $cm| f(cm, &$f)));
                 )*
             )*
             }
@@ -106,6 +119,7 @@ macro_rules! systems {
 #[macro_export]
 macro_rules! events {
     ($ev: ident, $($evs: ident ($ets: path)),*) => {
+        #[derive(PartialEq, Eq, Hash)]
         pub enum $ev {
             $($evs($ets)),*
         }

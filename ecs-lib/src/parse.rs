@@ -157,6 +157,33 @@ impl Service {
             })
             .collect::<Vec<_>>()
     }
+
+    pub fn get_events(&self, events: &Vec<Event>) -> Vec<syn::Path> {
+        self.events
+            .iter()
+            .filter_map(|(i, v)| {
+                if let Some(e) = events.get(*i) {
+                    let mut path = e
+                        .path
+                        .iter()
+                        .map(|p| syn::PathSegment {
+                            ident: format_ident!("{}", p),
+                            arguments: syn::PathArguments::None,
+                        })
+                        .collect::<syn::punctuated::Punctuated<_, _>>();
+                    path.push(syn::PathSegment {
+                        ident: format_ident!("{}", v),
+                        arguments: syn::PathArguments::None,
+                    });
+                    return Some(syn::Path {
+                        leading_colon: None,
+                        segments: path,
+                    });
+                }
+                None
+            })
+            .collect()
+    }
 }
 
 struct ServiceParser {
@@ -236,6 +263,53 @@ impl ServiceParser {
         };
         s.sort_args();
         s
+    }
+}
+
+// Event parser
+#[derive(Clone, Debug)]
+pub struct Event {
+    path: Vec<String>,
+    cnt: u8,
+}
+
+impl Event {
+    pub fn parse(data: String) -> Vec<Self> {
+        let r = Regex::new(r"(?P<path>\w+(::\w+)*),(?P<cnt>\d+)").expect("Could not parse regex");
+        data.split(" ")
+            .filter_map(|s| {
+                if let Some(c) = r.captures(s) {
+                    if let (Some(p), Some(c)) = (c.name("path"), c.name("cnt")) {
+                        return Some(Event {
+                            path: p.as_str().split("::").map(|s| s.to_string()).collect(),
+                            cnt: c
+                                .as_str()
+                                .parse::<u8>()
+                                .expect("Could not parse event count"),
+                        });
+                    }
+                }
+                None
+            })
+            .collect()
+    }
+
+    pub fn get_path(&self) -> syn::Path {
+        syn::Path {
+            leading_colon: None,
+            segments: self
+                .path
+                .iter()
+                .map(|p| syn::PathSegment {
+                    ident: format_ident!("{}", p.as_str()),
+                    arguments: syn::PathArguments::None,
+                })
+                .collect(),
+        }
+    }
+
+    pub fn get_type(&self) -> syn::Ident {
+        format_ident!("{}{}", self.path.last().map_or("", |s| s), self.cnt)
     }
 }
 

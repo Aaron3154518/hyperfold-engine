@@ -1,7 +1,7 @@
 use ecs_lib::event;
-use ecs_macros::events;
 
 #[event]
+#[derive(Eq)]
 enum CoreEvent {
     Update,
     Events,
@@ -9,6 +9,7 @@ enum CoreEvent {
 }
 
 #[event]
+#[derive(PartialEq, Eq)]
 enum MyEvent {
     E1,
     E2(i32, i32),

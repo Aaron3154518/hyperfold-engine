@@ -2,8 +2,8 @@
 #![feature(slice_group_by)]
 
 extern crate proc_macro;
-use std::io::Write;
 use std::path::PathBuf;
+use std::{collections::HashSet, io::Write};
 
 use ecs_macros::structs::ComponentArgs;
 use proc_macro::TokenStream;
@@ -13,7 +13,7 @@ use syn;
 use syn::parse_macro_input;
 
 mod parse;
-use parse::{Component, Input, Service};
+use parse::{Component, Event, Input, Service};
 
 struct Out {
     f: std::fs::File,
@@ -140,9 +140,40 @@ pub fn event(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut out = Out::new("out_en.txt", true);
 
     let mut en = parse_macro_input!(item as syn::ItemEnum);
+
+    let mut derives = HashSet::new();
+    for a in en.attrs.iter() {
+        out.write(format!("{:#?}\n", a));
+        match &a.meta {
+            syn::Meta::List(l) => {
+                if let Some(_) = l.path.segments.iter().find(|s| s.ident == "derive") {
+                    l.parse_nested_meta(|l| {
+                        for s in l.path.segments.iter() {
+                            derives.insert(s.ident.to_string());
+                        }
+                        Ok(())
+                    })
+                    .expect("Could not parse nested meta");
+                }
+            }
+            _ => (),
+        }
+    }
+    let derives = ["PartialEq", "Eq", "Hash"]
+        .iter()
+        .filter_map(|s| {
+            if derives.contains(*s) {
+                None
+            } else {
+                Some(format_ident!("{}", s))
+            }
+        })
+        .collect::<Vec<_>>();
+
     en.vis = syn::parse_quote!(pub);
 
     let code = quote!(
+        #[derive(#(#derives),*)]
         #en
     );
     out.write(format!("{:#?}\n", code.to_string()));
@@ -162,13 +193,13 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
 
     // Partition by signature
     services.sort_by(|s1, s2| s1.cmp(s2));
-    let s = services
+    let services = services
         .group_by(|v1, v2| v1.eq_sig(v2))
         .map(|s| s.to_vec())
         .collect::<Vec<_>>();
 
     // Get service names and signatures for each signature bin
-    let (s_names, s_args) = s
+    let (s_names, s_args) = services
         .iter()
         .map(|v| {
             (
@@ -215,6 +246,15 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
             ts.extend(v.iter().map(|c| c.ty.to_owned()).collect::<Vec<_>>());
         });
 
+    // Events
+    let events = Event::parse(std::env::var("EVENTS").expect("EVENTS"));
+
+    // Parse variant paths
+    let s_evars = services
+        .iter()
+        .map(|v| v.iter().map(|s| s.get_events(&events)).collect::<Vec<_>>())
+        .collect::<Vec<_>>();
+
     let (sm, cm) = parse_macro_input!(input as Input).get();
 
     let code = quote!(
@@ -223,9 +263,9 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
             c(#(#c_vars, #c_types),*),
             g(#(#g_vars, #g_types),*)
         );
-        systems!(#sm, #cm,
+        systems!(#sm, #cm, EFoo,
             #(
-                ((#(#s_names),*),
+                ((#(#s_names[#(#s_evars),*]),*),
                 c(#(#s_carg_vs, #s_carg_ts),*),
                 g(#(#s_garg_vs, #s_garg_ts),*))
             ),*
@@ -233,9 +273,6 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
     );
 
     // Open out.txt to print stuff
-    // f.write(format!("Args:\n{:#?}\n", s_arg_ts));
-    // f.write(format!("Components:\n{:#?}\n", components));
-    // f.write(format!("Services:\n{:#?}\n", services));
     f.write(format!("Code:\n{}\n", code));
 
     code.into()
@@ -246,44 +283,12 @@ pub fn event_manager(input: TokenStream) -> TokenStream {
     let mut out = Out::new("out_em.txt", false);
 
     // Events
-    let events = std::env::var("EVENTS")
-        .expect("EVENTS")
-        .split(" ")
-        .map(|s| s.to_string())
-        .collect::<Vec<_>>();
+    let events = Event::parse(std::env::var("EVENTS").expect("EVENTS"));
 
-    // Parse out event paths and alias
-    let path_r = Regex::new(r"(?P<path>\w+)(::|,)").expect("Could not parse regex");
-    let cnt_r = Regex::new(r"(?P<name>\w+),(?P<cnt>\d+)$").expect("Could not parse regex");
+    // Parse out event paths and aliases
     let (ev_ts, ev_vs) = events
         .iter()
-        .filter_map(|e| match cnt_r.captures(e) {
-            Some(c) => match (c.name("name"), c.name("cnt")) {
-                (Some(n), Some(c)) => Some((
-                    syn::Path {
-                        leading_colon: None,
-                        segments: path_r
-                            .captures_iter(e)
-                            .filter_map(|p| {
-                                p.name("path")
-                                    .and_then(|p| Some(format_ident!("{}", p.as_str())))
-                            })
-                            .map(|i| syn::PathSegment {
-                                ident: i,
-                                arguments: syn::PathArguments::None,
-                            })
-                            .collect(),
-                    },
-                    format_ident!(
-                        "{}{}",
-                        n.as_str(),
-                        c.as_str().parse::<u8>().expect("Could not parse count")
-                    ),
-                )),
-                _ => None,
-            },
-            None => None,
-        })
+        .map(|e| (e.get_path(), e.get_type()))
         .unzip::<_, _, Vec<_>, Vec<_>>();
 
     let em = parse_macro_input!(input as syn::Ident);
