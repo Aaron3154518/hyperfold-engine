@@ -2,7 +2,7 @@ use bindgen;
 use bindgen::callbacks::{DeriveInfo, ParseCallbacks};
 use ecs_macros::structs::ComponentArgs;
 use quote::ToTokens;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs::File;
 use std::io::Read;
@@ -99,6 +99,35 @@ fn main() {
         .collect::<Vec<_>>()
         .join(" ");
 
+    // Get Event data
+    let mut events = Vec::new();
+    for v in vecs.iter() {
+        events.append(&mut v.get_events());
+    }
+    let mut ev_names = HashMap::new();
+    let events = events
+        .into_iter()
+        .map(|e| match e.last().cloned() {
+            Some(k) => match ev_names.get_mut(&k) {
+                Some(c) => {
+                    let t = (e, *c);
+                    *c += 1;
+                    t
+                }
+                None => {
+                    ev_names.insert(k, 1);
+                    (e, 0)
+                }
+            },
+            None => (e, 0),
+        })
+        .collect::<Vec<_>>();
+    let events_data = events
+        .iter()
+        .map(|(v, i)| format!("{},{}", v.join("::"), i))
+        .collect::<Vec<_>>()
+        .join(" ");
+
     // Get Service data
     let mut servs = Vec::new();
     let mut serv_data = Vec::new();
@@ -118,8 +147,10 @@ fn main() {
     }
     eprintln!("\n{}", comp_data);
     eprintln!("{}", serv_data);
+    eprintln!("{}", events_data);
     println!("cargo:rustc-env=COMPONENTS={}", comp_data);
     println!("cargo:rustc-env=SERVICES={}", serv_data);
+    println!("cargo:rustc-env=EVENTS={}", events_data);
 }
 
 fn concat<T: Clone>(mut v1: Vec<T>, mut v2: Vec<T>) -> Vec<T> {
@@ -153,8 +184,8 @@ struct Visitor {
     components: Vec<Component>,
     modules: Vec<String>,
     services: Vec<Fn>,
+    events: Vec<Vec<String>>,
     path: Vec<String>,
-    // Vec<Use Path, Alias>
     uses: Vec<(Vec<String>, String)>,
     build_use: Vec<String>,
 }
@@ -165,6 +196,7 @@ impl Visitor {
             components: Vec::new(),
             modules: Vec::new(),
             services: Vec::new(),
+            events: Vec::new(),
             // This is empty for main.rs
             path: Vec::new(),
             // Add use paths from using "crate::"
@@ -205,6 +237,13 @@ impl Visitor {
         v
     }
 
+    pub fn get_events(&self) -> Vec<Vec<String>> {
+        let mut v = self.events.clone();
+        v.iter_mut()
+            .for_each(|e| *e = concat(self.get_mod_path(), e.clone()));
+        v
+    }
+
     pub fn to_mod(&self) -> String {
         format!("{}", self.get_mod_path().join("::"))
     }
@@ -226,7 +265,7 @@ impl std::fmt::Display for Visitor {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(
             format!(
-                "File: {}\nUses: {}\nComponents: {}\nServices: {}",
+                "File: {}\nUses: {}\nComponents: {}\nServices: {}\nEvents: {}",
                 self.to_file(),
                 self.uses
                     .iter()
@@ -245,6 +284,11 @@ impl std::fmt::Display for Visitor {
                 self.services
                     .iter()
                     .map(|s| s.to_string())
+                    .collect::<Vec<_>>()
+                    .join(","),
+                self.events
+                    .iter()
+                    .map(|s| s.join("::"))
                     .collect::<Vec<_>>()
                     .join(",")
             )
@@ -321,6 +365,34 @@ impl syn::visit_mut::VisitMut for Visitor {
             }
         }
         syn::visit_mut::visit_item_fn_mut(self, i);
+    }
+
+    // Enums
+    fn visit_item_enum_mut(&mut self, i: &mut syn::ItemEnum) {
+        for a in i.attrs.iter() {
+            if let Some(_) = a.meta.path().segments.iter().find(|s| s.ident == "event") {
+                self.events.push(vec![i.ident.to_string()]);
+                // self.services.push(Fn {
+                //     path: concat(self.path.to_vec(), vec![i.sig.ident.to_string()]),
+                //     args: i
+                //         .sig
+                //         .inputs
+                //         .iter()
+                //         .map(|arg| match arg {
+                //             syn::FnArg::Typed(t) => {
+                //                 let mut fn_arg = FnArg::new();
+                //                 fn_arg.parse_arg(&self.get_mod_path(), &t);
+                //                 fn_arg
+                //             }
+                //             _ => FnArg::new(),
+                //         })
+                //         .filter(|arg| !arg.ty.is_empty())
+                //         .collect(),
+                // });
+                break;
+            }
+        }
+        syn::visit_mut::visit_item_enum_mut(self, i);
     }
 
     // Use Statements

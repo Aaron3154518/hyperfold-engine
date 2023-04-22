@@ -22,12 +22,13 @@ mod ecs;
 const FPS: u32 = 60;
 const FRAME_TIME: u32 = 1000 / FPS;
 
-use ecs_lib::{component, component_manager};
+use ecs_lib::{component, component_manager, event_manager};
 
 #[component]
 pub struct MainComponent {}
 
 component_manager!(SFoo, Foo);
+event_manager!(EFoo);
 
 fn main() {
     let mut f = SFoo::new();

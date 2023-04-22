@@ -85,11 +85,6 @@ impl syn::parse::Parse for ComponentInput {
 
 #[proc_macro_attribute]
 pub fn component(input: TokenStream, item: TokenStream) -> TokenStream {
-    let mut out = Out::new("out.txt", true);
-
-    let args = parse_macro_input!(input as ComponentInput).get();
-    out.write(format!("{:#?}\n", args));
-
     let mut strct = parse_macro_input!(item as syn::ItemStruct);
     strct.vis = syn::parse_quote!(pub);
 
@@ -186,14 +181,15 @@ pub fn system(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
 #[proc_macro_attribute]
 pub fn event(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    let en = parse_macro_input!(item as syn::ItemEnum);
+    let mut out = Out::new("out_en.txt", true);
 
-    let mut f = Out::new("out_en.txt", false);
+    let mut en = parse_macro_input!(item as syn::ItemEnum);
+    en.vis = syn::parse_quote!(pub);
 
     let code = quote!(
         #en
     );
-    f.write(format!("{:#?}\n", code));
+    out.write(format!("{:#?}\n", code.to_string()));
 
     code.into()
 }
@@ -227,7 +223,7 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
 
     // Components
     let components = std::env::var("COMPONENTS")
-        .unwrap_or_else(|_| "COMPONENTS".to_string())
+        .expect("COMPONENTS")
         .split(" ")
         .map(|s| s.to_string())
         .collect::<Vec<_>>();
@@ -266,7 +262,7 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
 
     // Services
     let services = std::env::var("SERVICES")
-        .unwrap_or_else(|_| "SERVICES".to_string())
+        .expect("SERVICES")
         .split(" ")
         .map(|s| s.to_string())
         .collect::<Vec<_>>();
@@ -442,6 +438,62 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
     // f.write(format!("Components:\n{:#?}\n", components));
     // f.write(format!("Services:\n{:#?}\n", services));
     f.write(format!("Code:\n{}\n", code));
+
+    code.into()
+}
+
+#[proc_macro]
+pub fn event_manager(input: TokenStream) -> TokenStream {
+    let mut out = Out::new("out_em.txt", false);
+
+    // Events
+    let events = std::env::var("EVENTS")
+        .expect("EVENTS")
+        .split(" ")
+        .map(|s| s.to_string())
+        .collect::<Vec<_>>();
+
+    // Parse out event paths and alias
+    let path_r = Regex::new(r"(?P<path>\w+)(::|,)").expect("Could not parse regex");
+    let cnt_r = Regex::new(r"(?P<name>\w+),(?P<cnt>\d+)$").expect("Could not parse regex");
+    let (ev_ts, ev_vs) = events
+        .iter()
+        .filter_map(|e| match cnt_r.captures(e) {
+            Some(c) => match (c.name("name"), c.name("cnt")) {
+                (Some(n), Some(c)) => Some((
+                    syn::Path {
+                        leading_colon: None,
+                        segments: path_r
+                            .captures_iter(e)
+                            .filter_map(|p| {
+                                p.name("path")
+                                    .and_then(|p| Some(format_ident!("{}", p.as_str())))
+                            })
+                            .map(|i| syn::PathSegment {
+                                ident: i,
+                                arguments: syn::PathArguments::None,
+                            })
+                            .collect(),
+                    },
+                    format_ident!(
+                        "{}{}",
+                        n.as_str(),
+                        c.as_str().parse::<u8>().expect("Could not parse count")
+                    ),
+                )),
+                _ => None,
+            },
+            None => None,
+        })
+        .unzip::<_, _, Vec<_>, Vec<_>>();
+
+    let em = parse_macro_input!(input as syn::Ident);
+
+    let code = quote!(
+        events!(#em, #(#ev_vs(#ev_ts)),*);
+    );
+
+    out.write(format!("{}", code.to_string()));
 
     code.into()
 }
