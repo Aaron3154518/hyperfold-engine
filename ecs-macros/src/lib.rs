@@ -56,6 +56,29 @@ pub fn get_keys<'a, K: Eq + Hash + Clone, V>(map: &'a HashMap<K, V>) -> HashSet<
 }
 
 #[macro_export]
+macro_rules! service_function {
+    // Does not take components
+    ($cm: ident, c(), g($($g_vs: ident, $g_ts: ty),*)) => {
+        |cm: &mut $cm, f: &dyn Fn($($g_ts,)*)| {
+            f($(&mut cm.$g_vs,)*)
+        }
+    };
+
+    ($cm: ident,
+        c($($c_vs: ident, $c_ts: ty),*),
+        g($($g_vs: ident, $g_ts: ty),*)
+    ) => {
+        |cm: &mut $cm, f: &dyn Fn($($c_ts,)*$($g_ts,)*)| {
+            for key in intersect_keys(&[$(get_keys(&cm.$c_vs)),*]).iter() {
+                if let ($(Some($c_vs)),*) = ($(cm.$c_vs.get_mut(key)),*) {
+                    f($($c_vs,)*$(&mut cm.$g_vs,)*)
+                }
+            }
+        }
+    };
+}
+
+#[macro_export]
 macro_rules! systems {
     ($sm: ident, $cm: ident, $em: ident, $c_eb: ident, $c_ce: ident,
         $(
@@ -103,13 +126,7 @@ macro_rules! systems {
 
             pub fn add_systems(&mut self) {
             $(
-                let f = |cm: &mut $cm, f: &dyn Fn($($c_ts),*,$($g_ts),*)| {
-                    for key in intersect_keys(&[$(get_keys(&cm.$c_vs)),*]).iter() {
-                        if let ($(Some($c_vs)),*) = ($(cm.$c_vs.get_mut(key)),*) {
-                            f($($c_vs),*,$(&mut cm.$g_vs),*)
-                        }
-                    }
-                };
+                let f = service_function!($cm, c($($c_vs, $c_ts),*), g($($g_vs, $g_ts),*));
                 $(
                     $(
                         self.add_system::<$e_v>($e_i, Box::new(move |cm: &mut $cm| f(cm, &$f)));
@@ -164,7 +181,7 @@ macro_rules! events {
 macro_rules! match_event {
     ($ev: ident, $e: ident :: $v: ident $(($($vs: ident),+))?, $body: block) => {
         if let Some(e) = $ev.get().to() {
-            if let $e::$v($($vs),*) = e {
+            if let $e::$v$(($($vs),*))? = e {
                 $body
             }
         }

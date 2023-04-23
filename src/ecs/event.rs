@@ -68,6 +68,7 @@ pub struct EventBus {
     bus: Vec<crate::EFoo>,
 }
 
+// TODO: vector of stacks (process in order, children then parent)
 impl EventBus {
     pub fn new() -> Self {
         Self { bus: Vec::new() }
@@ -82,7 +83,7 @@ impl EventBus {
 
     pub fn reset(&mut self) {
         self.bus = Vec::new();
-        for e in [CoreEvent::Update, CoreEvent::Events, CoreEvent::Render] {
+        for e in [CoreEvent::Render, CoreEvent::Events, CoreEvent::Update] {
             self.push(e);
         }
     }

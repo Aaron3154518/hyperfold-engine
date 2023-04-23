@@ -4,7 +4,12 @@ use ecs_macros::{match_event, To};
 use super::component::Component as Comp2;
 use super::event::{CoreEvent, MyEvent};
 
-#[system(MyEvent::E2)]
+#[system(CoreEvent::Events)]
+pub fn empty(res: &super::component::Resource) {
+    println!("I am empty! {}", res.cnt);
+}
+
+#[system(MyEvent::E1, MyEvent::E2)]
 pub fn greet(
     comp: &mut super::super::MainComponent,
     comp2: &Comp2,
@@ -14,8 +19,9 @@ pub fn greet(
     ev: &super::event::CurrEvent,
 ) {
     match_event!(ev, MyEvent::E1, {
-        res.cnt += 1;
+        res.cnt += 10;
     });
+    match_event!(ev, MyEvent::E2(i1, i2), { res.cnt += i1 * i2 });
     println!(
         "#{}: Hi {} from {}. I have a message: The count is {} and \"{}\"",
         comp3.i, comp2.name, comp2.loc, res.cnt, comp4.msg
@@ -30,7 +36,8 @@ pub fn super_mut(
 ) {
     res.cnt += 1;
     println!("Super Duper Mutable and the count is {}", res.cnt);
-    em.push(MyEvent::E2(4, 17));
+    em.push(MyEvent::E2(2, 29));
+    em.push(MyEvent::E1);
 }
 
 #[system(CoreEvent::Render)]
