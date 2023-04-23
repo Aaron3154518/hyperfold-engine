@@ -1,7 +1,23 @@
-use ecs_lib::event;
+use std::{any::TypeId, hash::Hash};
+
+use ecs_lib::{component, event};
+
+#[derive(PartialEq, Eq, Hash)]
+pub struct TypeIdx {
+    id: TypeId,
+    vi: usize,
+}
+
+impl TypeIdx {
+    pub const fn new<T: 'static>(i: usize) -> Self {
+        Self {
+            id: TypeId::of::<T>(),
+            vi: i,
+        }
+    }
+}
 
 #[event]
-#[derive(Eq)]
 enum CoreEvent {
     Update,
     Events,
@@ -9,7 +25,6 @@ enum CoreEvent {
 }
 
 #[event]
-#[derive(PartialEq, Eq)]
 enum MyEvent {
     E1,
     E2(i32, i32),
@@ -17,8 +32,37 @@ enum MyEvent {
 }
 
 #[event]
-pub enum OtherEvent {
+enum OtherEvent {
     O1,
     O2(String, i32),
     O3,
+}
+
+#[component(Global)]
+pub struct EventBus {
+    bus: Vec<crate::EFoo>,
+}
+
+impl EventBus {
+    pub fn new() -> Self {
+        Self { bus: Vec::new() }
+    }
+
+    pub fn push<T>(&mut self, t: T)
+    where
+        crate::EFoo: From<T>,
+    {
+        self.bus.push(crate::EFoo::from(t))
+    }
+
+    pub fn reset(&mut self) {
+        self.bus = Vec::new();
+        for e in [CoreEvent::Update, CoreEvent::Events, CoreEvent::Render] {
+            self.push(e);
+        }
+    }
+
+    pub fn pop(&mut self) -> Option<crate::EFoo> {
+        self.bus.pop()
+    }
 }

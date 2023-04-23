@@ -494,7 +494,7 @@ struct Event {
 struct Service {
     func: Fn,
     events: Vec<Vec<String>>,
-    event_idxs: Vec<Option<usize>>,
+    event_idxs: Vec<Option<(usize, usize)>>,
 }
 
 impl Service {
@@ -522,11 +522,19 @@ impl Service {
             .iter()
             .map(|e| {
                 let poss_paths = get_possible_use_paths(e, use_paths);
-                event_paths.iter().position(|e| {
-                    poss_paths
-                        .iter()
-                        .find(|path2| e.path == path2[..end(path2)])
-                        .is_some()
+                event_paths.iter().enumerate().find_map(|(i, e)| {
+                    // Find matching enum
+                    if let Some(path) = poss_paths.iter().find(|path| e.path == path[..end(path)]) {
+                        // Find matching variant
+                        if let Some(p) = e
+                            .variants
+                            .iter()
+                            .position(|v| path.last().is_some_and(|p| p == v))
+                        {
+                            return Some((i, p));
+                        }
+                    }
+                    None
                 })
             })
             .collect();
@@ -538,11 +546,7 @@ impl Service {
             self.func.path.join("::"),
             self.event_idxs
                 .iter()
-                .zip(self.events.iter())
-                .filter_map(|(i, v)| match (*i, v.last()) {
-                    (Some(i), Some(v)) => Some(format!("{}::{}", i, v)),
-                    _ => None,
-                })
+                .filter_map(|i| i.map(|(e_i, v_i)| format!("{}::{}", e_i, v_i)))
                 .collect::<Vec<_>>()
                 .join(","),
             self.func

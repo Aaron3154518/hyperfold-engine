@@ -61,7 +61,7 @@ impl ServiceArg {
 #[derive(Clone, Debug)]
 pub struct Service {
     pub path: Vec<String>,
-    pub events: Vec<(usize, String)>,
+    pub events: Vec<(usize, usize)>,
     pub args: Vec<ServiceArg>,
 }
 
@@ -158,31 +158,30 @@ impl Service {
             .collect::<Vec<_>>()
     }
 
-    pub fn get_events(&self, events: &Vec<Event>) -> Vec<syn::Path> {
+    pub fn get_events(&self, events: &Vec<Event>) -> (Vec<syn::Path>, Vec<syn::LitInt>) {
         self.events
             .iter()
             .filter_map(|(i, v)| {
                 if let Some(e) = events.get(*i) {
-                    let mut path = e
-                        .path
-                        .iter()
-                        .map(|p| syn::PathSegment {
-                            ident: format_ident!("{}", p),
-                            arguments: syn::PathArguments::None,
-                        })
-                        .collect::<syn::punctuated::Punctuated<_, _>>();
-                    path.push(syn::PathSegment {
-                        ident: format_ident!("{}", v),
-                        arguments: syn::PathArguments::None,
-                    });
-                    return Some(syn::Path {
-                        leading_colon: None,
-                        segments: path,
-                    });
+                    return Some((
+                        syn::Path {
+                            leading_colon: None,
+                            segments: e
+                                .path
+                                .iter()
+                                .map(|p| syn::PathSegment {
+                                    ident: format_ident!("{}", p),
+                                    arguments: syn::PathArguments::None,
+                                })
+                                .collect::<syn::punctuated::Punctuated<_, _>>(),
+                        },
+                        syn::parse_str::<syn::LitInt>(format!("{}", v).as_str())
+                            .expect("Could not parse variant index"),
+                    ));
                 }
                 None
             })
-            .collect()
+            .unzip()
     }
 }
 
@@ -207,7 +206,7 @@ impl ServiceParser {
             )
             .expect("Could not parse regex"),
             path_r: Regex::new(r"\w+").expect("Could not parse regex"),
-            events_r: Regex::new(r"(?P<idx>\d+)::(?P<var>\w+)").expect("Could not parse regex"),
+            events_r: Regex::new(r"(?P<idx>\d+)::(?P<var>\d+)").expect("Could not parse regex"),
             args_r: Regex::new(r"(?P<var>\w+):(?P<mut>\d+):(?P<idx>\d+)")
                 .expect("Could not parse regex"),
         }
@@ -233,7 +232,9 @@ impl ServiceParser {
                                 i.as_str()
                                     .parse::<usize>()
                                     .expect("Couldn't pares event index"),
-                                v.as_str().to_string(),
+                                v.as_str()
+                                    .parse::<usize>()
+                                    .expect("Couldn't pares variant index"),
                             )),
                             _ => None,
                         })

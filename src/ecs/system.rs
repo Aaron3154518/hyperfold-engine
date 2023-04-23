@@ -1,9 +1,9 @@
 use ecs_lib::system;
 
 use super::component::Component as Comp2;
-use super::event::CoreEvent;
+use super::event::{CoreEvent, MyEvent};
 
-#[system(CoreEvent::Render, CoreEvent::Update)]
+#[system(MyEvent::E2)]
 pub fn greet(
     comp: &mut super::super::MainComponent,
     comp2: &Comp2,
@@ -18,15 +18,20 @@ pub fn greet(
     res.cnt += 1;
 }
 
-#[system]
-pub fn super_mut(comp: &mut super::super::MainComponent, res: &mut super::component::Resource) {
+#[system(CoreEvent::Update)]
+pub fn super_mut(
+    comp: &mut super::super::MainComponent,
+    res: &mut super::component::Resource,
+    em: &mut super::event::EventBus,
+) {
     println!("Super Duper Mutable and the count is {}", res.cnt);
     res.cnt += 1;
+    em.push(MyEvent::E2(1, 1));
 }
 
-#[system]
+#[system(CoreEvent::Render)]
 pub fn super_immut(comp: &super::super::MainComponent) {
-    println!("Super Duper Immutable")
+    println!("Super Duper Immutable on Render")
 }
 
 #[system]

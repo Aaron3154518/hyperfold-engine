@@ -57,10 +57,10 @@ pub fn get_keys<'a, K: Eq + Hash + Clone, V>(map: &'a HashMap<K, V>) -> HashSet<
 
 #[macro_export]
 macro_rules! systems {
-    ($sm: ident, $cm: ident, $em: ident,
+    ($sm: ident, $cm: ident, $em: ident, $c_em: ident,
         $(
             (
-                ($($f: path [$($e_v: path),*]),+),
+                ($($f: path [$($e_v: path, $e_i: literal),*]),+),
                 c($($c_vs: ident, $c_ts: ty),*),
                 g($($g_vs: ident, $g_ts: ty),*)
             )
@@ -68,7 +68,7 @@ macro_rules! systems {
     ) => {
         struct $sm {
             pub component_manager: $cm,
-            systems: std::collections::HashMap<$em, Vec<Box<dyn Fn(&mut $cm)>>>,
+            systems: std::collections::HashMap<crate::ecs::event::TypeIdx, Vec<Box<dyn Fn(&mut $cm)>>>,
         }
 
         impl $sm {
@@ -80,18 +80,22 @@ macro_rules! systems {
             }
 
             pub fn tick(&mut self) {
-                for (e, sys_vec) in self.systems.iter() {
-                    for system in sys_vec.iter() {
-                        (system)(&mut self.component_manager);
+                self.component_manager.$c_em.reset();
+                while let Some(e) = self.component_manager.$c_em.pop() {
+                    if let Some(systems) = self.systems.get(e.to_idx()) {
+                        for system in systems.iter() {
+                            (system)(&mut self.component_manager);
+                        }
                     }
                 }
             }
 
-            fn add_system(&mut self, e: $em, f: Box<dyn Fn(&mut $cm)>) {
-                if let Some(v) = self.systems.get_mut(&e) {
+            fn add_system<T: 'static>(&mut self, i: usize, f: Box<dyn Fn(&mut $cm)>) {
+                let k = crate::ecs::event::TypeIdx::new::<T>(i);
+                if let Some(v) = self.systems.get_mut(&k) {
                     v.push(f);
                 } else {
-                    self.systems.insert(e, vec![f]);
+                    self.systems.insert(k, vec![f]);
                 }
             }
 
@@ -106,9 +110,8 @@ macro_rules! systems {
                 };
                 $(
                     $(
-                        self.add_system(EFoo::from($e_v), Box::new(move |cm: &mut $cm| f(cm, &$f)));
+                        self.add_system::<$e_v>($e_i, Box::new(move |cm: &mut $cm| f(cm, &$f)));
                     )*
-                    // self.systems.push(Box::new(move |cm: &mut $cm| f(cm, &$f)));
                 )*
             )*
             }
@@ -119,9 +122,17 @@ macro_rules! systems {
 #[macro_export]
 macro_rules! events {
     ($ev: ident, $($evs: ident ($ets: path)),*) => {
-        #[derive(PartialEq, Eq, Hash)]
+        #[derive(PartialEq, Eq)]
         pub enum $ev {
             $($evs($ets)),*
+        }
+
+        impl $ev {
+            pub fn to_idx(&self) -> &'static crate::ecs::event::TypeIdx {
+                match self {
+                    $(Self::$evs(v) => v.to_idx(),)*
+                }
+            }
         }
 
         $(

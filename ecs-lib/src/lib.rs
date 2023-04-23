@@ -7,9 +7,8 @@ use std::{collections::HashSet, io::Write};
 
 use ecs_macros::structs::ComponentArgs;
 use proc_macro::TokenStream;
-use quote::{format_ident, quote};
+use quote::{format_ident, quote, ToTokens};
 use regex::Regex;
-use syn;
 use syn::parse_macro_input;
 
 mod parse;
@@ -159,7 +158,7 @@ pub fn event(_attr: TokenStream, item: TokenStream) -> TokenStream {
             _ => (),
         }
     }
-    let derives = ["PartialEq", "Eq", "Hash"]
+    let derives = ["PartialEq", "Eq"]
         .iter()
         .filter_map(|s| {
             if derives.contains(*s) {
@@ -172,9 +171,57 @@ pub fn event(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
     en.vis = syn::parse_quote!(pub);
 
+    let name = en.ident.to_owned();
+    // Split variants into unit and field variants and get indices for each
+    let (mut unit_vs, mut unit_idxs, mut field_vs, mut field_idxs) =
+        (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    for (i, v) in en.variants.iter().enumerate() {
+        let (vs, idxs) = match v.fields {
+            syn::Fields::Unit => (&mut unit_vs, &mut unit_idxs),
+            _ => (&mut field_vs, &mut field_idxs),
+        };
+        vs.push(v.ident.to_owned());
+        idxs.push(
+            syn::parse_str::<syn::LitInt>(format!("{}", i).as_str())
+                .expect(format!("Could not parse int literal: {}", i).as_str()),
+        );
+    }
+
+    // Get full list of indices
+    let idxs = (0..en.variants.len())
+        .map(|i| {
+            syn::parse_str::<syn::LitInt>(format!("{}", i).as_str())
+                .expect(format!("Could not parse int literal: {}", i).as_str())
+        })
+        .collect::<Vec<_>>();
+
     let code = quote!(
         #[derive(#(#derives),*)]
         #en
+
+        impl #name {
+            pub fn get_idx(i: usize) -> &'static crate::ecs::event::TypeIdx {
+                static TYPE_IDXS: [crate::ecs::event::TypeIdx; 3] = [
+                    #(crate::ecs::event::TypeIdx::new::<#name>(#idxs),)*
+                ];
+                &TYPE_IDXS[i]
+            }
+
+            pub fn to_idx(&self) -> &'static crate::ecs::event::TypeIdx {
+                Self::get_idx(
+                    match self {
+                        #(Self::#unit_vs => #unit_idxs,)*
+                        #(Self::#field_vs(..) => #field_idxs,)*
+                    }
+                )
+            }
+        }
+
+        impl std::hash::Hash for #name {
+            fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+                self.to_idx().hash(state);
+            }
+        }
     );
     out.write(format!("{:#?}\n", code.to_string()));
 
@@ -187,6 +234,24 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
 
     // Components
     let components = Component::parse(std::env::var("COMPONENTS").expect("COMPONENTS"));
+
+    // Find the EventManager
+    let c_em = vec!["crate", "ecs", "event", "EventBus"];
+    let c_em = components
+        .iter()
+        .find(|s| {
+            let mut tts = Vec::new();
+            for tt in s.ty.to_token_stream() {
+                match tt {
+                    proc_macro2::TokenTree::Ident(i) => tts.push(i.to_string()),
+                    _ => (),
+                }
+            }
+            tts == c_em
+        })
+        .expect("Could not find EventBus")
+        .var
+        .to_owned();
 
     // Services
     let mut services = Service::parse(std::env::var("SERVICES").expect("SERVICES"));
@@ -240,9 +305,7 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
                 ComponentArgs::None => (&mut c_vars, &mut c_types),
                 ComponentArgs::Global => (&mut g_vars, &mut g_types),
             };
-            vs.pop();
             vs.extend(v.iter().map(|c| c.var.to_owned()).collect::<Vec<_>>());
-            ts.pop();
             ts.extend(v.iter().map(|c| c.ty.to_owned()).collect::<Vec<_>>());
         });
 
@@ -250,10 +313,14 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
     let events = Event::parse(std::env::var("EVENTS").expect("EVENTS"));
 
     // Parse variant paths
-    let s_evars = services
+    let (s_event_paths, s_event_idxs) = services
         .iter()
-        .map(|v| v.iter().map(|s| s.get_events(&events)).collect::<Vec<_>>())
-        .collect::<Vec<_>>();
+        .map(|v| {
+            v.iter()
+                .map(|s| s.get_events(&events))
+                .unzip::<_, _, Vec<_>, Vec<_>>()
+        })
+        .unzip::<_, _, Vec<_>, Vec<_>>();
 
     let (sm, cm) = parse_macro_input!(input as Input).get();
 
@@ -263,9 +330,9 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
             c(#(#c_vars, #c_types),*),
             g(#(#g_vars, #g_types),*)
         );
-        systems!(#sm, #cm, EFoo,
+        systems!(#sm, #cm, EFoo, #c_em,
             #(
-                ((#(#s_names[#(#s_evars),*]),*),
+                ((#(#s_names[#(#s_event_paths, #s_event_idxs),*]),*),
                 c(#(#s_carg_vs, #s_carg_ts),*),
                 g(#(#s_garg_vs, #s_garg_ts),*))
             ),*

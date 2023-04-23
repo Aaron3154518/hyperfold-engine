@@ -1,4 +1,5 @@
 #![feature(specialization)]
+#![feature(const_type_id)]
 
 mod sdl2_bindings;
 use sdl2_bindings::sdl2_ as sdl2;
