@@ -11,7 +11,7 @@ pub fn empty(res: &super::component::Resource) {
 
 #[system(MyEvent::E1, MyEvent::E2)]
 pub fn greet(
-    comp: &mut super::super::MainComponent,
+    _comp: &mut super::super::MainComponent,
     comp2: &Comp2,
     comp4: &mut crate::ecs::component::MyComponent,
     comp3: &mut super::test::tmp::Component,
@@ -30,7 +30,7 @@ pub fn greet(
 
 #[system(CoreEvent::Update)]
 pub fn super_mut(
-    comp: &mut super::super::MainComponent,
+    _comp: &mut super::super::MainComponent,
     res: &mut super::component::Resource,
     em: &mut super::event::EventBus,
 ) {
@@ -41,11 +41,11 @@ pub fn super_mut(
 }
 
 #[system(CoreEvent::Render)]
-pub fn super_immut(comp: &super::super::MainComponent) {
+pub fn super_immut(_comp: &super::super::MainComponent) {
     println!("Super Duper Immutable on Render")
 }
 
 #[system]
-pub fn super_duped(comp: &super::super::MainComponent) {
+pub fn super_duped(_comp: &super::super::MainComponent) {
     println!("Super Duped")
 }

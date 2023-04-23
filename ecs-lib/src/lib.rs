@@ -7,7 +7,7 @@ use std::{collections::HashSet, io::Write};
 
 use ecs_macros::structs::ComponentArgs;
 use proc_macro::TokenStream;
-use quote::{format_ident, quote, ToTokens};
+use quote::{format_ident, quote};
 use regex::Regex;
 use syn::parse_macro_input;
 

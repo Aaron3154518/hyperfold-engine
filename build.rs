@@ -617,15 +617,6 @@ impl FnArg {
         }
     }
 
-    pub fn to_string(&self) -> String {
-        format!(
-            "{}:&{}{}",
-            self.name,
-            if self.mutable { "mut " } else { "" },
-            self.ty.join("::")
-        )
-    }
-
     pub fn map_to_component(
         &mut self,
         use_paths: &Vec<(Vec<String>, String)>,
