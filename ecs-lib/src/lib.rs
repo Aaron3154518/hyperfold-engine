@@ -7,12 +7,13 @@ use std::{collections::HashSet, io::Write};
 
 use ecs_macros::structs::ComponentArgs;
 use proc_macro::TokenStream;
-use quote::{format_ident, quote};
+use proc_macro2::Span;
+use quote::quote;
 use regex::Regex;
 use syn::parse_macro_input;
 
 mod parse;
-use parse::{Component, Event, Input, Service};
+use parse::{Component, EventMod, Input, Service};
 
 struct Out {
     f: std::fs::File,
@@ -138,90 +139,45 @@ pub fn system(_attr: TokenStream, item: TokenStream) -> TokenStream {
 pub fn event(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut out = Out::new("out_en.txt", true);
 
-    let mut en = parse_macro_input!(item as syn::ItemEnum);
+    let en = parse_macro_input!(item as syn::ItemEnum);
 
-    let mut derives = HashSet::new();
-    for a in en.attrs.iter() {
-        out.write(format!("{:#?}\n", a));
-        match &a.meta {
-            syn::Meta::List(l) => {
-                if let Some(_) = l.path.segments.iter().find(|s| s.ident == "derive") {
-                    l.parse_nested_meta(|l| {
-                        for s in l.path.segments.iter() {
-                            derives.insert(s.ident.to_string());
-                        }
-                        Ok(())
+    let module = syn::ItemMod {
+        attrs: Vec::new(),
+        vis: syn::parse_quote!(pub),
+        unsafety: None,
+        mod_token: syn::parse_quote!(mod),
+        ident: en.ident,
+        content: Some((
+            syn::token::Brace(Span::call_site()),
+            en.variants
+                .into_iter()
+                .map(|v| {
+                    let semi = match v.fields {
+                        syn::Fields::Named(_) => None,
+                        _ => Some(syn::token::Semi(Span::call_site())),
+                    };
+                    syn::Item::Struct(syn::ItemStruct {
+                        attrs: Vec::new(),
+                        vis: syn::parse_quote!(pub),
+                        struct_token: syn::parse_quote!(struct),
+                        ident: v.ident,
+                        generics: syn::Generics {
+                            lt_token: None,
+                            params: syn::punctuated::Punctuated::new(),
+                            gt_token: None,
+                            where_clause: None,
+                        },
+                        fields: v.fields,
+                        semi_token: semi,
                     })
-                    .expect("Could not parse nested meta");
-                }
-            }
-            _ => (),
-        }
-    }
-    let derives = ["PartialEq", "Eq"]
-        .iter()
-        .filter_map(|s| {
-            if derives.contains(*s) {
-                None
-            } else {
-                Some(format_ident!("{}", s))
-            }
-        })
-        .collect::<Vec<_>>();
-
-    en.vis = syn::parse_quote!(pub);
-
-    let name = en.ident.to_owned();
-    // Split variants into unit and field variants and get indices for each
-    let (mut unit_vs, mut unit_idxs, mut field_vs, mut field_idxs) =
-        (Vec::new(), Vec::new(), Vec::new(), Vec::new());
-    for (i, v) in en.variants.iter().enumerate() {
-        let (vs, idxs) = match v.fields {
-            syn::Fields::Unit => (&mut unit_vs, &mut unit_idxs),
-            _ => (&mut field_vs, &mut field_idxs),
-        };
-        vs.push(v.ident.to_owned());
-        idxs.push(
-            syn::parse_str::<syn::LitInt>(format!("{}", i).as_str())
-                .expect(format!("Could not parse int literal: {}", i).as_str()),
-        );
-    }
-
-    // Get full list of indices
-    let idxs = (0..en.variants.len())
-        .map(|i| {
-            syn::parse_str::<syn::LitInt>(format!("{}", i).as_str())
-                .expect(format!("Could not parse int literal: {}", i).as_str())
-        })
-        .collect::<Vec<_>>();
+                })
+                .collect(),
+        )),
+        semi: None,
+    };
 
     let code = quote!(
-        #[derive(#(#derives),*)]
-        #en
-
-        impl #name {
-            pub fn get_idx(i: usize) -> &'static crate::ecs::event::TypeIdx {
-                static TYPE_IDXS: [crate::ecs::event::TypeIdx; 3] = [
-                    #(crate::ecs::event::TypeIdx::new::<#name>(#idxs),)*
-                ];
-                &TYPE_IDXS[i]
-            }
-
-            pub fn to_idx(&self) -> &'static crate::ecs::event::TypeIdx {
-                Self::get_idx(
-                    match self {
-                        #(Self::#unit_vs => #unit_idxs,)*
-                        #(Self::#field_vs(..) => #field_idxs,)*
-                    }
-                )
-            }
-        }
-
-        impl std::hash::Hash for #name {
-            fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-                self.to_idx().hash(state);
-            }
-        }
+        #module
     );
     out.write(format!("{:#?}\n", code.to_string()));
 
@@ -302,7 +258,7 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
         });
 
     // Events
-    let events = Event::parse(std::env::var("EVENTS").expect("EVENTS"));
+    let events = EventMod::parse(std::env::var("EVENTS").expect("EVENTS"));
 
     // Parse variant paths
     let (s_event_paths, s_event_idxs) = services
@@ -342,13 +298,24 @@ pub fn event_manager(input: TokenStream) -> TokenStream {
     let mut out = Out::new("out_em.txt", false);
 
     // Events
-    let events = Event::parse(std::env::var("EVENTS").expect("EVENTS"));
+    let events = EventMod::parse(std::env::var("EVENTS").expect("EVENTS"));
 
     // Parse out event paths and aliases
     let (ev_ts, ev_vs) = events
         .iter()
-        .map(|e| (e.get_path(), e.get_type()))
-        .unzip::<_, _, Vec<_>, Vec<_>>();
+        .fold((Vec::new(), Vec::new()), |(mut ts, mut vs), em| {
+            let mut p = em.get_path();
+            for e in em.events.iter() {
+                p.segments.push(syn::PathSegment {
+                    ident: e.get_name(),
+                    arguments: syn::PathArguments::None,
+                });
+                ts.push(p.to_owned());
+                p.segments.pop();
+                vs.push(e.get_variant());
+            }
+            (ts, vs)
+        });
 
     let em = parse_macro_input!(input as syn::Ident);
 

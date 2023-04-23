@@ -75,16 +75,16 @@ impl ServiceArg {
 #[derive(Clone, Debug)]
 pub struct Service {
     pub path: Vec<String>,
-    pub events: Vec<(usize, usize)>,
     pub args: Vec<ServiceArg>,
+    pub event: Option<(usize, usize)>,
 }
 
 impl Service {
     pub fn new() -> Self {
         Self {
             path: Vec::new(),
-            events: Vec::new(),
             args: Vec::new(),
+            event: None,
         }
     }
 
@@ -172,7 +172,7 @@ impl Service {
             .collect::<Vec<_>>()
     }
 
-    pub fn get_events(&self, events: &Vec<Event>) -> (Vec<syn::Path>, Vec<syn::LitInt>) {
+    pub fn get_events(&self, events: &Vec<EventMod>) -> (Vec<syn::Path>, Vec<syn::LitInt>) {
         self.events
             .iter()
             .filter_map(|(i, v)| {
@@ -208,26 +208,31 @@ struct ServiceParser {
 
 impl ServiceParser {
     pub fn new() -> Self {
+        let arg_r = r"\w+:\d+:(c\d+|e\d+:\d+)";
         Self {
             full_r: Regex::new(
                 format!(
                     "{}{}{}",
                     r"(?P<path>\w+(::\w+)*)",
                     r"<(?P<events>\w+(::\w+)*(,\w+(::\w+)*)*)?>",
-                    r"\((?P<args>\w+:\d+:\d+(,\w+:\d+:\d+)*)?\)"
+                    format!(r"\((?P<args>{}(,{})*)?\)", arg_r, arg_r)
                 )
                 .as_str(),
             )
             .expect("Could not parse regex"),
             path_r: Regex::new(r"\w+").expect("Could not parse regex"),
             events_r: Regex::new(r"(?P<idx>\d+)::(?P<var>\d+)").expect("Could not parse regex"),
-            args_r: Regex::new(r"(?P<var>\w+):(?P<mut>\d+):(?P<idx>\d+)")
-                .expect("Could not parse regex"),
+            args_r: Regex::new(
+                r"(?P<var>\w+):(?P<mut>\d+):(c(?P<cidx>\d+)|e(?P<eidx1>\d+):(?P<eidx2>\d+))",
+            )
+            .expect("Could not parse regex"),
         }
     }
 
     fn parse(&self, data: &str) -> Service {
         let mut s = match self.full_r.captures(data) {
+            let mut service = Service::new();
+            
             Some(c) => Service {
                 path: match c.name("path") {
                     Some(p) => self
@@ -237,7 +242,7 @@ impl ServiceParser {
                         .collect::<Vec<_>>(),
                     None => Vec::new(),
                 },
-                events: match c.name("events") {
+                event: match c.name("events") {
                     Some(e) => self
                         .events_r
                         .captures_iter(e.as_str())
@@ -283,24 +288,35 @@ impl ServiceParser {
 
 // Event parser
 #[derive(Clone, Debug)]
-pub struct Event {
+pub struct EventMod {
     path: Vec<String>,
-    cnt: u8,
+    pub events: Vec<Event>,
 }
 
-impl Event {
+impl EventMod {
     pub fn parse(data: String) -> Vec<Self> {
-        let r = Regex::new(r"(?P<path>\w+(::\w+)*),(?P<cnt>\d+)").expect("Could not parse regex");
+        let r = Regex::new(r"(?P<path>\w+(::\w+)*)\((?P<events>\w+:\d+(,\w+:\d+)*)\)")
+            .expect("Could not parse regex");
+        let struct_r =
+            Regex::new(r"(?P<struct>\w+):(?P<cnt>\d+)(,|$)").expect("Could not parse regex");
         data.split(" ")
             .filter_map(|s| {
                 if let Some(c) = r.captures(s) {
-                    if let (Some(p), Some(c)) = (c.name("path"), c.name("cnt")) {
-                        return Some(Event {
+                    if let (Some(p), Some(c)) = (c.name("path"), c.name("events")) {
+                        return Some(EventMod {
                             path: p.as_str().split("::").map(|s| s.to_string()).collect(),
-                            cnt: c
-                                .as_str()
-                                .parse::<u8>()
-                                .expect("Could not parse event count"),
+                            events: struct_r
+                                .captures_iter(c.as_str())
+                                .filter_map(|c| {
+                                    c.name("struct").zip(c.name("cnt")).map(|(s, c)| Event {
+                                        name: s.as_str().to_string(),
+                                        cnt: c
+                                            .as_str()
+                                            .parse::<usize>()
+                                            .expect("Could not parse event count"),
+                                    })
+                                })
+                                .collect(),
                         });
                     }
                 }
@@ -322,9 +338,21 @@ impl Event {
                 .collect(),
         }
     }
+}
 
-    pub fn get_type(&self) -> syn::Ident {
-        format_ident!("{}{}", self.path.last().map_or("", |s| s), self.cnt)
+#[derive(Clone, Debug)]
+pub struct Event {
+    name: String,
+    cnt: usize,
+}
+
+impl Event {
+    pub fn get_name(&self) -> syn::Ident {
+        format_ident!("{}", self.name)
+    }
+
+    pub fn get_variant(&self) -> syn::Ident {
+        format_ident!("{}{}", self.name, self.cnt)
     }
 }
 

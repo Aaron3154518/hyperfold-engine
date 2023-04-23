@@ -83,7 +83,7 @@ macro_rules! systems {
     ($sm: ident, $cm: ident, $em: ident, $c_eb: ident, $c_ce: ident,
         $(
             (
-                ($($f: path [$($e_v: path, $e_i: literal),*]),+),
+                ($($f: path, $e_v: path),+),
                 c($($c_vs: ident, $c_ts: ty),*),
                 g($($g_vs: ident, $g_ts: ty),*)
             )
@@ -91,7 +91,7 @@ macro_rules! systems {
     ) => {
         struct $sm {
             pub component_manager: $cm,
-            systems: std::collections::HashMap<crate::ecs::event::TypeIdx, Vec<Box<dyn Fn(&mut $cm)>>>,
+            systems: std::collections::HashMap<std::any::TypeId, Vec<Box<dyn Fn(&mut $cm)>>>,
         }
 
         impl $sm {
@@ -105,8 +105,8 @@ macro_rules! systems {
             pub fn tick(&mut self) {
                 self.component_manager.$c_eb.reset();
                 while let Some(e) = self.component_manager.$c_eb.pop() {
+                    let k = e.typeid();
                     self.component_manager.$c_ce = crate::ecs::event::CurrEvent::from(e);
-                    let k = self.component_manager.$c_ce.get().to_idx();
                     if let Some(systems) = self.systems.get(k) {
                         for system in systems.iter() {
                             (system)(&mut self.component_manager);
@@ -115,8 +115,8 @@ macro_rules! systems {
                 }
             }
 
-            fn add_system<T: 'static>(&mut self, i: usize, f: Box<dyn Fn(&mut $cm)>) {
-                let k = crate::ecs::event::TypeIdx::new::<T>(i);
+            fn add_system<T: 'static>(&mut self, f: Box<dyn Fn(&mut $cm)>) {
+                let k = std::any::TypeId::<T>(i);
                 if let Some(v) = self.systems.get_mut(&k) {
                     v.push(f);
                 } else {
@@ -128,9 +128,7 @@ macro_rules! systems {
             $(
                 let f = service_function!($cm, c($($c_vs, $c_ts),*), g($($g_vs, $g_ts),*));
                 $(
-                    $(
-                        self.add_system::<$e_v>($e_i, Box::new(move |cm: &mut $cm| f(cm, &$f)));
-                    )*
+                    self.add_system::<$e_v>(Box::new(move |cm: &mut $cm| f(cm, &$f)));
                 )*
             )*
             }
@@ -151,9 +149,9 @@ macro_rules! events {
         }
 
         impl $ev {
-            pub fn to_idx(&self) -> &'static crate::ecs::event::TypeIdx {
+            pub fn typeid(&self) -> &'static std::any::TypeId {
                 match self {
-                    $(Self::$evs(v) => v.to_idx(),)*
+                    $(Self::$evs(_) => std::any::TypeId::of::<$ets>(),)*
                 }
             }
         }

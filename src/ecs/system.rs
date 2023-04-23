@@ -4,13 +4,14 @@ use ecs_macros::{match_event, To};
 use super::component::Component as Comp2;
 use super::event::{CoreEvent, MyEvent};
 
-#[system(CoreEvent::Events)]
-pub fn empty(res: &super::component::Resource) {
+#[system]
+pub fn empty(ev: &CoreEvent::Events, res: &super::component::Resource) {
     println!("I am empty! {}", res.cnt);
 }
 
-#[system(MyEvent::E1, MyEvent::E2)]
+#[system]
 pub fn greet(
+    ev1: &MyEvent::E1,
     _comp: &mut super::super::MainComponent,
     comp2: &Comp2,
     comp4: &mut crate::ecs::component::MyComponent,
@@ -28,8 +29,9 @@ pub fn greet(
     );
 }
 
-#[system(CoreEvent::Update)]
+#[system]
 pub fn super_mut(
+    ev: &CoreEvent::Update,
     _comp: &mut super::super::MainComponent,
     res: &mut super::component::Resource,
     em: &mut super::event::EventBus,
@@ -40,8 +42,8 @@ pub fn super_mut(
     em.push(MyEvent::E1);
 }
 
-#[system(CoreEvent::Render)]
-pub fn super_immut(_comp: &super::super::MainComponent) {
+#[system]
+pub fn super_immut(ev: &CoreEvent::Render, _comp: &super::super::MainComponent) {
     println!("Super Duper Immutable on Render")
 }
 

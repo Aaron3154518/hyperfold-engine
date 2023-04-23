@@ -28,7 +28,25 @@ enum CoreEvent {
 enum MyEvent {
     E1,
     E2(i32, i32),
-    E3(String),
+    E3 { name: String },
+}
+
+mod MyEventMod {
+    pub struct E1;
+    struct E2(i32, i32);
+    struct E3 {
+        name: String,
+    }
+}
+
+mod OtherEventMod {
+    struct O1;
+    struct O2(String, i32);
+    struct O3;
+}
+
+enum EFoo {
+    MyEventModE1(MyEventMod::E1),
 }
 
 #[event]
