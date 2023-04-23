@@ -236,20 +236,12 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
     let components = Component::parse(std::env::var("COMPONENTS").expect("COMPONENTS"));
 
     // Find the EventManager
-    let c_em = vec!["crate", "ecs", "event", "EventBus"];
-    let c_em = components
-        .iter()
-        .find(|s| {
-            let mut tts = Vec::new();
-            for tt in s.ty.to_token_stream() {
-                match tt {
-                    proc_macro2::TokenTree::Ident(i) => tts.push(i.to_string()),
-                    _ => (),
-                }
-            }
-            tts == c_em
-        })
+    let c_eb = Component::find(&components, "crate::ecs::event::EventBus")
         .expect("Could not find EventBus")
+        .var
+        .to_owned();
+    let c_ce = Component::find(&components, "crate::ecs::event::CurrEvent")
+        .expect("Could not find CurrEvent")
         .var
         .to_owned();
 
@@ -330,7 +322,7 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
             c(#(#c_vars, #c_types),*),
             g(#(#g_vars, #g_types),*)
         );
-        systems!(#sm, #cm, EFoo, #c_em,
+        systems!(#sm, #cm, EFoo, #c_eb, #c_ce,
             #(
                 ((#(#s_names[#(#s_event_paths, #s_event_idxs),*]),*),
                 c(#(#s_carg_vs, #s_carg_ts),*),

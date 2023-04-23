@@ -39,6 +39,31 @@ enum OtherEvent {
 }
 
 #[component(Global)]
+pub struct CurrEvent {
+    event: crate::EFoo,
+}
+
+impl CurrEvent {
+    pub fn new() -> Self {
+        Self {
+            event: crate::EFoo::from(CoreEvent::Update),
+        }
+    }
+
+    pub fn from(e: crate::EFoo) -> Self {
+        Self { event: e }
+    }
+
+    pub fn get(&self) -> &crate::EFoo {
+        &self.event
+    }
+
+    pub fn get_mut(&mut self) -> &mut crate::EFoo {
+        &mut self.event
+    }
+}
+
+#[component(Global)]
 pub struct EventBus {
     bus: Vec<crate::EFoo>,
 }

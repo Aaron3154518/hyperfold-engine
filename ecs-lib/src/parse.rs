@@ -14,6 +14,20 @@ pub struct Component {
 }
 
 impl Component {
+    pub fn find<'a>(components: &'a Vec<Component>, path: &str) -> Option<&'a Component> {
+        let path_vec = path.split("::").collect::<Vec<_>>();
+        components.iter().find(|s| {
+            let mut tts = Vec::new();
+            for tt in s.ty.to_token_stream() {
+                match tt {
+                    proc_macro2::TokenTree::Ident(i) => tts.push(i.to_string()),
+                    _ => (),
+                }
+            }
+            tts == path_vec
+        })
+    }
+
     pub fn parse(data: String) -> Vec<Self> {
         // Extract component names, types, and args
         let r = Regex::new(r"(?P<name>\w+(::\w+)*)\((?P<args>\d+)\)")

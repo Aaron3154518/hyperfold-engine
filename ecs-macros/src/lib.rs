@@ -57,7 +57,7 @@ pub fn get_keys<'a, K: Eq + Hash + Clone, V>(map: &'a HashMap<K, V>) -> HashSet<
 
 #[macro_export]
 macro_rules! systems {
-    ($sm: ident, $cm: ident, $em: ident, $c_em: ident,
+    ($sm: ident, $cm: ident, $em: ident, $c_eb: ident, $c_ce: ident,
         $(
             (
                 ($($f: path [$($e_v: path, $e_i: literal),*]),+),
@@ -80,9 +80,11 @@ macro_rules! systems {
             }
 
             pub fn tick(&mut self) {
-                self.component_manager.$c_em.reset();
-                while let Some(e) = self.component_manager.$c_em.pop() {
-                    if let Some(systems) = self.systems.get(e.to_idx()) {
+                self.component_manager.$c_eb.reset();
+                while let Some(e) = self.component_manager.$c_eb.pop() {
+                    self.component_manager.$c_ce = crate::ecs::event::CurrEvent::from(e);
+                    let k = self.component_manager.$c_ce.get().to_idx();
+                    if let Some(systems) = self.systems.get(k) {
                         for system in systems.iter() {
                             (system)(&mut self.component_manager);
                         }
@@ -119,6 +121,10 @@ macro_rules! systems {
     };
 }
 
+pub trait To<T> {
+    fn to<'a>(&'a self) -> Option<&'a T>;
+}
+
 #[macro_export]
 macro_rules! events {
     ($ev: ident, $($evs: ident ($ets: path)),*) => {
@@ -141,6 +147,26 @@ macro_rules! events {
                     Self::$evs(v)
                 }
             }
+
+            impl To<$ets> for $ev {
+                fn to<'a>(&'a self) -> Option<&'a $ets> {
+                    match self {
+                        Self::$evs(v) => Some(v),
+                        _ => None
+                    }
+                }
+            }
         )*
     }
+}
+
+#[macro_export]
+macro_rules! match_event {
+    ($ev: ident, $e: ident :: $v: ident $(($($vs: ident),+))?, $body: block) => {
+        if let Some(e) = $ev.get().to() {
+            if let $e::$v($($vs),*) = e {
+                $body
+            }
+        }
+    };
 }
