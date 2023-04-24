@@ -5,7 +5,7 @@ use super::component::Component as Comp2;
 use super::event::{CoreEvent, MyEvent};
 
 #[system]
-pub fn empty(ev: &CoreEvent::Events, res: &super::component::Resource) {
+pub fn empty(res: &super::component::Resource) {
     println!("I am empty! {}", res.cnt);
 }
 
@@ -27,18 +27,21 @@ pub fn greet(
 
 #[system]
 pub fn super_mut(
-    ev: &CoreEvent::Update,
     _comp: &mut super::super::MainComponent,
     res: &mut super::component::Resource,
     em: &mut crate::EFoo,
 ) {
     res.cnt += 1;
     println!("Super Duper Mutable and the count is {}", res.cnt);
+    em.new_event(MyEvent::E2(0, 0));
     em.new_event(MyEvent::E2(2, 34));
 }
 
 #[system]
-pub fn super_immut(ev: &CoreEvent::Render, _comp: &super::super::MainComponent) {
+pub fn super_immut(
+    // _e: &super::event::CoreEvent::Events,
+    _comp: &super::super::MainComponent,
+) {
     println!("Super Duper Immutable on Render")
 }
 

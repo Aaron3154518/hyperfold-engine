@@ -19,6 +19,7 @@ macro_rules! events {
             $($e),*
         }
 
+        #[derive(Debug)]
         pub struct $em {
             $($v: Vec<$s>),*,
             events: VecDeque<(E, usize)>
@@ -191,7 +192,7 @@ macro_rules! systems {
                     self.events.append(&mut events);
                     self.stack.push(events.get_events());
                 }
-                loop {
+                while !self.stack.is_empty() {
                     // Get element from next queue
                     if let Some((e, i, n)) = self
                         .stack
@@ -230,11 +231,10 @@ macro_rules! systems {
                             self.events.append(&mut self.cm.$c_eb);
                             self.stack.push(self.cm.$c_eb.get_events());
                         }
-                        continue;
                     } else {
+                        // We're done with this event
                         self.pop();
                     }
-                    break;
                 }
             }
 

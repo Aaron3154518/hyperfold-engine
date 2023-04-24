@@ -113,7 +113,10 @@ pub fn event(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let code = quote!(
         pub mod #name {
-            #(#strcts)*
+            #(
+                #[derive(Debug)]
+                #strcts
+            )*
         }
     );
     out.write(format!("{:#?}\n", code.to_string()));

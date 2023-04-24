@@ -153,7 +153,7 @@ fn end<T>(v: &Vec<T>) -> usize {
 }
 
 // Component
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct Component {
     path: Vec<String>,
     args: ComponentArgs,
@@ -373,13 +373,14 @@ impl syn::visit_mut::VisitMut for Visitor {
 
     // Use Statements
     fn visit_item_use_mut(&mut self, i: &mut syn::ItemUse) {
-        self.build_use = vec!["crate".to_string()];
+        self.build_use = Vec::new();
         syn::visit_mut::visit_item_use_mut(self, i);
     }
 
     fn visit_use_path_mut(&mut self, i: &mut syn::UsePath) {
         if i.ident == "super" {
-            if self.build_use.len() <= 1 {
+            if self.build_use.is_empty() {
+                self.build_use.push("crate".to_string());
                 self.build_use
                     .append(&mut self.path[..end(&self.path)].to_vec());
             } else {
@@ -447,7 +448,7 @@ fn get_possible_use_paths(
 }
 
 // Event
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct EventMod {
     path: Vec<String>,
     events: Vec<String>,
@@ -468,7 +469,7 @@ impl EventMod {
 }
 
 // Functions
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct Fn {
     path: Vec<String>,
     args: Vec<FnArg>,
@@ -500,7 +501,7 @@ impl Fn {
             }
         }
         // if !has_event {
-        //     return Err("No event specific");
+        //     return Err("No event specified");
         // }
         Ok(())
     }
@@ -543,13 +544,13 @@ impl std::fmt::Display for Fn {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum FnArgType {
     Component(usize),
     Event(usize, usize),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct FnArg {
     ty: Vec<String>,
     ty_type: Option<FnArgType>,
@@ -578,24 +579,19 @@ impl FnArg {
             .iter()
             .position(|c| poss_paths.iter().find(|path2| c.path == **path2).is_some())
             .map(|i| FnArgType::Component(i));
-        let ev_idx = events
-            .iter()
-            .enumerate()
-            .find_map(|(i, e)| {
-                // Find matching enum
-                if let Some(path) = poss_paths.iter().find(|path| e.path == path[..end(path)]) {
-                    // Find matching variant
-                    if let Some(p) = e
-                        .events
-                        .iter()
-                        .position(|n| path.last().is_some_and(|p| p == n))
-                    {
-                        return Some((i, p));
-                    }
+        let ev_idx = events.iter().enumerate().find_map(|(i, e)| {
+            // Find matching enum
+            if let Some(path) = poss_paths.iter().find(|path| e.path == path[..end(path)]) {
+                // Find matching variant
+                if let Some(p) = path
+                    .last()
+                    .and_then(|p| e.events.iter().position(|n| p == n))
+                {
+                    return Some(FnArgType::Event(i, p));
                 }
-                None
-            })
-            .map(|(i1, i2)| FnArgType::Event(i1, i2));
+            }
+            None
+        });
         self.ty_type = comp_idx.or(ev_idx);
     }
 

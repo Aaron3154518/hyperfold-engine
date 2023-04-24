@@ -27,10 +27,12 @@ use utils::{
 
 mod ecs;
 
-const FPS: u32 = 60;
-const FRAME_TIME: u32 = 1000 / FPS;
+mod framework;
 
 use ecs_lib::{component, component_manager};
+
+const FPS: u32 = 60;
+const FRAME_TIME: u32 = 1000 / FPS;
 
 #[component]
 pub struct MainComponent {}
@@ -77,7 +79,7 @@ fn main() {
     f.cm.add_component(e2, ecs::test::tmp::Component { i: 69 });
     // f.cm.add_component(e2, MainComponent {});
     f.add_systems();
-    f.tick();
+    // f.tick();
 
     // Initialize SDL2
     if unsafe { sdl2::SDL_Init(sdl2::SDL_INIT_EVERYTHING) } == 0 {
@@ -125,16 +127,16 @@ fn main() {
         h: img_w as f32,
     };
 
-    let mut event = Event::new();
     let mut t = unsafe { sdl2::SDL_GetTicks() };
     let mut dt;
-    while !event.quit {
+    while !f.cm.c5.quit {
         dt = unsafe { sdl2::SDL_GetTicks() } - t;
         t += dt;
 
-        event.update(dt, &camera, &screen);
+        f.cm.c5.update(dt, &camera, &screen);
+        f.tick();
 
-        match event.get_key(sdl2::SDL_KeyCode::SDLK_SPACE) {
+        match f.cm.c5.get_key(sdl2::SDL_KeyCode::SDLK_SPACE) {
             Some(kb) => {
                 if kb.held() {
                     println!("_ {}", kb.duration)
@@ -143,7 +145,7 @@ fn main() {
             None => (),
         }
 
-        let l = event.get_mouse(Mouse::Left);
+        let l = f.cm.c5.get_mouse(Mouse::Left);
         if l.clicked() {
             rect.set_pos(
                 l.click_pos.x as f32,
