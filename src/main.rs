@@ -8,6 +8,7 @@ use std::{
     hash::Hash,
 };
 
+use ecs_macros::events;
 use sdl2_bindings::sdl2_::{self as sdl2};
 mod sdl2_image_bindings;
 use sdl2_image_bindings::sdl2_image_ as sdl2_image;
@@ -24,276 +25,59 @@ use utils::{
     rect::{Align, Dimensions, Rect},
 };
 
-// mod ecs;
+mod ecs;
 
 const FPS: u32 = 60;
 const FRAME_TIME: u32 = 1000 / FPS;
 
-// use ecs_lib::{component, component_manager};
+use ecs_lib::{component, component_manager};
 
-// #[component]
-// pub struct MainComponent {}
+#[component]
+pub struct MainComponent {}
 
-// component_manager!(SFoo, Foo);
+#[component(Global, Dummy)]
+struct EFoo;
 
-//
-//
-//
-
-mod T {
-    pub struct A;
-    pub struct B(pub i32);
-    pub struct C {
-        pub name: String,
-    }
-}
-mod U {
-    pub struct A;
-}
-
-macro_rules! event_manager {
-    ($(($s: path, $e: ident, $v: ident)),*) => {
-        #[derive(Hash, Clone, Copy, Eq, PartialEq, Debug)]
-        pub enum E {
-            $($e),*
-        }
-
-        pub struct EM {
-            $($v: Vec<$s>,)*
-            events: VecDeque<(E, usize)>
-        }
-
-        impl EM {
-            pub fn new() -> Self {
-                Self {
-                    $($v: Vec::new(),)*
-                    events: VecDeque::new()
-                }
-            }
-
-            pub fn has_events(&self) -> bool {
-                !self.events.is_empty()
-            }
-
-            fn add_event(&mut self, e: E) {
-                self.events.push_back((e, 0));
-            }
-
-            pub fn get_events(&mut self) -> VecDeque<(E, usize)> {
-                std::mem::replace(&mut self.events, VecDeque::new())
-            }
-
-            pub fn append(&mut self, other: &mut Self) {
-                $(other.$v.reverse();self.$v.append(&mut other.$v);)*
-            }
-
-            pub fn pop(&mut self, e: E) {
-                match e {
-                    $(
-                        E::$e => {
-                            self.$v.pop();
-                        }
-                    )*
-                }
-            }
-        }
-
-        pub trait Mut<T> {
-            fn new_event(&mut self, t: T);
-
-            fn get_event<'a>(&'a self) -> Option<&'a T>;
-        }
-
-        $(
-            impl Mut<$s> for EM {
-                fn new_event(&mut self, t: $s) {
-                    self.$v.push(t);
-                    self.add_event(E::$e);
-                }
-
-                fn get_event<'a>(&'a self) -> Option<&'a $s> {
-                    self.$v.last()
-                }
-            }
-        )*
-    }
-}
-
-event_manager!(
-    (T::A, A0, e0_0),
-    (T::B, B0, e0_1),
-    (T::C, C0, e0_2),
-    (U::A, A1, e1_0)
-);
-
-struct CM {
-    events: EM,
-}
-
-impl CM {
-    pub fn new() -> Self {
-        Self { events: EM::new() }
-    }
-}
-
-struct SM {
-    cm: CM,
-    stack: Vec<VecDeque<(E, usize)>>,
-    services: HashMap<E, Vec<Box<dyn Fn(&mut CM, &mut EM)>>>,
-    // Stores events in the order that they should be handled
-    events: EM,
-}
-
-impl SM {
-    pub fn new() -> Self {
-        Self {
-            cm: CM::new(),
-            stack: Vec::new(),
-            services: HashMap::new(),
-            events: EM::new(),
-        }
-    }
-
-    fn init(&mut self) {
-        let mut q = VecDeque::new();
-        q.push_front((E::B0, 0));
-        self.stack.push(q);
-        self.events.e0_1.push(T::B(69));
-    }
-
-    pub fn tick(&mut self) {
-        self.init();
-        loop {
-            // Get element from next queue
-            if let Some((e, i, n)) = self
-                .stack
-                // Get last queue
-                .last_mut()
-                // Get next events
-                .and_then(|queue| queue.front_mut())
-                // Check if the system exists
-                .and_then(|(e, i)| {
-                    self.services.get(e).and_then(|v_s| {
-                        // Increment the event idx and return the old values
-                        v_s.get(*i).map(|_| {
-                            let vals = (e.clone(), i.clone(), v_s.len());
-                            *i += 1;
-                            vals
-                        })
-                    })
-                })
-            {
-                // This is the last system for this event
-                if i + 1 >= n {
-                    self.pop();
-                }
-                // Add a new queue for new events
-                self.cm.events = EM::new();
-                // Run the system
-                if let Some(s) = self.services.get(&e).and_then(|v_s| v_s.get(i)) {
-                    (s)(&mut self.cm, &mut self.events);
-                }
-                // If this is the last system, remove the event
-                if i + 1 >= n {
-                    self.events.pop(e);
-                }
-                // Add new events
-                if self.cm.events.has_events() {
-                    self.events.append(&mut self.cm.events);
-                    self.stack.push(self.cm.events.get_events());
-                }
-                continue;
-            } else {
-                self.pop();
-            }
-            break;
-        }
-    }
-
-    fn pop(&mut self) {
-        // Remove top element and empty queue
-        if self.stack.last_mut().is_some_and(|queue| {
-            queue.pop_front();
-            queue.is_empty()
-        }) {
-            self.stack.pop();
-        }
-    }
-
-    pub fn add_services(&mut self) {
-        let f = Box::new(|cm: &mut CM, em: &mut EM| {
-            if let Some(e) = em.get_event() {
-                greet(&mut cm.events, e);
-            }
-        });
-        self.services.insert(E::B0, vec![f]);
-        let f = Box::new(|cm: &mut CM, em: &mut EM| {
-            if let Some(e) = em.get_event() {
-                greet2(e);
-            }
-        });
-        self.services.insert(E::C0, vec![f.to_owned(), f]);
-    }
-}
-
-fn greet(ev: &mut EM, e: &T::B) {
-    println!("Hey {}", e.0);
-    ev.new_event(T::C {
-        name: "Hi".to_string(),
-    });
-    ev.new_event(T::C {
-        name: "Ho".to_string(),
-    });
-}
-
-fn greet2(e: &T::C) {
-    println!("Hey {}", e.name);
-}
+component_manager!(SFoo, Foo, EFoo);
 
 fn main() {
-    let mut sm = SM::new();
-    sm.add_services();
-    sm.tick();
+    let mut f = SFoo::new();
+    let e1 = ecs::entity::Entity::new();
+    let e2 = ecs::entity::Entity::new();
 
-    // let mut f = SFoo::new();
-    // let e1 = ecs::entity::Entity::new();
-    // let e2 = ecs::entity::Entity::new();
+    f.cm.add_component(
+        e1,
+        ecs::component::Component {
+            name: "Aaron",
+            loc: "Boise, Idaho",
+        },
+    );
+    f.cm.add_component(
+        e1,
+        ecs::component::MyComponent {
+            msg: "You should stop coding".to_string(),
+        },
+    );
+    f.cm.add_component(e1, ecs::test::tmp::Component { i: 666 });
+    f.cm.add_component(e1, MainComponent {});
 
-    // f.component_manager.add_component(
-    //     e1,
-    //     ecs::component::Component {
-    //         name: "Aaron",
-    //         loc: "Boise, Idaho",
-    //     },
-    // );
-    // f.component_manager.add_component(
-    //     e1,
-    //     ecs::component::MyComponent {
-    //         msg: "You should stop coding".to_string(),
-    //     },
-    // );
-    // f.component_manager
-    //     .add_component(e1, ecs::test::tmp::Component { i: 666 });
-    // f.component_manager.add_component(e1, MainComponent {});
-
-    // f.component_manager.add_component(
-    //     e2,
-    //     ecs::component::Component {
-    //         name: "Ur Mom",
-    //         loc: "Stoopidville",
-    //     },
-    // );
-    // f.component_manager.add_component(
-    //     e2,
-    //     ecs::component::MyComponent {
-    //         msg: "Lmao git gud".to_string(),
-    //     },
-    // );
-    // f.component_manager
-    //     .add_component(e2, ecs::test::tmp::Component { i: 69 });
-    // // f.component_manager.add_component(e2, MainComponent {});
-    // f.add_systems();
-    // f.tick();
+    f.cm.add_component(
+        e2,
+        ecs::component::Component {
+            name: "Ur Mom",
+            loc: "Stoopidville",
+        },
+    );
+    f.cm.add_component(
+        e2,
+        ecs::component::MyComponent {
+            msg: "Lmao git gud".to_string(),
+        },
+    );
+    f.cm.add_component(e2, ecs::test::tmp::Component { i: 69 });
+    // f.cm.add_component(e2, MainComponent {});
+    f.add_systems();
+    f.tick();
 
     // Initialize SDL2
     if unsafe { sdl2::SDL_Init(sdl2::SDL_INIT_EVERYTHING) } == 0 {

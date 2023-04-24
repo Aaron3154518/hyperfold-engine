@@ -7,14 +7,12 @@ use quote::{format_ident, ToTokens};
 use regex::Regex;
 
 // Match local instance to list
-pub fn find(span: Span, name: String, paths: Vec<Vec<&str>>) -> Option<usize> {
-    let mut out = crate::Out::new("out4.txt", true);
+pub fn find(span: Span, name: String, paths: Vec<Vec<String>>) -> Option<usize> {
     let path = span.unwrap().source_file().path();
     if let Some(dir) = path.parent() {
         let mut no_ext = PathBuf::new();
         no_ext.push(dir);
         no_ext.push(path.file_stem().expect("No file prefix"));
-        out.write(format!("{:#?}\n{:#?}\n{:#?}\n", no_ext, name, paths));
         let mut idxs = (0..paths.len()).collect::<Vec<_>>();
         // Repeatedly prune impossible paths
         for (i, p) in no_ext.iter().enumerate() {
@@ -30,13 +28,11 @@ pub fn find(span: Span, name: String, paths: Vec<Vec<&str>>) -> Option<usize> {
         }
         // Find this function in the possible paths
         let n = no_ext.iter().count();
-        out.write(format!("Remaining: {:#?}\n{}\n", idxs, n));
         idxs.retain(|j| {
             paths
                 .get(*j)
                 .is_some_and(|s| s.len() == n + 1 && s.last().is_some_and(|s| *s == name))
         });
-        out.write(format!("Remaining: {:#?}\n{:#?}\n", idxs, idxs.first()));
         return idxs.first().cloned();
     }
     None
@@ -95,6 +91,33 @@ impl Component {
     }
 }
 
+#[derive(Debug)]
+pub struct ComponentType {
+    types: Vec<ComponentArgs>,
+}
+
+impl ComponentType {
+    pub fn is_dummy(&self) -> bool {
+        self.types.contains(&ComponentArgs::Dummy)
+    }
+}
+
+impl syn::parse::Parse for ComponentType {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let mut args = Vec::new();
+        while let Ok(i) = input.parse::<syn::Ident>() {
+            args.push(i);
+            let _ = input.parse::<syn::Token![,]>();
+        }
+        Ok(Self {
+            types: args
+                .iter()
+                .map(|i| ComponentArgs::from(i.to_string().as_str()))
+                .collect(),
+        })
+    }
+}
+
 // Services parser
 #[derive(Clone, Debug)]
 pub struct ServiceArg {
@@ -133,7 +156,11 @@ impl EventArg {
 pub struct Service {
     pub path: Vec<String>,
     pub args: Vec<ComponentArg>,
+    // Index of each arg in the original function
+    arg_idxs: Vec<usize>,
     pub event: Option<EventArg>,
+    // Index of event arg in the original function
+    event_arg_idx: usize,
 }
 
 impl Service {
@@ -141,13 +168,26 @@ impl Service {
         Self {
             path: Vec::new(),
             args: Vec::new(),
+            arg_idxs: Vec::new(),
             event: None,
+            event_arg_idx: 0,
         }
     }
 
     pub fn sort_args(&mut self) {
-        // Sort by component index
-        self.args.sort_by(|a1, a2| a1.idx.cmp(&a2.idx));
+        let mut idxs = (0..self.args.len()).collect::<Vec<_>>();
+        idxs.sort_by_key(|&i| self.args[i].idx);
+        self.args = idxs.iter().map(|&i| self.args[i].to_owned()).collect();
+        self.arg_idxs = idxs.iter().map(|&i| self.arg_idxs[i]).collect();
+    }
+
+    pub fn get_arg_idxs(&self) -> Vec<usize> {
+        let mut v = match self.event {
+            Some(_) => vec![self.event_arg_idx],
+            None => Vec::new(),
+        };
+        v.extend(self.arg_idxs.iter());
+        v
     }
 
     pub fn parse(data: String) -> Vec<Self> {
@@ -232,24 +272,6 @@ impl Service {
             })
             .collect::<Vec<_>>()
     }
-
-    pub fn get_event(&self, events: &Vec<EventMod>) -> Option<syn::Path> {
-        self.event.as_ref().map(|e| {
-            events
-                .get(e.e_idx)
-                .and_then(|em| {
-                    em.events.get(e.v_idx).map(|e| {
-                        let mut p = em.get_path();
-                        p.segments.push(syn::PathSegment {
-                            ident: format_ident!("{}", e),
-                            arguments: syn::PathArguments::None,
-                        });
-                        p
-                    })
-                })
-                .expect("Could not find service event")
-        })
-    }
 }
 
 struct ServiceParser {
@@ -292,7 +314,7 @@ impl ServiceParser {
 
             if let Some(a) = c.name("args") {
                 // Parse service args
-                for c in self.args_r.captures_iter(a.as_str()) {
+                for (idx, c) in self.args_r.captures_iter(a.as_str()).enumerate() {
                     let arg = if let Some((v, m)) = c.name("var").zip(c.name("mut")) {
                         ServiceArg {
                             name: v.as_str().to_string(),
@@ -310,6 +332,7 @@ impl ServiceParser {
                                 .parse::<usize>()
                                 .expect("Could not parse component index"),
                         });
+                        s.arg_idxs.push(idx);
                     } else if let Some((i1, i2)) = c.name("eidx1").zip(c.name("eidx2")) {
                         s.event = Some(EventArg {
                             arg,
@@ -322,6 +345,7 @@ impl ServiceParser {
                                 .parse::<usize>()
                                 .expect("Could not parse event index"),
                         });
+                        s.event_arg_idx = idx;
                     }
                 }
             }
@@ -376,13 +400,15 @@ impl EventMod {
 #[derive(Debug)]
 pub struct Input {
     sm: syn::Ident,
-    _comma: syn::Token![,],
+    _1: syn::Token![,],
     cm: syn::Ident,
+    _2: syn::Token![,],
+    em: syn::Ident,
 }
 
 impl Input {
-    pub fn get(self) -> (syn::Ident, syn::Ident) {
-        (self.sm, self.cm)
+    pub fn get(self) -> (syn::Ident, syn::Ident, syn::Ident) {
+        (self.sm, self.cm, self.em)
     }
 }
 
@@ -390,8 +416,10 @@ impl syn::parse::Parse for Input {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         Ok(Self {
             sm: input.parse()?,
-            _comma: input.parse()?,
+            _1: input.parse()?,
             cm: input.parse()?,
+            _2: input.parse()?,
+            em: input.parse()?,
         })
     }
 }

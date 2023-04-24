@@ -1,7 +1,8 @@
 use ecs_lib::system;
+use ecs_macros::Mut;
 
 use super::component::Component as Comp2;
-use super::event::{CoreEvent, MyEvent, PushEvent};
+use super::event::{CoreEvent, MyEvent};
 
 #[system]
 pub fn empty(ev: &CoreEvent::Events, res: &super::component::Resource) {
@@ -29,11 +30,11 @@ pub fn super_mut(
     ev: &CoreEvent::Update,
     _comp: &mut super::super::MainComponent,
     res: &mut super::component::Resource,
-    em: &mut super::event::EventBus,
+    em: &mut crate::EFoo,
 ) {
     res.cnt += 1;
     println!("Super Duper Mutable and the count is {}", res.cnt);
-    em.push(MyEvent::E2(2, 29));
+    em.new_event(MyEvent::E2(2, 34));
 }
 
 #[system]

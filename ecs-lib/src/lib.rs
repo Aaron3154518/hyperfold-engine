@@ -8,11 +8,10 @@ use ecs_macros::structs::ComponentArgs;
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::{format_ident, quote};
-use regex::Regex;
 use syn::{parse_macro_input, spanned::Spanned};
 
 mod parse;
-use parse::{find, Component, EventMod, Input, Service};
+use parse::{find, Component, ComponentType, EventMod, Input, Service};
 
 struct Out {
     f: std::fs::File,
@@ -39,7 +38,12 @@ impl Out {
 }
 
 #[proc_macro_attribute]
-pub fn component(_input: TokenStream, item: TokenStream) -> TokenStream {
+pub fn component(input: TokenStream, item: TokenStream) -> TokenStream {
+    let args = parse_macro_input!(input as ComponentType);
+    if args.is_dummy() {
+        return quote!().into();
+    }
+
     let mut strct = parse_macro_input!(item as syn::ItemStruct);
     strct.vis = syn::parse_quote!(pub);
 
@@ -48,91 +52,28 @@ pub fn component(_input: TokenStream, item: TokenStream) -> TokenStream {
 
 #[proc_macro_attribute]
 pub fn system(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    let fun = parse_macro_input!(item as syn::ItemFn);
+    let mut fun = parse_macro_input!(item as syn::ItemFn);
 
-    // Get service functions
-    let services = std::env::var("SERVICES")
-        .unwrap_or_else(|_| "SERVICES".to_string())
-        .split(" ")
-        .map(|s| s.to_string())
-        .collect::<Vec<_>>();
+    // Services
+    let services = Service::parse(std::env::var("SERVICES").expect("SERVICES"));
 
     // Extract function paths
-    let regex = Regex::new(r"\w+(::\w+)*").expect("msg");
-    let s_names = services
-        .iter()
-        .map(|s| match regex.find(s) {
-            Some(m) => m.as_str().split("::").collect::<Vec<_>>(),
-            None => Vec::new(),
-        })
-        .filter(|s| !s.is_empty())
-        .collect::<Vec<_>>();
+    let s_names = services.iter().map(|s| s.path.to_vec()).collect::<Vec<_>>();
 
     // Match this function to system functions
-    // if let Some(i) =  {
-    // let path = fun.sig.ident.span().unwrap().source_file().path();
-    // if let Some(dir) = path.parent() {
-    //     let mut no_ext = PathBuf::new();
-    //     no_ext.push(dir);
-    //     no_ext.push(path.file_stem().expect("No file prefix"));
-    //     let mut idxs = (0..s_names.len()).collect::<Vec<_>>();
-    //     // Repeatedly prune impossible paths
-    //     for (i, p) in no_ext.iter().enumerate() {
-    //         let p = p
-    //             .to_str()
-    //             .expect(format!("Could not convert path segment to string: {:#?}", p).as_str());
-    //         idxs.retain(|j| match s_names.get(*j) {
-    //             Some(s) => match s.get(i) {
-    //                 Some(s) => (*s == "crate" && p == "src") || *s == p,
-    //                 None => false,
-    //             },
-    //             None => false,
-    //         });
-    //     }
-    //     // Find this function in the possible paths
-    //     let n = no_ext.iter().count();
-    //     idxs.retain(|j| match s_names.get(*j) {
-    //         Some(s) => {
-    //             s.len() == n + 1
-    //                 && match s.get(n) {
-    //                     Some(s) => *s == fun.sig.ident.to_string(),
-    //                     None => false,
-    //                 }
-    //         }
-    //         None => false,
-    //     });
-    //     if let Some(i) = idxs.first() {
     if let Some(s) = services
         .get(find(fun.span(), fun.sig.ident.to_string(), s_names).expect("Could not find service"))
     {
-        // Parse function argument types
-        let types = Regex::new(r"\w+:[01]:(?P<type>\d+)(,|\)$)")
-            .expect("Could not construct regex")
-            .captures_iter(s)
-            .filter_map(|m| match m.name("type") {
-                Some(t) => Some(t.as_str().parse::<usize>().expect("Could not parse type")),
-                None => {
-                    println!("Could not match type");
-                    None
-                }
-            })
-            .collect::<Vec<_>>();
-
-        // Argsort the types
-        let mut idxs: Vec<usize> = (0..types.len()).collect();
-        idxs.sort_by_key(|&i| &types[i]);
-
         // Re-order the function arguments
-        let a = fun.sig.inputs.iter().collect::<Vec<_>>();
-        let mut puncs = syn::punctuated::Punctuated::<_, syn::token::Comma>::new();
-        puncs.extend(idxs.iter().map(|i| a[*i].clone()));
-        // fun.sig.inputs = puncs;
+        let args = std::mem::replace(&mut fun.sig.inputs, syn::punctuated::Punctuated::new());
+        fun.sig.inputs =
+            s.get_arg_idxs()
+                .iter()
+                .fold(syn::punctuated::Punctuated::new(), |mut p, &idx| {
+                    p.push(args[idx].to_owned());
+                    p
+                });
     }
-    // }
-    // }
-
-    let mut out = Out::new("out4.txt", true);
-    out.write(format!("{:#?}\n", fun.sig.inputs));
 
     quote!(#fun).into()
 }
@@ -142,20 +83,6 @@ pub fn event(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut out = Out::new("out_en.txt", true);
 
     let en = parse_macro_input!(item as syn::ItemEnum);
-
-    // Events
-    let events = EventMod::parse(std::env::var("EVENTS").expect("EVENTS"));
-
-    // Match this event to all events
-    let e_idx = find(
-        en.span(),
-        en.ident.to_string(),
-        events
-            .iter()
-            .map(|em| em.path.iter().map(|s| s.as_str()).collect())
-            .collect(),
-    )
-    .expect("Could not find enum");
 
     // TODO: make fields public
     let name = en.ident;
@@ -184,19 +111,9 @@ pub fn event(_attr: TokenStream, item: TokenStream) -> TokenStream {
         })
         .collect::<Vec<_>>();
 
-    let (s_names, s_vars) = strcts
-        .iter()
-        .enumerate()
-        .map(|(i, s)| (s.ident.to_owned(), format_ident!("e{}_{}", e_idx, i)))
-        .unzip::<_, _, Vec<_>, Vec<_>>();
-
     let code = quote!(
         pub mod #name {
-            use ecs_macros::event_impl;
-
             #(#strcts)*
-
-            #(event_impl!(#s_names, #s_vars);)*
         }
     );
     out.write(format!("{:#?}\n", code.to_string()));
@@ -212,13 +129,40 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
     let components = Component::parse(std::env::var("COMPONENTS").expect("COMPONENTS"));
 
     // Find the EventManager
-    let c_eb = Component::find(&components, "crate::ecs::event::EventBus")
-        .expect("Could not find EventBus")
+    let c_eb = Component::find(&components, "crate::EFoo")
+        .expect("Could not find crate::EFoo")
         .var
         .to_owned();
 
     // Events
     let events = EventMod::parse(std::env::var("EVENTS").expect("EVENTS"));
+
+    let mut cnt = 0;
+    let (e_strcts, e_varis, e_vars) = events.iter().enumerate().fold(
+        (Vec::new(), Vec::new(), Vec::new()),
+        |(mut strcts, mut varis, mut vars), (i, em)| {
+            let p = em.get_path();
+            let (new_strcts, new_varis, new_vars) = em.events.iter().enumerate().fold(
+                (Vec::new(), Vec::new(), Vec::new()),
+                |(mut strcts, mut varis, mut vars), (j, e)| {
+                    let mut p = p.clone();
+                    p.segments.push(syn::PathSegment {
+                        ident: format_ident!("{}", e),
+                        arguments: syn::PathArguments::None,
+                    });
+                    strcts.push(p);
+                    vars.push(format_ident!("e{}_{}", i, j));
+                    varis.push(format_ident!("_{}", format!("{}", cnt)));
+                    cnt += 1;
+                    (strcts, varis, vars)
+                },
+            );
+            strcts.push(new_strcts);
+            varis.push(new_varis);
+            vars.push(new_vars);
+            (strcts, varis, vars)
+        },
+    );
 
     // Services
     let mut services = Service::parse(std::env::var("SERVICES").expect("SERVICES"));
@@ -230,10 +174,23 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
         .map(|s| s.into_iter().collect::<Vec<_>>())
         .filter_map(|v_s| {
             v_s.first()
-                .and_then(|s| s.get_event(&events))
+                .and_then(|s| {
+                    s.event.as_ref().map(|e| {
+                        e_strcts
+                            .get(e.e_idx)
+                            .zip(e_varis.get(e.e_idx))
+                            .and_then(|(v_s, v_v)| {
+                                v_s.get(e.v_idx)
+                                    .zip(v_v.get(e.v_idx))
+                                    .map(|(s, v)| (s.to_owned(), v.to_owned()))
+                            })
+                            .expect("Could not find service event")
+                    })
+                })
                 .map(|e| (v_s, e))
         })
         .unzip::<_, _, Vec<_>, Vec<_>>();
+    let (s_ev_paths, s_ev_varis) = s_events.into_iter().unzip::<_, _, Vec<_>, Vec<_>>();
 
     // Get service names and signatures for each signature bin
     let (s_names, s_args) = services
@@ -259,6 +216,7 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
                 let (vs, ts) = match v.first().map_or(ComponentArgs::None, |c| c.arg_type) {
                     ComponentArgs::None => (&mut s_carg_vs, &mut s_carg_ts),
                     ComponentArgs::Global => (&mut s_garg_vs, &mut s_garg_ts),
+                    _ => return,
                 };
                 vs.pop();
                 vs.push(v.iter().map(|c| c.var.to_owned()).collect::<Vec<_>>());
@@ -276,23 +234,27 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
             let (vs, ts) = match v.first().map_or(ComponentArgs::None, |c| c.arg_type) {
                 ComponentArgs::None => (&mut c_vars, &mut c_types),
                 ComponentArgs::Global => (&mut g_vars, &mut g_types),
+                _ => return,
             };
             vs.extend(v.iter().map(|c| c.var.to_owned()).collect::<Vec<_>>());
             ts.extend(v.iter().map(|c| c.ty.to_owned()).collect::<Vec<_>>());
         });
 
-    let (sm, cm) = parse_macro_input!(input as Input).get();
+    let (sm, cm, em) = parse_macro_input!(input as Input).get();
 
     let code = quote!(
         use ecs_macros::*;
+        events!(#em,
+            #(#((#e_strcts, #e_varis, #e_vars)),*),*
+        );
         manager!(#cm,
             c(#(#c_vars, #c_types),*),
             g(#(#g_vars, #g_types),*)
         );
-        systems!(#sm, #cm, EFoo, #c_eb,
+        systems!(#sm, #cm, #em, #c_eb,
             #(
                 ((#(#s_names),*),
-                e(#s_events),
+                e(#s_ev_paths, #s_ev_varis),
                 c(#(#s_carg_vs, #s_carg_ts),*),
                 g(#(#s_garg_vs, #s_garg_ts),*))
             ),*
@@ -301,50 +263,6 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
 
     // Open out.txt to print stuff
     f.write(format!("Code:\n{}\n", code));
-
-    code.into()
-}
-
-#[proc_macro]
-pub fn system_manager(input: TokenStream) -> TokenStream {
-    let mut out = Out::new("out_em.txt", false);
-
-    // Events
-    let events = EventMod::parse(std::env::var("EVENTS").expect("EVENTS"));
-
-    // Parse out event paths and construct member names
-    let (ev_ts, ev_vs) =
-        events
-            .iter()
-            .enumerate()
-            .fold((Vec::new(), Vec::new()), |(mut ts, mut vs), (i, em)| {
-                let p = em.get_path();
-                let (new_ts, new_vs) = em
-                    .events
-                    .iter()
-                    .enumerate()
-                    .map(|(j, e)| {
-                        let mut p = p.to_owned();
-                        p.segments.push(syn::PathSegment {
-                            ident: format_ident!("{}", e),
-                            arguments: syn::PathArguments::None,
-                        });
-                        (p, format_ident!("e{}_{}", i, j))
-                    })
-                    .unzip::<_, _, Vec<_>, Vec<_>>();
-                ts.extend(new_ts);
-                vs.extend(new_vs);
-                (ts, vs)
-            });
-
-    let sm = parse_macro_input!(input as syn::Ident);
-
-    let code = quote!(
-        use ecs_macros::systems_struct;
-        systems_struct!(#sm, #(#ev_vs:#ev_ts),*);
-    );
-
-    out.write(format!("{}", code.to_string()));
 
     code.into()
 }

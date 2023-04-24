@@ -285,21 +285,28 @@ impl syn::visit_mut::VisitMut for Visitor {
         syn::visit_mut::visit_item_mod_mut(self, i);
     }
 
+    // Components
     fn visit_item_struct_mut(&mut self, i: &mut syn::ItemStruct) {
         match i.attrs.first() {
             Some(a) => {
                 let mut is_comp = false;
-                let mut args = ComponentArgs::None;
+                let mut arg = ComponentArgs::None;
                 for t in a.meta.to_token_stream() {
                     match t {
                         proc_macro2::TokenTree::Group(g) => {
-                            for tt in g.stream() {
-                                if let proc_macro2::TokenTree::Ident(i) = tt {
-                                    match i.to_string().as_str() {
-                                        "Global" => args = ComponentArgs::Global,
-                                        _ => (),
+                            let args = g
+                                .stream()
+                                .into_iter()
+                                .filter_map(|tt| {
+                                    if let proc_macro2::TokenTree::Ident(i) = tt {
+                                        Some(ComponentArgs::from(i.to_string().as_str()))
+                                    } else {
+                                        None
                                     }
-                                }
+                                })
+                                .collect::<Vec<_>>();
+                            if args.contains(&ComponentArgs::Global) {
+                                arg = ComponentArgs::Global
                             }
                         }
                         proc_macro2::TokenTree::Ident(i) => {
@@ -313,7 +320,7 @@ impl syn::visit_mut::VisitMut for Visitor {
                 if is_comp {
                     self.components.push(Component {
                         path: vec![i.ident.to_string()],
-                        args,
+                        args: arg,
                     });
                 }
             }
