@@ -135,7 +135,9 @@ macro_rules! systems {
 macro_rules! systems_struct {
     ($sm: ident, $($evs: ident :$ets: path),*) => {
         pub struct $sm {
-            $(pub $evs: Vec<Box<dyn Fn(&mut crate::Foo, &$ets)>>),*
+            pub: order: Vec<VecDeque<$ets>>,
+            $(pub $evs: Vec<$ets>),*
+            // $(pub $evs: Vec<Box<dyn Fn(&mut crate::Foo, &$ets)>>),*
         }
 
         impl $sm {
@@ -143,6 +145,10 @@ macro_rules! systems_struct {
                 Self {
                     $($evs: Vec::new()),*
                 }
+            }
+
+            pub fn extend(&mut self, other: &mut Self) {
+                $(self.$evs.;)*
             }
         }
     }

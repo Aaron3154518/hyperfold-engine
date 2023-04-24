@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 
 use ecs_lib::{component, event, system_manager};
 
@@ -32,7 +32,7 @@ pub trait PushEvent<T: 'static> {
 pub trait PopRun {
     fn is_empty(&self) -> bool;
 
-    fn pop_run(&mut self, cm: &mut crate::Foo) -> bool;
+    fn pop_run(&mut self, cm: &mut crate::Foo) -> Option<dyn Fn(&mut crate::Foo)>;
 }
 
 pub struct RunEvent<'a, T> {
@@ -45,11 +45,10 @@ impl<'a, T> PopRun for RunEvent<'a, T> {
         self.funcs.is_empty()
     }
 
-    fn pop_run(&mut self, cm: &mut crate::Foo) -> bool {
-        self.funcs.pop().map_or(false, |f| {
-            (f)(cm, &self.e);
-            true
-        })
+    fn pop_run(&mut self, cm: &mut crate::Foo) -> Option<dyn Fn(&mut crate::Foo)> {
+        self.funcs
+            .pop()
+            .map(|f| |cm: &mut crate::Foo| (f)(cm, &self.e))
     }
 }
 
@@ -84,7 +83,7 @@ impl PopRun for EventBus {
         self.stack.is_empty()
     }
 
-    fn pop_run(&mut self, cm: &mut crate::Foo) -> bool {
+    fn pop_run(&mut self, cm: &mut crate::Foo) -> dyn Fn(&mut crate::Foo) {
         // Remove empty queues and PopRuns
         while self.stack.last_mut().is_some_and(|queue| {
             while queue.front_mut().is_some_and(|poprun| poprun.is_empty()) {
