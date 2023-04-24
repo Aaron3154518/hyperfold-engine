@@ -1,8 +1,10 @@
+#![feature(result_option_inspect)]
+
 use bindgen;
 use bindgen::callbacks::{DeriveInfo, ParseCallbacks};
 use ecs_macros::structs::ComponentArgs;
 use quote::ToTokens;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::env;
 use std::fs::File;
 use std::io::Read;
@@ -104,22 +106,6 @@ fn main() {
     for v in vecs.iter() {
         events.append(&mut v.get_events());
     }
-    // Add numbering for duplicate events
-    let mut ev_names = HashMap::new();
-    for em in events.iter_mut() {
-        for e in em.events.iter_mut() {
-            match ev_names.get_mut(&e.name) {
-                Some(c) => {
-                    e.cnt = *c;
-                    *c += 1;
-                }
-                None => {
-                    e.cnt = 0;
-                    ev_names.insert(e.name.to_string(), 1 as usize);
-                }
-            }
-        }
-    }
     let events_data = events
         .iter()
         .map(|e| format!("{}", e.to_data()))
@@ -133,6 +119,8 @@ fn main() {
         v.services.retain_mut(|s| {
             s.map_to_objects(&v.uses, &comps, &events);
             s.is_valid()
+                .inspect_err(|e| eprintln!("Error: {}", e))
+                .is_ok()
         });
         servs.append(&mut v.services.to_vec());
         serv_data.append(&mut v.services.iter().map(|f| f.to_data()).collect());
@@ -368,14 +356,7 @@ impl syn::visit_mut::VisitMut for Visitor {
             if let Some(_) = a.meta.path().segments.iter().find(|s| s.ident == "event") {
                 self.events.push(EventMod {
                     path: vec![i.ident.to_string()],
-                    events: i
-                        .variants
-                        .iter()
-                        .map(|v| Event {
-                            name: v.ident.to_string(),
-                            cnt: 0,
-                        })
-                        .collect(),
+                    events: i.variants.iter().map(|v| v.ident.to_string()).collect(),
                 });
                 break;
             }
@@ -462,7 +443,7 @@ fn get_possible_use_paths(
 #[derive(Clone)]
 struct EventMod {
     path: Vec<String>,
-    events: Vec<Event>,
+    events: Vec<String>,
 }
 
 impl EventMod {
@@ -472,17 +453,11 @@ impl EventMod {
             self.path.join("::"),
             self.events
                 .iter()
-                .map(|e| format!("{}:{}", e.name, e.cnt))
+                .map(|s| format!("{}", s))
                 .collect::<Vec<_>>()
                 .join(",")
         )
     }
-}
-
-#[derive(Clone)]
-struct Event {
-    name: String,
-    cnt: usize,
 }
 
 // Functions
@@ -493,7 +468,7 @@ struct Fn {
 }
 
 impl Fn {
-    pub fn is_valid(&self) -> bool {
+    pub fn is_valid(&self) -> Result<(), &str> {
         let mut set = HashSet::new();
         let mut has_event = false;
         for arg in self.args.iter() {
@@ -502,22 +477,25 @@ impl Fn {
                     FnArgType::Component(i) => {
                         if !set.insert(i) {
                             // Duplicate component
-                            return false;
+                            return Err("Duplicate component argument");
                         }
                     }
                     FnArgType::Event(_, _) => {
                         if has_event {
                             // Multiple events
-                            return false;
+                            return Err("Multiple events accepted");
                         }
                         has_event = true;
                     }
                 },
                 // Invalid argument
-                None => return false,
+                None => return Err("Argument is not a component or event"),
             }
         }
-        true
+        // if !has_event {
+        //     return Err("No event specific");
+        // }
+        Ok(())
     }
 
     pub fn map_to_objects(
@@ -603,7 +581,7 @@ impl FnArg {
                     if let Some(p) = e
                         .events
                         .iter()
-                        .position(|v| path.last().is_some_and(|p| *p == v.name))
+                        .position(|n| path.last().is_some_and(|p| p == n))
                     {
                         return Some((i, p));
                     }

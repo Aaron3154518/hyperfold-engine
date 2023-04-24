@@ -1,21 +1,6 @@
-use std::{any::TypeId, hash::Hash};
+use std::collections::VecDeque;
 
-use ecs_lib::{component, event};
-
-#[derive(PartialEq, Eq, Hash)]
-pub struct TypeIdx {
-    id: TypeId,
-    vi: usize,
-}
-
-impl TypeIdx {
-    pub const fn new<T: 'static>(i: usize) -> Self {
-        Self {
-            id: TypeId::of::<T>(),
-            vi: i,
-        }
-    }
-}
+use ecs_lib::{component, event, system_manager};
 
 #[event]
 enum CoreEvent {
@@ -27,26 +12,8 @@ enum CoreEvent {
 #[event]
 enum MyEvent {
     E1,
-    E2(i32, i32),
-    E3 { name: String },
-}
-
-mod MyEventMod {
-    pub struct E1;
-    struct E2(i32, i32);
-    struct E3 {
-        name: String,
-    }
-}
-
-mod OtherEventMod {
-    struct O1;
-    struct O2(String, i32);
-    struct O3;
-}
-
-enum EFoo {
-    MyEventModE1(MyEventMod::E1),
+    E2(pub i32, pub i32),
+    E3 { pub name: String },
 }
 
 #[event]
@@ -56,57 +23,84 @@ enum OtherEvent {
     O3,
 }
 
-#[component(Global)]
-pub struct CurrEvent {
-    event: crate::EFoo,
+pub trait PushEvent<T: 'static> {
+    fn push(&mut self, t: T);
+
+    fn add_system(&mut self, f: Box<dyn Fn(&mut crate::Foo, &T)>);
 }
 
-impl CurrEvent {
-    pub fn new() -> Self {
-        Self {
-            event: crate::EFoo::from(CoreEvent::Update),
-        }
+pub trait PopRun {
+    fn is_empty(&self) -> bool;
+
+    fn pop_run(&mut self, cm: &mut crate::Foo) -> bool;
+}
+
+pub struct RunEvent<'a, T> {
+    e: T,
+    funcs: Vec<&'a Box<dyn Fn(&mut crate::Foo, &T)>>,
+}
+
+impl<'a, T> PopRun for RunEvent<'a, T> {
+    fn is_empty(&self) -> bool {
+        self.funcs.is_empty()
     }
 
-    pub fn from(e: crate::EFoo) -> Self {
-        Self { event: e }
-    }
-
-    pub fn get(&self) -> &crate::EFoo {
-        &self.event
-    }
-
-    pub fn get_mut(&mut self) -> &mut crate::EFoo {
-        &mut self.event
+    fn pop_run(&mut self, cm: &mut crate::Foo) -> bool {
+        self.funcs.pop().map_or(false, |f| {
+            (f)(cm, &self.e);
+            true
+        })
     }
 }
 
+system_manager!(SystemManager);
+
+// TODO fix encapsulation
+// TODO don't have to import PushEvent
 #[component(Global)]
 pub struct EventBus {
-    bus: Vec<crate::EFoo>,
+    pub manager: SystemManager,
+    pub stack: Vec<VecDeque<Box<dyn PopRun>>>,
 }
 
-// TODO: vector of stacks (process in order, children then parent)
 impl EventBus {
     pub fn new() -> Self {
-        Self { bus: Vec::new() }
-    }
-
-    pub fn push<T>(&mut self, t: T)
-    where
-        crate::EFoo: From<T>,
-    {
-        self.bus.push(crate::EFoo::from(t))
+        Self {
+            manager: SystemManager::new(),
+            stack: Vec::new(),
+        }
     }
 
     pub fn reset(&mut self) {
-        self.bus = Vec::new();
-        for e in [CoreEvent::Render, CoreEvent::Events, CoreEvent::Update] {
-            self.push(e);
-        }
+        self.stack = vec![VecDeque::new()];
+        self.push(CoreEvent::Update);
+        self.push(CoreEvent::Events);
+        self.push(CoreEvent::Render);
+    }
+}
+
+impl PopRun for EventBus {
+    fn is_empty(&self) -> bool {
+        self.stack.is_empty()
     }
 
-    pub fn pop(&mut self) -> Option<crate::EFoo> {
-        self.bus.pop()
+    fn pop_run(&mut self, cm: &mut crate::Foo) -> bool {
+        // Remove empty queues and PopRuns
+        while self.stack.last_mut().is_some_and(|queue| {
+            while queue.front_mut().is_some_and(|poprun| poprun.is_empty()) {
+                queue.pop_front();
+            }
+            queue.is_empty()
+        }) {
+            self.stack.pop();
+        }
+        // Add a new queue
+        self.stack.push(VecDeque::new());
+        // Run top function
+        let i = self.stack.len() - 2;
+        self.stack
+            .get_mut(i)
+            .and_then(|queue| queue.front_mut())
+            .map_or(false, |e| e.pop_run(cm))
     }
 }

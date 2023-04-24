@@ -11,7 +11,9 @@ pub trait ComponentManager<E, T> {
 
 #[macro_export]
 macro_rules! manager {
-    ($cm: ident, c($($c_v: ident, $c_t: ty),*), g($($g_v: ident, $g_t: ty),*)) => {
+    ($cm: ident,
+        c($($c_v: ident, $c_t: ty),*),
+        g($($g_v: ident, $g_t: ty),*)) => {
         pub struct $cm {
             $($g_v: $g_t,)*
             $($c_v: std::collections::HashMap<crate::ecs::entity::Entity, $c_t>,)*
@@ -58,77 +60,70 @@ pub fn get_keys<'a, K: Eq + Hash + Clone, V>(map: &'a HashMap<K, V>) -> HashSet<
 #[macro_export]
 macro_rules! service_function {
     // Does not take components
-    ($cm: ident, c(), g($($g_vs: ident, $g_ts: ty),*)) => {
-        |cm: &mut $cm, f: &dyn Fn($($g_ts,)*)| {
-            f($(&mut cm.$g_vs,)*)
-        }
+    ($cm: ident,
+        e($e_t: path),
+        c(),
+        g($($g_vs: ident, $g_ts: ty),*)) => {
+        |cm: &mut $cm, e: &$e_t, f: &dyn Fn(&$e_t, $($g_ts,)*)| {
+            f(e, $(&mut cm.$g_vs,)*)
+        };
     };
 
     ($cm: ident,
+        e($e_t: path),
         c($($c_vs: ident, $c_ts: ty),*),
         g($($g_vs: ident, $g_ts: ty),*)
     ) => {
-        |cm: &mut $cm, f: &dyn Fn($($c_ts,)*$($g_ts,)*)| {
+        |cm: &mut $cm, e: &$e_t, f: &dyn Fn(&$e_t, $($c_ts,)*$($g_ts,)*)| {
             for key in intersect_keys(&[$(get_keys(&cm.$c_vs)),*]).iter() {
                 if let ($(Some($c_vs)),*) = ($(cm.$c_vs.get_mut(key)),*) {
-                    f($($c_vs,)*$(&mut cm.$g_vs,)*)
+                    f(e, $($c_vs,)*$(&mut cm.$g_vs,)*)
                 }
             }
-        }
+        };
     };
 }
 
 #[macro_export]
 macro_rules! systems {
-    ($sm: ident, $cm: ident, $em: ident, $c_eb: ident, $c_ce: ident,
+    ($sm: ident, $cm: ident, $em: ident, $c_eb: ident,
         $(
             (
-                ($($f: path, $e_v: path),+),
+                ($($f: path),+),
+                e($e_v: path),
                 c($($c_vs: ident, $c_ts: ty),*),
                 g($($g_vs: ident, $g_ts: ty),*)
             )
         ),+
     ) => {
+        use crate::ecs::event::{PushEvent, PopRun};
+
         struct $sm {
             pub component_manager: $cm,
-            systems: std::collections::HashMap<std::any::TypeId, Vec<Box<dyn Fn(&mut $cm)>>>,
         }
 
         impl $sm {
             pub fn new() -> Self {
                 Self {
                     component_manager: $cm::new(),
-                    systems: std::collections::HashMap::new()
                 }
             }
 
             pub fn tick(&mut self) {
                 self.component_manager.$c_eb.reset();
-                while let Some(e) = self.component_manager.$c_eb.pop() {
-                    let k = e.typeid();
-                    self.component_manager.$c_ce = crate::ecs::event::CurrEvent::from(e);
-                    if let Some(systems) = self.systems.get(k) {
-                        for system in systems.iter() {
-                            (system)(&mut self.component_manager);
-                        }
-                    }
-                }
-            }
-
-            fn add_system<T: 'static>(&mut self, f: Box<dyn Fn(&mut $cm)>) {
-                let k = std::any::TypeId::<T>(i);
-                if let Some(v) = self.systems.get_mut(&k) {
-                    v.push(f);
-                } else {
-                    self.systems.insert(k, vec![f]);
+                while self.component_manager.$c_eb.pop_run(
+                    &mut self.component_manager) {
                 }
             }
 
             pub fn add_systems(&mut self) {
             $(
-                let f = service_function!($cm, c($($c_vs, $c_ts),*), g($($g_vs, $g_ts),*));
+                let f = service_function!($cm,
+                    e($e_v),
+                    c($($c_vs, $c_ts),*),
+                    g($($g_vs, $g_ts),*));
                 $(
-                    self.add_system::<$e_v>(Box::new(move |cm: &mut $cm| f(cm, &$f)));
+                    self.component_manager.$c_eb.add_system(Box::new(move |cm: &mut $cm, e: &$e_v| f(cm, e, &$f)));
                 )*
             )*
             }
@@ -136,51 +131,38 @@ macro_rules! systems {
     };
 }
 
-pub trait To<T> {
-    fn to<'a>(&'a self) -> Option<&'a T>;
-}
-
 #[macro_export]
-macro_rules! events {
-    ($ev: ident, $($evs: ident ($ets: path)),*) => {
-        #[derive(PartialEq, Eq)]
-        pub enum $ev {
-            $($evs($ets)),*
+macro_rules! systems_struct {
+    ($sm: ident, $($evs: ident :$ets: path),*) => {
+        pub struct $sm {
+            $(pub $evs: Vec<Box<dyn Fn(&mut crate::Foo, &$ets)>>),*
         }
 
-        impl $ev {
-            pub fn typeid(&self) -> &'static std::any::TypeId {
-                match self {
-                    $(Self::$evs(_) => std::any::TypeId::of::<$ets>(),)*
+        impl $sm {
+            pub fn new() -> Self {
+                Self {
+                    $($evs: Vec::new()),*
                 }
             }
         }
-
-        $(
-            impl From<$ets> for $ev {
-                fn from(v: $ets) -> Self {
-                    Self::$evs(v)
-                }
-            }
-
-            impl To<$ets> for $ev {
-                fn to<'a>(&'a self) -> Option<&'a $ets> {
-                    match self {
-                        Self::$evs(v) => Some(v),
-                        _ => None
-                    }
-                }
-            }
-        )*
     }
 }
 
 #[macro_export]
-macro_rules! match_event {
-    ($ev: ident, $e: ident :: $v: ident $(($($vs: ident),+))?, $body: block) => {
-        if let Some(e) = $ev.get().to() {
-            if let $e::$v$(($($vs),*))? = e {
-                $body
+macro_rules! event_impl {
+    ($name: ident, $var: ident) => {
+        impl crate::ecs::event::PushEvent<$name> for crate::ecs::event::EventBus {
+            fn push(&mut self, e: $name) {
+                if let Some(queue) = self.stack.last_mut() {
+                    queue.push_back(Box::new(crate::ecs::event::RunEvent {
+                        e,
+                        funcs: self.manager.$var.iter().map(|b| b).collect(),
+                    }));
+                }
+            }
+
+            fn add_system(&mut self, f: Box<dyn Fn(&mut crate::Foo, &$name)>) {
+                self.manager.$var.push(f);
             }
         }
     };

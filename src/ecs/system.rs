@@ -1,8 +1,7 @@
 use ecs_lib::system;
-use ecs_macros::{match_event, To};
 
 use super::component::Component as Comp2;
-use super::event::{CoreEvent, MyEvent};
+use super::event::{CoreEvent, MyEvent, PushEvent};
 
 #[system]
 pub fn empty(ev: &CoreEvent::Events, res: &super::component::Resource) {
@@ -11,18 +10,14 @@ pub fn empty(ev: &CoreEvent::Events, res: &super::component::Resource) {
 
 #[system]
 pub fn greet(
-    ev1: &MyEvent::E1,
+    ev2: &MyEvent::E2,
     _comp: &mut super::super::MainComponent,
     comp2: &Comp2,
     comp4: &mut crate::ecs::component::MyComponent,
     comp3: &mut super::test::tmp::Component,
     res: &mut super::component::Resource,
-    ev: &super::event::CurrEvent,
 ) {
-    match_event!(ev, MyEvent::E1, {
-        res.cnt += 10;
-    });
-    match_event!(ev, MyEvent::E2(i1, i2), { res.cnt += i1 * i2 });
+    res.cnt += ev2.0 * ev2.1;
     println!(
         "#{}: Hi {} from {}. I have a message: The count is {} and \"{}\"",
         comp3.i, comp2.name, comp2.loc, res.cnt, comp4.msg
@@ -39,7 +34,6 @@ pub fn super_mut(
     res.cnt += 1;
     println!("Super Duper Mutable and the count is {}", res.cnt);
     em.push(MyEvent::E2(2, 29));
-    em.push(MyEvent::E1);
 }
 
 #[system]
