@@ -91,6 +91,7 @@ version = "0.1.0"
 dependencies = [
  "num-derive",
  "num-traits",
+ "syn 2.0.15",
 ]
 
 [[package]]

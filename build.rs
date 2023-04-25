@@ -152,19 +152,6 @@ fn end<T>(v: &Vec<T>) -> usize {
     }
 }
 
-// Component
-#[derive(Clone, Debug)]
-struct Component {
-    path: Vec<String>,
-    args: ComponentArgs,
-}
-
-impl Component {
-    pub fn to_data(&self) -> String {
-        format!("{}({})", self.path.join("::"), self.args as u8)
-    }
-}
-
 // Visitor
 struct Visitor {
     components: Vec<Component>,
@@ -279,6 +266,37 @@ impl std::fmt::Display for Visitor {
     }
 }
 
+fn find_attribute<'a>(attrs: &'a Vec<syn::Attribute>, attr: &str) -> Option<&'a syn::Attribute> {
+    // TODO: validate path
+    attrs
+        .iter()
+        .find(|a| a.path().segments.last().is_some_and(|s| s.ident == attr))
+}
+
+fn parse_attr_args(attr: &syn::Attribute) -> Vec<String> {
+    match &attr.meta {
+        syn::Meta::List(l) => {
+            for t in l.to_token_stream() {
+                match t {
+                    proc_macro2::TokenTree::Group(g) => {
+                        return g
+                            .stream()
+                            .into_iter()
+                            .filter_map(|tt| match tt {
+                                proc_macro2::TokenTree::Ident(i) => Some(i.to_string()),
+                                _ => None,
+                            })
+                            .collect();
+                    }
+                    _ => (),
+                }
+            }
+        }
+        _ => (),
+    }
+    Vec::new()
+}
+
 impl syn::visit_mut::VisitMut for Visitor {
     fn visit_item_mod_mut(&mut self, i: &mut syn::ItemMod) {
         self.modules.push(i.ident.to_string());
@@ -287,86 +305,71 @@ impl syn::visit_mut::VisitMut for Visitor {
 
     // Components
     fn visit_item_struct_mut(&mut self, i: &mut syn::ItemStruct) {
-        match i.attrs.first() {
-            Some(a) => {
-                let mut is_comp = false;
-                let mut arg = ComponentArgs::None;
-                for t in a.meta.to_token_stream() {
-                    match t {
-                        proc_macro2::TokenTree::Group(g) => {
-                            let args = g
-                                .stream()
-                                .into_iter()
-                                .filter_map(|tt| {
-                                    if let proc_macro2::TokenTree::Ident(i) = tt {
-                                        Some(ComponentArgs::from(i.to_string().as_str()))
-                                    } else {
-                                        None
-                                    }
-                                })
-                                .collect::<Vec<_>>();
-                            if args.contains(&ComponentArgs::Global) {
-                                arg = ComponentArgs::Global
-                            }
-                        }
-                        proc_macro2::TokenTree::Ident(i) => {
-                            if i.to_string() == "component" {
-                                is_comp = true;
-                            }
-                        }
-                        _ => (),
-                    }
-                }
-                if is_comp {
-                    self.components.push(Component {
-                        path: vec![i.ident.to_string()],
-                        args: arg,
-                    });
+        if let Some(a) = find_attribute(&i.attrs, "component") {
+            let mut c_arg = ComponentArgs::None;
+            for arg in parse_attr_args(a) {
+                match ComponentArgs::from(arg.as_str()) {
+                    ComponentArgs::Global => c_arg = ComponentArgs::Global,
+                    _ => (),
                 }
             }
-            None => (),
+            self.components.push(Component {
+                path: vec![i.ident.to_string()],
+                args: c_arg,
+            });
         }
         syn::visit_mut::visit_item_struct_mut(self, i);
     }
 
+    fn visit_item_type_mut(&mut self, i: &mut syn::ItemType) {
+        if let Some(a) = find_attribute(&i.attrs, "component") {
+            let mut c_arg = ComponentArgs::None;
+            for arg in parse_attr_args(a) {
+                match ComponentArgs::from(arg.as_str()) {
+                    ComponentArgs::Global => c_arg = ComponentArgs::Global,
+                    _ => (),
+                }
+            }
+            self.components.push(Component {
+                path: vec![i.ident.to_string()],
+                args: c_arg,
+            });
+        }
+        syn::visit_mut::visit_item_type_mut(self, i);
+    }
+
     // Functions
     fn visit_item_fn_mut(&mut self, i: &mut syn::ItemFn) {
-        for a in i.attrs.iter() {
-            if let Some(_) = a.path().segments.iter().find(|s| s.ident == "system") {
-                // Parse function path and args
-                self.services.push(Fn {
-                    path: concat(self.path.to_vec(), vec![i.sig.ident.to_string()]),
-                    args: i
-                        .sig
-                        .inputs
-                        .iter()
-                        .map(|arg| match arg {
-                            syn::FnArg::Typed(t) => {
-                                let mut fn_arg = FnArg::new();
-                                fn_arg.parse_arg(&self.get_mod_path(), &t);
-                                fn_arg
-                            }
-                            _ => FnArg::new(),
-                        })
-                        .filter(|arg| !arg.ty.is_empty())
-                        .collect(),
-                });
-                break;
-            }
+        if let Some(_) = find_attribute(&i.attrs, "system") {
+            // Parse function path and args
+            self.services.push(Fn {
+                path: concat(self.path.to_vec(), vec![i.sig.ident.to_string()]),
+                args: i
+                    .sig
+                    .inputs
+                    .iter()
+                    .map(|arg| match arg {
+                        syn::FnArg::Typed(t) => {
+                            let mut fn_arg = FnArg::new();
+                            fn_arg.parse_arg(&self.get_mod_path(), &t);
+                            fn_arg
+                        }
+                        _ => FnArg::new(),
+                    })
+                    .filter(|arg| !arg.ty.is_empty())
+                    .collect(),
+            });
         }
         syn::visit_mut::visit_item_fn_mut(self, i);
     }
 
     // Enums
     fn visit_item_enum_mut(&mut self, i: &mut syn::ItemEnum) {
-        for a in i.attrs.iter() {
-            if let Some(_) = a.meta.path().segments.iter().find(|s| s.ident == "event") {
-                self.events.push(EventMod {
-                    path: vec![i.ident.to_string()],
-                    events: i.variants.iter().map(|v| v.ident.to_string()).collect(),
-                });
-                break;
-            }
+        if let Some(_) = find_attribute(&i.attrs, "event") {
+            self.events.push(EventMod {
+                path: vec![i.ident.to_string()],
+                events: i.variants.iter().map(|v| v.ident.to_string()).collect(),
+            });
         }
         syn::visit_mut::visit_item_enum_mut(self, i);
     }
@@ -445,6 +448,19 @@ fn get_possible_use_paths(
         })
         .filter(|path| !path.is_empty())
         .collect::<Vec<_>>()
+}
+
+// Component
+#[derive(Clone, Debug)]
+struct Component {
+    path: Vec<String>,
+    args: ComponentArgs,
+}
+
+impl Component {
+    pub fn to_data(&self) -> String {
+        format!("{}({})", self.path.join("::"), self.args as u8)
+    }
 }
 
 // Event

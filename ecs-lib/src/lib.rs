@@ -11,7 +11,9 @@ use quote::{format_ident, quote};
 use syn::{parse_macro_input, parse_quote, spanned::Spanned};
 
 mod parse;
-use parse::{find, Component, ComponentType, EventMod, Input, Service};
+use parse::{find, Component, EventMod, Input, Service};
+
+use ecs_macros::structs::ComponentType;
 
 struct Out {
     f: std::fs::File,

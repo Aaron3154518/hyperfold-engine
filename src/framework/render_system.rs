@@ -16,6 +16,6 @@ fn render(
     rs: &RenderSystem,
 ) {
     if let Some(tex) = img.0 {
-        rs.draw(&tex, std::ptr::null(), &pos.0.to_sdl_rect())
+        rs.draw(&tex, std::ptr::null(), &pos.to_sdl_rect())
     }
 }
