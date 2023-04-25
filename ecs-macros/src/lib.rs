@@ -170,12 +170,14 @@ macro_rules! systems {
 
         impl $sm {
             pub fn new() -> Self {
-                Self {
+                let mut s = Self {
                     cm: $cm::new(),
                     stack: Vec::new(),
                     services: std::collections::HashMap::new(),
                     events: $em::new()
-                }
+                };
+                s.add_systems();
+                s
             }
 
             fn init(&mut self) -> $em {
@@ -248,7 +250,7 @@ macro_rules! systems {
                 }
             }
 
-            pub fn add_system(&mut self, e: E, f: Box<dyn Fn(&mut $cm, &mut $em)>) {
+            fn add_system(&mut self, e: E, f: Box<dyn Fn(&mut $cm, &mut $em)>) {
                 if let Some(v) = self.services.get_mut(&e) {
                     v.push(f);
                 } else {
@@ -256,7 +258,7 @@ macro_rules! systems {
                 }
             }
 
-            pub fn add_systems(&mut self) {
+            fn add_systems(&mut self) {
                 $(
                     let f = |cm: &mut $cm, em: &mut $em, f: &dyn Fn(&$e_t, $($c_ts,)* $($g_ts,)*)| {
                         if let Some(e) = em.get_event() {

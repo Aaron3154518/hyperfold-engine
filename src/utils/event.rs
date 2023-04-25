@@ -37,9 +37,10 @@ pub enum Status {
     Up = 0x02,
     Held = 0x04,
     Pressed = 0x08,
+    All = 0x0F,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct MouseButton {
     pub mouse: Mouse,
     pub click_pos: Point,
@@ -72,9 +73,13 @@ impl MouseButton {
     pub fn clicked(&self) -> bool {
         self.status & Status::Pressed as u8 != 0
     }
+
+    pub fn no_action(&self) -> bool {
+        self.status & Status::All as u8 == 0
+    }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct KeyButton {
     pub key: sdl2::SDL_KeyCode,
     pub duration: u32,
@@ -104,6 +109,10 @@ impl KeyButton {
 
     pub fn pressed(&self) -> bool {
         self.status & Status::Pressed as u8 != 0
+    }
+
+    pub fn no_action(&self) -> bool {
+        self.status & Status::All as u8 == 0
     }
 }
 

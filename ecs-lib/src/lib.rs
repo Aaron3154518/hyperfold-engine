@@ -95,7 +95,7 @@ pub fn event(_attr: TokenStream, item: TokenStream) -> TokenStream {
                 _ => Some(syn::token::Semi(Span::call_site())),
             };
             syn::ItemStruct {
-                attrs: vec![syn::parse_quote!(#[derive(PartialEq, Eq)])],
+                attrs: Vec::new(),
                 vis: syn::parse_quote!(pub),
                 struct_token: syn::parse_quote!(struct),
                 ident: v.ident,
@@ -113,6 +113,7 @@ pub fn event(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let code = quote!(
         pub mod #name {
+            use super::*;
             #(
                 #[derive(Debug)]
                 #strcts

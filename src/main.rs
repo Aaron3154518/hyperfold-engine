@@ -78,7 +78,6 @@ fn main() {
     );
     f.cm.add_component(e2, ecs::test::tmp::Component { i: 69 });
     // f.cm.add_component(e2, MainComponent {});
-    f.add_systems();
     // f.tick();
 
     // Initialize SDL2
