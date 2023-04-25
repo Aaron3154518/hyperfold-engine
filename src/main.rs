@@ -1,17 +1,19 @@
 #![feature(specialization)]
 #![feature(const_type_id)]
 
-mod sdl2_bindings;
 use std::{
     any::TypeId,
     collections::{HashMap, VecDeque},
     hash::Hash,
 };
 
-use ecs_macros::events;
-use sdl2_bindings::sdl2_::{self as sdl2};
+mod sdl2_bindings;
+use sdl2_bindings::sdl2_ as sdl2;
+
 mod sdl2_image_bindings;
 use sdl2_image_bindings::sdl2_image_ as sdl2_image;
+
+use ecs_macros::events;
 
 mod asset_manager;
 

@@ -7,6 +7,7 @@ use crate::utils::event;
 #[ecs_lib::event]
 enum Events {
     Mouse(pub event::MouseButton),
+    Key(pub event::KeyButton),
 }
 
 #[ecs_lib::system]
@@ -19,6 +20,12 @@ pub fn on_event(_ev: &CoreEvent::Events, e: &mut event::Event, events: &mut crat
         let mb = e.get_mouse(m);
         if !mb.no_action() {
             events.new_event(Events::Mouse(mb.clone()));
+        }
+    }
+
+    for (key, kb) in e.key_buttons.iter() {
+        if !kb.no_action() {
+            events.new_event(Events::Key(kb.clone()));
         }
     }
 }

@@ -41,6 +41,7 @@ fn update_physics(
 ) {
     let s = up.0 as f32 / 1000.0;
     let a_f = s * s / 2.0;
+    // println!("{:#?}", pd.v);
     pos.0
         .move_by(pd.v.x * s + pd.a.x * a_f, pd.v.y * s + pd.a.y * a_f);
     pd.v.x += pd.a.x * s;
