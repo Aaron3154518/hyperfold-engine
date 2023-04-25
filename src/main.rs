@@ -13,16 +13,16 @@ use sdl2_bindings::sdl2_::{self as sdl2};
 mod sdl2_image_bindings;
 use sdl2_image_bindings::sdl2_image_ as sdl2_image;
 
-use asset_manager::*;
-
 mod asset_manager;
+
+use asset_manager::*;
 
 mod utils;
 
 use utils::{
     event::{Event, Mouse},
     pointers::Window,
-    rect::{Align, Dimensions, Rect},
+    rect::{Align, Dimensions, PointF, Rect},
 };
 
 mod ecs;
@@ -30,6 +30,8 @@ mod ecs;
 mod framework;
 
 use ecs_lib::{component, component_manager};
+
+mod test;
 
 const FPS: u32 = 60;
 const FRAME_TIME: u32 = 1000 / FPS;
@@ -43,43 +45,6 @@ struct EFoo;
 component_manager!(SFoo, Foo, EFoo);
 
 fn main() {
-    let mut f = SFoo::new();
-    let e1 = ecs::entity::Entity::new();
-    let e2 = ecs::entity::Entity::new();
-
-    f.cm.add_component(
-        e1,
-        ecs::component::Component {
-            name: "Aaron",
-            loc: "Boise, Idaho",
-        },
-    );
-    f.cm.add_component(
-        e1,
-        ecs::component::MyComponent {
-            msg: "You should stop coding".to_string(),
-        },
-    );
-    f.cm.add_component(e1, ecs::test::tmp::Component { i: 666 });
-    f.cm.add_component(e1, MainComponent {});
-
-    f.cm.add_component(
-        e2,
-        ecs::component::Component {
-            name: "Ur Mom",
-            loc: "Stoopidville",
-        },
-    );
-    f.cm.add_component(
-        e2,
-        ecs::component::MyComponent {
-            msg: "Lmao git gud".to_string(),
-        },
-    );
-    f.cm.add_component(e2, ecs::test::tmp::Component { i: 69 });
-    // f.cm.add_component(e2, MainComponent {});
-    // f.tick();
-
     // Initialize SDL2
     if unsafe { sdl2::SDL_Init(sdl2::SDL_INIT_EVERYTHING) } == 0 {
         println!("SDL Initialized");
@@ -99,7 +64,7 @@ fn main() {
     let img_w = 100;
 
     // Create a window
-    let mut rs = RenderSystem::new(Window::new().title("Game Engine").dimensions(w, h));
+    // let mut rs = RenderSystem::new();
 
     // Create ECSDriver
     // let mut ecs = ECSDriver::new();
@@ -118,50 +83,67 @@ fn main() {
         h: h as f32,
     };
 
-    let tex = rs.get_image("res/bra_vector.png");
-    let mut rect = Rect {
-        x: (w - img_w) as f32 / 2.0,
-        y: (h - img_w) as f32 / 2.0,
-        w: img_w as f32,
-        h: img_w as f32,
-    };
+    let mut f = SFoo::new();
+    let e1 = ecs::entity::Entity::new();
+    let e2 = ecs::entity::Entity::new();
+
+    f.cm.add_component(
+        e1,
+        ecs::component::Component {
+            name: "Aaron",
+            loc: "Boise, Idaho",
+        },
+    );
+    f.cm.add_component(
+        e1,
+        ecs::component::MyComponent {
+            msg: "You should stop coding".to_string(),
+        },
+    );
+    f.cm.add_component(e1, ecs::test::tmp::Component { i: 666 });
+    f.cm.add_component(e1, MainComponent {});
+    f.cm.add_component(
+        e1,
+        framework::physics::Position(Rect {
+            x: (w - img_w) as f32 / 2.0,
+            y: (h - img_w) as f32 / 2.0,
+            w: img_w as f32,
+            h: img_w as f32,
+        }),
+    );
+    f.cm.add_component(
+        e1,
+        framework::physics::PhysicsData {
+            v: PointF::new(),
+            a: PointF::new(),
+            boundary: camera.clone(),
+        },
+    );
+    let img = framework::render_system::Image(f.get_rs().get_image("res/bra_vector.png"));
+    f.cm.add_component(e1, img);
+
+    f.cm.add_component(
+        e2,
+        ecs::component::Component {
+            name: "Ur Mom",
+            loc: "Stoopidville",
+        },
+    );
+    f.cm.add_component(
+        e2,
+        ecs::component::MyComponent {
+            msg: "Lmao git gud".to_string(),
+        },
+    );
+    f.cm.add_component(e2, ecs::test::tmp::Component { i: 69 });
 
     let mut t = unsafe { sdl2::SDL_GetTicks() };
     let mut dt;
-    while !f.cm.c5.quit {
+    while !f.quit() {
         dt = unsafe { sdl2::SDL_GetTicks() } - t;
         t += dt;
 
-        f.cm.c5.update(dt, &camera, &screen);
-        f.tick();
-
-        match f.cm.c5.get_key(sdl2::SDL_KeyCode::SDLK_SPACE) {
-            Some(kb) => {
-                if kb.held() {
-                    println!("_ {}", kb.duration)
-                }
-            }
-            None => (),
-        }
-
-        let l = f.cm.c5.get_mouse(Mouse::Left);
-        if l.clicked() {
-            rect.set_pos(
-                l.click_pos.x as f32,
-                l.click_pos.y as f32,
-                Align::Center,
-                Align::Center,
-            );
-            rect.fit_within(&camera);
-        }
-
-        // Clear the screen
-        rs.r.clear();
-
-        draw!(rs, tex, std::ptr::null(), &rect.to_sdl_rect());
-
-        // Update the screen
-        rs.r.present();
+        f.tick(dt, &camera, &screen);
 
         dt = unsafe { sdl2::SDL_GetTicks() } - t;
         if dt < FRAME_TIME {
@@ -170,7 +152,8 @@ fn main() {
     }
 
     // Destroy RenderSystem
-    drop(rs);
+    // drop(rs);
+    drop(f);
 
     // Destroy the window and quit SDL2
     unsafe {

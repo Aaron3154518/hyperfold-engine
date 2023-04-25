@@ -150,7 +150,7 @@ macro_rules! function_body {
 
 #[macro_export]
 macro_rules! systems {
-    ($sm: ident, $cm: ident, $em: ident, $c_eb: ident,
+    ($sm: ident, $cm: ident, $em: ident, $c_eb: ident, $c_ev: ident, $c_rs: ident,
         $(
             (
                 ($($f: path),+),
@@ -180,16 +180,26 @@ macro_rules! systems {
                 s
             }
 
-            fn init(&mut self) -> $em {
+            pub fn quit(&self) -> bool {
+                self.cm.$c_ev.quit
+            }
+
+            pub fn get_rs<'a>(&'a mut self) -> &'a mut crate::asset_manager::RenderSystem {
+                &mut self.cm.$c_rs
+            }
+
+            fn init(&mut self, ts: u32) -> $em {
                 let mut events = $em::new();
-                events.new_event(crate::ecs::event::CoreEvent::Update);
                 events.new_event(crate::ecs::event::CoreEvent::Events);
+                events.new_event(crate::ecs::event::CoreEvent::Update(ts));
                 events.new_event(crate::ecs::event::CoreEvent::Render);
                 events
             }
 
-            pub fn tick(&mut self) {
-                let mut events = self.init();
+            pub fn tick(&mut self, ts: u32, camera: &Rect, screen: &Dimensions) {
+                self.cm.$c_ev.update(ts, camera, screen);
+                self.cm.$c_rs.r.clear();
+                let mut events = self.init(ts);
                 if events.has_events() {
                     self.events.append(&mut events);
                     self.stack.push(events.get_events());
@@ -238,6 +248,7 @@ macro_rules! systems {
                         self.pop();
                     }
                 }
+                self.cm.$c_rs.r.present();
             }
 
             fn pop(&mut self) {

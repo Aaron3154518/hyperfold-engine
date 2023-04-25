@@ -2,7 +2,7 @@ use ecs_lib::event;
 
 #[event]
 enum CoreEvent {
-    Update,
+    Update(pub u32),
     Events,
     Render,
 }

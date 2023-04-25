@@ -3,6 +3,9 @@ use crate::utils::pointers::*;
 
 use std::collections::HashMap;
 
+use ecs_lib;
+
+#[ecs_lib::component(Global)]
 pub struct AssetManager {
     file_imgs: HashMap<&'static str, Texture>,
 }
@@ -26,6 +29,7 @@ impl AssetManager {
     }
 }
 
+#[ecs_lib::component(Global)]
 pub struct RenderSystem {
     win: Window,
     pub r: Renderer,
@@ -33,7 +37,10 @@ pub struct RenderSystem {
 }
 
 impl RenderSystem {
-    pub fn new(win: Window) -> Self {
+    pub fn new() -> Self {
+        let w = 960;
+        let h = 720;
+        let win = Window::new().title("Game Engine").dimensions(w, h);
         let r = Renderer::new(&win);
         RenderSystem {
             win,
@@ -71,9 +78,8 @@ impl RenderSystem {
 #[macro_export]
 macro_rules! draw {
     ($rs: expr, $tex: ident, $src: expr, $dest: expr) => {
-        match $tex {
-            Some(tex) => $rs.draw(&tex, $src, $dest),
-            None => (),
+        if Some(tex) = $tex {
+            $rs.draw(&tex, $src, $dest);
         }
     };
 }

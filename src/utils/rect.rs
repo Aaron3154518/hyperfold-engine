@@ -16,8 +16,22 @@ pub type Point = sdl2::SDL_Point;
 pub type PointF = sdl2::SDL_FPoint;
 
 impl Point {
+    pub fn new() -> Self {
+        Self { x: 0, y: 0 }
+    }
+
     pub fn dist(&self, p: &Point) -> f32 {
         (((self.x - p.x).pow(2) + (self.y - p.y).pow(2)) as f32).sqrt()
+    }
+}
+
+impl PointF {
+    pub fn new() -> Self {
+        Self { x: 0.0, y: 0.0 }
+    }
+
+    pub fn dist(&self, p: &PointF) -> f32 {
+        (((self.x - p.x).powf(2.0) + (self.y - p.y).powf(2.0)) as f32).sqrt()
     }
 }
 

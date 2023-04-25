@@ -8,7 +8,7 @@ use ecs_macros::structs::ComponentArgs;
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::{format_ident, quote};
-use syn::{parse_macro_input, spanned::Spanned};
+use syn::{parse_macro_input, parse_quote, spanned::Spanned};
 
 mod parse;
 use parse::{find, Component, ComponentType, EventMod, Input, Service};
@@ -50,9 +50,12 @@ pub fn component(input: TokenStream, item: TokenStream) -> TokenStream {
     quote!(#strct).into()
 }
 
+// TODO: Don't access global data
 #[proc_macro_attribute]
 pub fn system(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut fun = parse_macro_input!(item as syn::ItemFn);
+
+    fun.vis = parse_quote!(pub);
 
     // Services
     let services = Service::parse(std::env::var("SERVICES").expect("SERVICES"));
@@ -134,7 +137,15 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
 
     // Find the EventManager
     let c_eb = Component::find(&components, "crate::EFoo")
-        .expect("Could not find crate::EFoo")
+        .expect("Could not find EFoo")
+        .var
+        .to_owned();
+    let c_ev = Component::find(&components, "crate::utils::event::Event")
+        .expect("Could not find Event")
+        .var
+        .to_owned();
+    let c_rs = Component::find(&components, "crate::asset_manager::RenderSystem")
+        .expect("Could not find RenderSystem")
         .var
         .to_owned();
 
@@ -255,7 +266,7 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
             c(#(#c_vars, #c_types),*),
             g(#(#g_vars, #g_types),*)
         );
-        systems!(#sm, #cm, #em, #c_eb,
+        systems!(#sm, #cm, #em, #c_eb, #c_ev, #c_rs,
             #(
                 ((#(#s_names),*),
                 e(#s_ev_paths, #s_ev_varis),

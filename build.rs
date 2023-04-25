@@ -116,12 +116,12 @@ fn main() {
     let mut servs = Vec::new();
     let mut serv_data = Vec::new();
     for v in vecs.iter_mut() {
-        v.services.retain_mut(|s| {
+        for s in v.services.iter_mut() {
             s.map_to_objects(&v.uses, &comps, &events);
-            s.is_valid()
-                .inspect_err(|e| eprintln!("Error: {}", e))
-                .is_ok()
-        });
+            if let Err(e) = s.is_valid() {
+                panic!("{}", e);
+            }
+        }
         servs.append(&mut v.services.to_vec());
         serv_data.append(&mut v.services.iter().map(|f| f.to_data()).collect());
     }
