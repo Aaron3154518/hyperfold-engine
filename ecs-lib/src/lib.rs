@@ -87,15 +87,25 @@ pub fn event(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let en = parse_macro_input!(item as syn::ItemEnum);
 
-    // TODO: make fields public
     let name = en.ident;
     let strcts = en
         .variants
         .into_iter()
-        .map(|v| {
-            let semi = match v.fields {
-                syn::Fields::Named(_) => None,
-                _ => Some(syn::token::Semi(Span::call_site())),
+        .map(|mut v| {
+            let mut semi = Some(syn::token::Semi(Span::call_site()));
+            // make fields public
+            match &mut v.fields {
+                syn::Fields::Named(n) => {
+                    for f in n.named.iter_mut() {
+                        f.vis = parse_quote!(pub)
+                    }
+                }
+                syn::Fields::Unnamed(u) => {
+                    for f in u.unnamed.iter_mut() {
+                        f.vis = parse_quote!(pub)
+                    }
+                }
+                syn::Fields::Unit => semi = None,
             };
             syn::ItemStruct {
                 attrs: Vec::new(),

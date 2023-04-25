@@ -6,8 +6,8 @@ use crate::utils::event;
 
 #[ecs_lib::event]
 enum Events {
-    Mouse(pub event::MouseButton),
-    Key(pub event::KeyButton),
+    Mouse(event::MouseButton),
+    Key(event::KeyButton),
 }
 
 #[ecs_lib::system]

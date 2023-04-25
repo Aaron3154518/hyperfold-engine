@@ -2,7 +2,7 @@ use ecs_lib::event;
 
 #[event]
 enum CoreEvent {
-    Update(pub u32),
+    Update(u32),
     Events,
     Render,
 }
@@ -10,8 +10,8 @@ enum CoreEvent {
 #[event]
 enum MyEvent {
     E1,
-    E2(pub i32, pub i32),
-    E3 { pub name: String },
+    E2(i32, i32),
+    E3 { name: String },
 }
 
 #[event]
