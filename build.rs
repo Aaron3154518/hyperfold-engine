@@ -476,7 +476,7 @@ struct Fn {
 }
 
 impl Fn {
-    pub fn is_valid(&self) -> Result<(), &str> {
+    pub fn is_valid(&self) -> Result<(), String> {
         let mut set = HashSet::new();
         let mut has_event = false;
         for arg in self.args.iter() {
@@ -485,19 +485,32 @@ impl Fn {
                     FnArgType::Component(i) => {
                         if !set.insert(i) {
                             // Duplicate component
-                            return Err("Duplicate component argument");
+                            return Err(format!(
+                                "Duplicate component argument \"{}\" for {}()",
+                                arg.ty.join("::"),
+                                self.path.join("::")
+                            ));
                         }
                     }
                     FnArgType::Event(_, _) => {
                         if has_event {
                             // Multiple events
-                            return Err("Multiple events accepted");
+                            return Err(format!(
+                                "Multiple events accepted by {}()",
+                                self.path.join("::")
+                            ));
                         }
                         has_event = true;
                     }
                 },
                 // Invalid argument
-                None => return Err("Argument is not a component or event"),
+                None => {
+                    return Err(format!(
+                        "Argument \"{}\" on {}() is not a component or event",
+                        arg.ty.join("::"),
+                        self.path.join("::")
+                    ))
+                }
             }
         }
         // if !has_event {
@@ -654,7 +667,7 @@ fn find_structs(path: Vec<String>) -> Vec<Visitor> {
                     vis.path = path.to_vec();
                     // Add implicit use paths derived from using "super::"
                     vis.uses.append(
-                        &mut path[..end(&path)]
+                        &mut path
                             .iter()
                             .enumerate()
                             .map(|(i, _)| {
@@ -665,6 +678,13 @@ fn find_structs(path: Vec<String>) -> Vec<Visitor> {
                             })
                             .collect(),
                     );
+                    vis.uses.push((
+                        concat(
+                            concat(vec!["crate".to_string()], path.to_vec()),
+                            vec!["*".to_string()],
+                        ),
+                        String::new(),
+                    ));
                 }
                 syn::visit_mut::visit_file_mut(&mut vis, &mut ast);
                 let mods = vis.modules.to_vec();
