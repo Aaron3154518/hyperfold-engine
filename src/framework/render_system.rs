@@ -6,7 +6,7 @@ use crate::utils::pointers;
 use ecs_lib;
 
 #[ecs_lib::component]
-struct Image(pub Option<pointers::TextureAccess>);
+type Image = Option<pointers::TextureAccess>;
 
 #[ecs_lib::system]
 fn render(
@@ -15,7 +15,7 @@ fn render(
     img: &super::render_system::Image,
     rs: &RenderSystem,
 ) {
-    if let Some(tex) = img.0 {
+    if let Some(tex) = img {
         rs.draw(&tex, std::ptr::null(), &pos.to_sdl_rect())
     }
 }

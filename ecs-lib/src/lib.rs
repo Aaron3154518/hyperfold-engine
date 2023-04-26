@@ -46,10 +46,19 @@ pub fn component(input: TokenStream, item: TokenStream) -> TokenStream {
         return quote!().into();
     }
 
-    let mut strct = parse_macro_input!(item as syn::ItemStruct);
-    strct.vis = syn::parse_quote!(pub);
-
-    quote!(#strct).into()
+    let input = parse_macro_input!(item as syn::Item);
+    match input {
+        syn::Item::Struct(mut s) => {
+            s.vis = syn::parse_quote!(pub);
+            quote!(#s)
+        }
+        syn::Item::Type(mut t) => {
+            t.vis = syn::parse_quote!(pub);
+            quote!(#t)
+        }
+        _ => panic!("Only structs and types can be components"),
+    }
+    .into()
 }
 
 // TODO: Don't access global data

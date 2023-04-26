@@ -106,12 +106,12 @@ fn main() {
     f.cm.add_component(e1, MainComponent {});
     f.cm.add_component(
         e1,
-        framework::physics::Position(Rect {
+        framework::physics::Position {
             x: (w - img_w) as f32 / 2.0,
             y: (h - img_w) as f32 / 2.0,
             w: img_w as f32,
             h: img_w as f32,
-        }),
+        },
     );
     f.cm.add_component(
         e1,
@@ -121,7 +121,7 @@ fn main() {
             boundary: camera.clone(),
         },
     );
-    let img = framework::render_system::Image(f.get_rs().get_image("res/bra_vector.png"));
+    let img = f.get_rs().get_image("res/bra_vector.png");
     f.cm.add_component(e1, img);
 
     f.cm.add_component(
