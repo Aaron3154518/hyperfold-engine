@@ -130,13 +130,13 @@ pub fn get_keys<'a, K: Eq + Hash + Clone, V>(map: &'a HashMap<K, V>) -> HashSet<
 #[macro_export]
 macro_rules! function_body {
     // Does not take components
-    ($cm: ident, $f: ident, $e: ident,
+    ($cm: ident, $f: path, $e: ident,
         c(),
         g($($g_vs: ident, $g_ts: ty),*)) => {
         $f($e, $(&mut $cm.$g_vs,)*)
     };
 
-    ($cm: ident, $f: ident, $e: ident,
+    ($cm: ident, $f: path, $e: ident,
         c($($c_vs: ident, $c_ts: ty),*),
         g($($g_vs: ident, $g_ts: ty),*)
     ) => {
@@ -151,14 +151,7 @@ macro_rules! function_body {
 #[macro_export]
 macro_rules! systems {
     ($sm: ident, $cm: ident, $em: ident, $c_eb: ident, $c_ev: ident, $c_rs: ident,
-        $(
-            (
-                ($($f: path),+),
-                e($e_t: path, $e_v: ident),
-                c($($c_vs: ident, $c_ts: ty),*),
-                g($($g_vs: ident, $g_ts: ty),*)
-            )
-        ),+
+        $($e_v: ident, $fs: tt),*
     ) => {
         struct $sm {
             pub cm: $cm,
@@ -271,17 +264,8 @@ macro_rules! systems {
 
             fn add_systems(&mut self) {
                 $(
-                    let f = |cm: &mut $cm, em: &mut $em, f: &dyn Fn(&$e_t, $($c_ts,)* $($g_ts,)*)| {
-                        if let Some(e) = em.get_event() {
-                            function_body!(cm, f, e,
-                                c($($c_vs, $c_ts),*),
-                                g($($g_vs, $g_ts),*)
-                            );
-                        }
-                    };
-                    $(
-                        self.add_system(E::$e_v, Box::new(move |cm: &mut $cm, e: &mut $em| f(cm, e, &$f)));
-                    )*
+                    let (f) = $fs;
+                    self.add_system(E::$e_v, Box::new(f));
                 )*
             }
         }

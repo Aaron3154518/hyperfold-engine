@@ -135,7 +135,7 @@ fn main() {
     eprintln!("{}", serv_data);
     eprintln!("{}", events_data);
     println!("cargo:rustc-env=COMPONENTS={}", comp_data);
-    println!("cargo:rustc-env=SERVICES={}", serv_data);
+    println!("cargo:rustc-env=SYSTEMS={}", serv_data);
     println!("cargo:rustc-env=EVENTS={}", events_data);
 }
 

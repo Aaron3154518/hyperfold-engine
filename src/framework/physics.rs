@@ -5,7 +5,6 @@ use crate::{
     utils::rect::{PointF, Rect},
 };
 
-// TODO type Position = Rect
 #[ecs_lib::component]
 type Position = Rect;
 

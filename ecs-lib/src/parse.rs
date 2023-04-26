@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, path::PathBuf};
+use std::path::PathBuf;
 
 use ecs_macros::structs::ComponentArgs;
 use num_traits::FromPrimitive;
@@ -91,42 +91,28 @@ impl Component {
     }
 }
 
-// Services parser
+// Systems parser
 #[derive(Clone, Debug)]
-pub struct ServiceArg {
+pub struct SystemArg {
     pub name: String,
     pub is_mut: bool,
 }
 
 #[derive(Clone, Debug)]
 pub struct ComponentArg {
-    pub arg: ServiceArg,
+    pub arg: SystemArg,
     pub idx: usize,
-}
-
-impl ComponentArg {
-    pub fn eq_ty(&self, other: &Self) -> bool {
-        self.arg.is_mut == other.arg.is_mut && self.idx == other.idx
-    }
 }
 
 #[derive(Clone, Debug)]
 pub struct EventArg {
-    pub arg: ServiceArg,
+    pub arg: SystemArg,
     pub e_idx: usize,
     pub v_idx: usize,
 }
 
-impl EventArg {
-    pub fn eq_ty(&self, other: &Self) -> bool {
-        self.arg.is_mut == other.arg.is_mut
-            && self.e_idx == other.e_idx
-            && self.v_idx == other.v_idx
-    }
-}
-
 #[derive(Clone, Debug)]
-pub struct Service {
+pub struct System {
     pub path: Vec<String>,
     pub args: Vec<ComponentArg>,
     // Index of each arg in the original function
@@ -136,7 +122,7 @@ pub struct Service {
     event_arg_idx: usize,
 }
 
-impl Service {
+impl System {
     pub fn new() -> Self {
         Self {
             path: Vec::new(),
@@ -164,50 +150,8 @@ impl Service {
     }
 
     pub fn parse(data: String) -> Vec<Self> {
-        let parser = ServiceParser::new();
+        let parser = SystemParser::new();
         data.split(" ").map(|s| parser.parse(s)).collect()
-    }
-
-    pub fn eq_sig(&self, other: &Self) -> bool {
-        if self.args.len() != other.args.len() {
-            return false;
-        }
-        for (a1, a2) in self.args.iter().zip(other.args.iter()) {
-            if !a1.eq_ty(a2) {
-                return false;
-            }
-        }
-        match (&self.event, &other.event) {
-            (Some(e1), Some(e2)) => e1.eq_ty(e2),
-            (None, None) => true,
-            _ => false,
-        }
-    }
-
-    pub fn cmp(&self, other: &Self) -> Ordering {
-        // Sort length first
-        if self.args.len() < other.args.len() {
-            return Ordering::Less;
-        } else if self.args.len() > other.args.len() {
-            return Ordering::Equal;
-        }
-        // Sort by type indices
-        for (a1, a2) in self.args.iter().zip(other.args.iter()) {
-            if a1.idx < a2.idx {
-                return Ordering::Less;
-            } else if a1.idx > a2.idx {
-                return Ordering::Greater;
-            }
-        }
-        // Sort by mutability
-        for (a1, a2) in self.args.iter().zip(self.args.iter()) {
-            if !a1.arg.is_mut && a2.arg.is_mut {
-                return Ordering::Less;
-            } else if a1.arg.is_mut && !a2.arg.is_mut {
-                return Ordering::Greater;
-            }
-        }
-        Ordering::Equal
     }
 
     pub fn get_path(&self) -> syn::Path {
@@ -247,13 +191,13 @@ impl Service {
     }
 }
 
-struct ServiceParser {
+struct SystemParser {
     full_r: Regex,
     path_r: Regex,
     args_r: Regex,
 }
 
-impl ServiceParser {
+impl SystemParser {
     pub fn new() -> Self {
         let arg_r = r"\w+:\d+:(c\d+|e\d+:\d+)";
         Self {
@@ -273,11 +217,11 @@ impl ServiceParser {
         }
     }
 
-    fn parse(&self, data: &str) -> Service {
-        let mut s = Service::new();
+    fn parse(&self, data: &str) -> System {
+        let mut s = System::new();
         if let Some(c) = self.full_r.captures(data) {
             if let Some(p) = c.name("path") {
-                // Parse service path
+                // Parse system path
                 s.path = self
                     .path_r
                     .find_iter(p.as_str())
@@ -286,10 +230,10 @@ impl ServiceParser {
             }
 
             if let Some(a) = c.name("args") {
-                // Parse service args
+                // Parse system args
                 for (idx, c) in self.args_r.captures_iter(a.as_str()).enumerate() {
                     let arg = if let Some((v, m)) = c.name("var").zip(c.name("mut")) {
-                        ServiceArg {
+                        SystemArg {
                             name: v.as_str().to_string(),
                             is_mut: m.as_str() == "1",
                         }

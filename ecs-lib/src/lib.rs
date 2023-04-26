@@ -11,7 +11,7 @@ use quote::{format_ident, quote};
 use syn::{parse_macro_input, parse_quote, spanned::Spanned};
 
 mod parse;
-use parse::{find, Component, EventMod, Input, Service};
+use parse::{find, Component, EventMod, Input, System};
 
 use ecs_macros::structs::ComponentType;
 
@@ -68,15 +68,17 @@ pub fn system(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
     fun.vis = parse_quote!(pub);
 
-    // Services
-    let services = Service::parse(std::env::var("SERVICES").expect("SERVICES"));
+    // return quote!(#fun).into();
+
+    // Systems
+    let systems = System::parse(std::env::var("SYSTEMS").expect("SYSTEMS"));
 
     // Extract function paths
-    let s_names = services.iter().map(|s| s.path.to_vec()).collect::<Vec<_>>();
+    let s_names = systems.iter().map(|s| s.path.to_vec()).collect::<Vec<_>>();
 
     // Match this function to system functions
-    if let Some(s) = services
-        .get(find(fun.span(), fun.sig.ident.to_string(), s_names).expect("Could not find service"))
+    if let Some(s) = systems
+        .get(find(fun.span(), fun.sig.ident.to_string(), s_names).expect("Could not find system"))
     {
         // Re-order the function arguments
         let args = std::mem::replace(&mut fun.sig.inputs, syn::punctuated::Punctuated::new());
@@ -200,43 +202,29 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
         },
     );
 
-    // Services
-    let mut services = Service::parse(std::env::var("SERVICES").expect("SERVICES"));
+    // Systems
+    let systems = System::parse(std::env::var("SYSTEMS").expect("SYSTEMS"));
 
-    // Partition by signature and filter out services that have no event
-    services.sort_by(|s1, s2| s1.cmp(s2));
-    let (services, s_events) = services
-        .group_by(|v1, v2| v1.eq_sig(v2))
-        .map(|s| s.into_iter().collect::<Vec<_>>())
-        .filter_map(|v_s| {
-            v_s.first()
-                .and_then(|s| {
-                    s.event.as_ref().map(|e| {
-                        e_strcts
-                            .get(e.e_idx)
-                            .zip(e_varis.get(e.e_idx))
-                            .and_then(|(v_s, v_v)| {
-                                v_s.get(e.v_idx)
-                                    .zip(v_v.get(e.v_idx))
-                                    .map(|(s, v)| (s.to_owned(), v.to_owned()))
-                            })
-                            .expect("Could not find service event")
-                    })
+    // Get system events
+    let (systems, s_ev_varis) = systems
+        .into_iter()
+        .filter_map(|s| {
+            s.event
+                .as_ref()
+                .map(|e| {
+                    e_varis
+                        .get(e.e_idx)
+                        .and_then(|v_v| v_v.get(e.v_idx).map(|v| v.to_owned()))
+                        .expect("Could not find system event")
                 })
-                .map(|e| (v_s, e))
+                .map(|t| (s, t))
         })
         .unzip::<_, _, Vec<_>, Vec<_>>();
-    let (s_ev_paths, s_ev_varis) = s_events.into_iter().unzip::<_, _, Vec<_>, Vec<_>>();
 
-    // Get service names and signatures for each signature bin
-    let (s_names, s_args) = services
+    // Get system names and signatures
+    let (s_names, s_args) = systems
         .iter()
-        .map(|v| {
-            (
-                v.iter().map(|s| s.get_path()).collect::<Vec<_>>(),
-                v.first().map_or(Vec::new(), |s| s.get_args(&components)),
-            )
-        })
+        .map(|s| (s.get_path(), s.get_args(&components)))
         .unzip::<_, _, Vec<_>, Vec<_>>();
 
     // Split args types by component type
@@ -278,6 +266,28 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
 
     let (sm, cm, em) = parse_macro_input!(input as Input).get();
 
+    let funcs = s_names
+        .iter()
+        .zip(
+            s_carg_ts
+                .iter()
+                .zip(s_carg_vs.iter())
+                .zip(s_garg_ts.iter().zip(s_garg_vs.iter())),
+        )
+        .map(|(f, ((c_ts, c_vs), (g_ts, g_vs)))| {
+            quote!((
+                |cm: &mut #cm, em: &mut #em| {
+                    if let Some(e) = em.get_event() {
+                        function_body!(cm, #f, e,
+                            c(#(#c_vs, #c_ts),*),
+                            g(#(#g_vs, #g_ts),*)
+                        );
+                    }
+                }
+            ))
+        })
+        .collect::<Vec<_>>();
+
     let code = quote!(
         use ecs_macros::*;
         events!(#em,
@@ -288,12 +298,7 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
             g(#(#g_vars, #g_types),*)
         );
         systems!(#sm, #cm, #em, #c_eb, #c_ev, #c_rs,
-            #(
-                ((#(#s_names),*),
-                e(#s_ev_paths, #s_ev_varis),
-                c(#(#s_carg_vs, #s_carg_ts),*),
-                g(#(#s_garg_vs, #s_garg_ts),*))
-            ),*
+            #(#s_ev_varis, #funcs),*
         );
     );
 
