@@ -68,7 +68,7 @@ pub fn system(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
     fun.vis = parse_quote!(pub);
 
-    // return quote!(#fun).into();
+    return quote!(#fun).into();
 
     // Systems
     let systems = System::parse(std::env::var("SYSTEMS").expect("SYSTEMS"));
@@ -158,7 +158,7 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
     // Components
     let components = Component::parse(std::env::var("COMPONENTS").expect("COMPONENTS"));
 
-    // Find the EventManager
+    // Find specific components
     let c_eb = Component::find(&components, "crate::EFoo")
         .expect("Could not find EFoo")
         .var
@@ -228,25 +228,55 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
         .unzip::<_, _, Vec<_>, Vec<_>>();
 
     // Split args types by component type
-    let (mut s_carg_vs, mut s_carg_ts, mut s_garg_vs, mut s_garg_ts) =
-        (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    let (mut s_arg_vs, mut s_arg_ts) = (Vec::new(), Vec::new());
+    let (mut s_carg_vs, mut s_carg_ts) = (Vec::new(), Vec::new());
+    let (mut s_garg_vs, mut s_garg_ts) = (Vec::new(), Vec::new());
     s_args.into_iter().for_each(|v| {
-        s_carg_vs.push(Vec::new());
-        s_carg_ts.push(Vec::new());
-        s_garg_vs.push(Vec::new());
-        s_garg_ts.push(Vec::new());
-        v.group_by(|c1, c2| c1.arg_type == c2.arg_type)
-            .for_each(|v| {
-                let (vs, ts) = match v.first().map_or(ComponentArgs::None, |c| c.arg_type) {
-                    ComponentArgs::None => (&mut s_carg_vs, &mut s_carg_ts),
-                    ComponentArgs::Global => (&mut s_garg_vs, &mut s_garg_ts),
-                    _ => return,
-                };
-                vs.pop();
-                vs.push(v.iter().map(|c| c.var.to_owned()).collect::<Vec<_>>());
-                ts.pop();
-                ts.push(v.iter().map(|c| c.ty.to_owned()).collect::<Vec<_>>());
-            });
+        let (vs, ts, c_vs, c_ts, g_vs, g_ts) = v.iter().fold(
+            (
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+            ),
+            |(mut vs, mut ts, mut c_vs, mut c_ts, mut g_vs, mut g_ts), c| {
+                match c.arg_type {
+                    ComponentArgs::None => {
+                        c_vs.push(c.var.to_owned());
+                        c_ts.push(c.ty.to_owned());
+                    }
+                    ComponentArgs::Global => {
+                        g_vs.push(c.var.to_owned());
+                        g_ts.push(c.ty.to_owned());
+                    }
+                    ComponentArgs::Dummy => (),
+                }
+                vs.push(c.var.to_owned());
+                ts.push(c.ty.to_owned());
+                (vs, ts, c_vs, c_ts, g_vs, g_ts)
+            },
+        );
+        s_arg_vs.push(vs);
+        s_arg_ts.push(ts);
+        s_carg_vs.push(c_vs);
+        s_carg_ts.push(c_ts);
+        s_garg_vs.push(g_vs);
+        s_garg_ts.push(g_ts);
+
+        // v.group_by(|c1, c2| c1.arg_type == c2.arg_type)
+        //     .for_each(|v| {
+        //         let (vs, ts) = match v.first().map_or(ComponentArgs::None, |c| c.arg_type) {
+        //             ComponentArgs::None => (&mut s_carg_vs, &mut s_carg_ts),
+        //             ComponentArgs::Global => (&mut s_garg_vs, &mut s_garg_ts),
+        //             _ => return,
+        //         };
+        //         vs.pop();
+        //         vs.push(v.iter().map(|c| c.var.to_owned()).collect::<Vec<_>>());
+        //         ts.pop();
+        //         ts.push(v.iter().map(|c| c.ty.to_owned()).collect::<Vec<_>>());
+        //     });
     });
 
     // Partition components into types
