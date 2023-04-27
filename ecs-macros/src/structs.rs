@@ -3,34 +3,31 @@ use syn;
 
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, FromPrimitive)]
-pub enum ComponentArgs {
+pub enum ComponentTypes {
     None,
     Global,
-    Dummy,
-}
-
-impl From<&str> for ComponentArgs {
-    fn from(value: &str) -> Self {
-        match value {
-            "Global" => Self::Global,
-            "Dummy" => Self::Dummy,
-            _ => Self::None,
-        }
-    }
 }
 
 #[derive(Debug)]
 pub struct ComponentType {
-    types: Vec<ComponentArgs>,
+    pub ty: ComponentTypes,
+    pub is_dummy: bool,
 }
 
-impl ComponentType {
-    pub fn is_dummy(&self) -> bool {
-        self.types.contains(&ComponentArgs::Dummy)
-    }
-
-    pub fn is_global(&self) -> bool {
-        self.types.contains(&ComponentArgs::Global)
+impl From<Vec<String>> for ComponentType {
+    fn from(value: Vec<String>) -> Self {
+        let mut c = Self {
+            ty: ComponentTypes::None,
+            is_dummy: false,
+        };
+        for s in value.iter() {
+            match s.as_str() {
+                "Global" => c.ty = ComponentTypes::Global,
+                "Dummy" => c.is_dummy = true,
+                _ => (),
+            }
+        }
+        c
     }
 }
 
@@ -38,14 +35,9 @@ impl syn::parse::Parse for ComponentType {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         let mut args = Vec::new();
         while let Ok(i) = input.parse::<syn::Ident>() {
-            args.push(i);
+            args.push(i.to_string());
             let _ = input.parse::<syn::Token![,]>();
         }
-        Ok(Self {
-            types: args
-                .iter()
-                .map(|i| ComponentArgs::from(i.to_string().as_str()))
-                .collect(),
-        })
+        Ok(Self::from(args))
     }
 }

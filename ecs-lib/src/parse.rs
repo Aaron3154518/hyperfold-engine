@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 
-use ecs_macros::structs::ComponentArgs;
+use ecs_macros::structs::ComponentTypes;
 use num_traits::FromPrimitive;
-use proc_macro2::Span;
-use quote::{format_ident, ToTokens};
+use proc_macro2::{Span, TokenStream};
+use quote::{format_ident, quote, ToTokens};
 use regex::Regex;
 
 // Match local instance to list
@@ -43,7 +43,7 @@ pub fn find(span: Span, name: String, paths: Vec<Vec<String>>) -> Option<usize> 
 pub struct Component {
     pub var: syn::Ident,
     pub ty: syn::Type,
-    pub arg_type: ComponentArgs,
+    pub arg_type: ComponentTypes,
 }
 
 impl Component {
@@ -69,7 +69,7 @@ impl Component {
             .filter_map(|s| {
                 if let Some(c) = r.captures(s) {
                     if let (Some(name), Some(args)) = (c.name("name"), c.name("args")) {
-                        if let Some(a) = <ComponentArgs as FromPrimitive>::from_u8(
+                        if let Some(a) = <ComponentTypes as FromPrimitive>::from_u8(
                             args.as_str()
                                 .parse::<u8>()
                                 .expect("Could not parse component type code"),
@@ -93,33 +93,72 @@ impl Component {
 
 // Systems parser
 #[derive(Clone, Debug)]
-pub struct SystemArg {
-    pub name: String,
-    pub is_mut: bool,
-}
-
-#[derive(Clone, Debug)]
-pub struct ComponentArg {
-    pub arg: SystemArg,
-    pub idx: usize,
-}
-
-#[derive(Clone, Debug)]
-pub struct EventArg {
-    pub arg: SystemArg,
+pub struct EventData {
     pub e_idx: usize,
     pub v_idx: usize,
 }
 
 #[derive(Clone, Debug)]
+pub enum SystemArgData {
+    Component { idx: usize },
+    Event(EventData),
+}
+
+#[derive(Clone, Debug)]
+pub struct SystemArg {
+    pub name: String,
+    pub is_mut: bool,
+    pub data: SystemArgData,
+}
+
+#[derive(Clone, Debug)]
+pub struct SystemArgTokens {
+    args: Vec<TokenStream>,
+    c_args: Vec<syn::Ident>,
+    g_args: Vec<syn::Ident>,
+}
+
+impl SystemArgTokens {
+    pub fn new() -> Self {
+        Self {
+            args: Vec::new(),
+            c_args: Vec::new(),
+            g_args: Vec::new(),
+        }
+    }
+
+    pub fn to_quote(&self, f: &syn::Path, cm: &syn::Ident, em: &syn::Ident) -> TokenStream {
+        let args = &self.args;
+        let c_args = &self.c_args;
+        if c_args.is_empty() {
+            quote!((
+                |cm: &mut #cm, em: &mut #em| {
+                    if let Some(e) = em.get_event() {
+                        #f(#(#args),*)
+                    }
+                }
+            ))
+        } else {
+            quote!((
+                |cm: &mut #cm, em: &mut #em| {
+                    if let Some(e) = em.get_event() {
+                        for key in intersect_keys(&[#(get_keys(&cm.#c_args)),*]).iter() {
+                            if let (#(Some(#c_args)),*) = (#(cm.#c_args.get_mut(key)),*) {
+                                #f(#(#args),*)
+                            }
+                        }
+                    }
+                }
+            ))
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct System {
     pub path: Vec<String>,
-    pub args: Vec<ComponentArg>,
-    // Index of each arg in the original function
-    arg_idxs: Vec<usize>,
-    pub event: Option<EventArg>,
-    // Index of event arg in the original function
-    event_arg_idx: usize,
+    pub args: Vec<SystemArg>,
+    pub event: Option<EventData>,
 }
 
 impl System {
@@ -127,26 +166,8 @@ impl System {
         Self {
             path: Vec::new(),
             args: Vec::new(),
-            arg_idxs: Vec::new(),
             event: None,
-            event_arg_idx: 0,
         }
-    }
-
-    pub fn sort_args(&mut self) {
-        let mut idxs = (0..self.args.len()).collect::<Vec<_>>();
-        idxs.sort_by_key(|&i| self.args[i].idx);
-        self.args = idxs.iter().map(|&i| self.args[i].to_owned()).collect();
-        self.arg_idxs = idxs.iter().map(|&i| self.arg_idxs[i]).collect();
-    }
-
-    pub fn get_arg_idxs(&self) -> Vec<usize> {
-        let mut v = match self.event {
-            Some(_) => vec![self.event_arg_idx],
-            None => Vec::new(),
-        };
-        v.extend(self.arg_idxs.iter());
-        v
     }
 
     pub fn parse(data: String) -> Vec<Self> {
@@ -168,26 +189,28 @@ impl System {
         }
     }
 
-    pub fn get_args(&self, components: &Vec<Component>) -> Vec<Component> {
-        self.args
-            .iter()
-            .map(|a| {
-                let c = components.get(a.idx).expect("Invalid component index");
-                Component {
-                    var: c.var.to_owned(),
-                    ty: syn::parse_str::<syn::Type>(
-                        format!(
-                            "&{}{}",
-                            if a.arg.is_mut { "mut " } else { "" },
-                            c.ty.to_token_stream().to_string()
-                        )
-                        .as_str(),
-                    )
-                    .expect("Could not parse type"),
-                    arg_type: c.arg_type,
+    pub fn get_args(&self, components: &Vec<Component>) -> SystemArgTokens {
+        let mut tokens = SystemArgTokens::new();
+        for a in self.args.iter() {
+            match a.data {
+                SystemArgData::Component { idx } => {
+                    let c = components.get(idx).expect("Invalid component index");
+                    let var = c.var.to_owned();
+                    match c.arg_type {
+                        ComponentTypes::None => {
+                            tokens.args.push(quote!(#var));
+                            tokens.c_args.push(var);
+                        }
+                        ComponentTypes::Global => {
+                            tokens.args.push(quote!(&mut cm.#var));
+                            tokens.g_args.push(var);
+                        }
+                    }
                 }
-            })
-            .collect::<Vec<_>>()
+                SystemArgData::Event { .. } => tokens.args.push(quote!(e)),
+            }
+        }
+        tokens
     }
 }
 
@@ -231,28 +254,26 @@ impl SystemParser {
 
             if let Some(a) = c.name("args") {
                 // Parse system args
-                for (idx, c) in self.args_r.captures_iter(a.as_str()).enumerate() {
-                    let arg = if let Some((v, m)) = c.name("var").zip(c.name("mut")) {
-                        SystemArg {
-                            name: v.as_str().to_string(),
-                            is_mut: m.as_str() == "1",
-                        }
-                    } else {
-                        continue;
-                    };
+                for c in self.args_r.captures_iter(a.as_str()) {
+                    let (name, is_mut) = c
+                        .name("var")
+                        .zip(c.name("mut"))
+                        .map(|(v, m)| (v.as_str().to_string(), m.as_str() == "1"))
+                        .expect("Could not parse variable and mutability");
 
                     if let Some(i) = c.name("cidx") {
-                        s.args.push(ComponentArg {
-                            arg,
-                            idx: i
-                                .as_str()
-                                .parse::<usize>()
-                                .expect("Could not parse component index"),
+                        s.args.push(SystemArg {
+                            name,
+                            is_mut,
+                            data: SystemArgData::Component {
+                                idx: i
+                                    .as_str()
+                                    .parse::<usize>()
+                                    .expect("Could not parse component index"),
+                            },
                         });
-                        s.arg_idxs.push(idx);
                     } else if let Some((i1, i2)) = c.name("eidx1").zip(c.name("eidx2")) {
-                        s.event = Some(EventArg {
-                            arg,
+                        let data = EventData {
                             e_idx: i1
                                 .as_str()
                                 .parse::<usize>()
@@ -261,13 +282,17 @@ impl SystemParser {
                                 .as_str()
                                 .parse::<usize>()
                                 .expect("Could not parse event index"),
+                        };
+                        s.event = Some(data.to_owned());
+                        s.args.push(SystemArg {
+                            name,
+                            is_mut,
+                            data: SystemArgData::Event(data),
                         });
-                        s.event_arg_idx = idx;
                     }
                 }
             }
         }
-        s.sort_args();
         s
     }
 }

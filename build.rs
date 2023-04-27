@@ -2,7 +2,7 @@
 
 use bindgen;
 use bindgen::callbacks::{DeriveInfo, ParseCallbacks};
-use ecs_macros::structs::ComponentArgs;
+use ecs_macros::structs::{ComponentType, ComponentTypes};
 use quote::ToTokens;
 use std::collections::HashSet;
 use std::env;
@@ -90,7 +90,7 @@ fn main() {
 
     // Get Component data
     let mut comps = Vec::new();
-    for i in [ComponentArgs::None, ComponentArgs::Global] {
+    for i in [ComponentTypes::None, ComponentTypes::Global] {
         for v in vecs.iter() {
             comps.append(&mut v.get_components(i));
         }
@@ -194,7 +194,7 @@ impl Visitor {
         concat(vec!["crate".to_string()], self.path.to_vec())
     }
 
-    pub fn get_components(&self, a: ComponentArgs) -> Vec<Component> {
+    pub fn get_components(&self, a: ComponentTypes) -> Vec<Component> {
         let mut v = self
             .components
             .iter()
@@ -306,16 +306,9 @@ impl syn::visit_mut::VisitMut for Visitor {
     // Components
     fn visit_item_struct_mut(&mut self, i: &mut syn::ItemStruct) {
         if let Some(a) = find_attribute(&i.attrs, "component") {
-            let mut c_arg = ComponentArgs::None;
-            for arg in parse_attr_args(a) {
-                match ComponentArgs::from(arg.as_str()) {
-                    ComponentArgs::Global => c_arg = ComponentArgs::Global,
-                    _ => (),
-                }
-            }
             self.components.push(Component {
                 path: vec![i.ident.to_string()],
-                args: c_arg,
+                args: ComponentType::from(parse_attr_args(a)).ty,
             });
         }
         syn::visit_mut::visit_item_struct_mut(self, i);
@@ -323,16 +316,9 @@ impl syn::visit_mut::VisitMut for Visitor {
 
     fn visit_item_type_mut(&mut self, i: &mut syn::ItemType) {
         if let Some(a) = find_attribute(&i.attrs, "component") {
-            let mut c_arg = ComponentArgs::None;
-            for arg in parse_attr_args(a) {
-                match ComponentArgs::from(arg.as_str()) {
-                    ComponentArgs::Global => c_arg = ComponentArgs::Global,
-                    _ => (),
-                }
-            }
             self.components.push(Component {
                 path: vec![i.ident.to_string()],
-                args: c_arg,
+                args: ComponentType::from(parse_attr_args(a)).ty,
             });
         }
         syn::visit_mut::visit_item_type_mut(self, i);
@@ -454,7 +440,7 @@ fn get_possible_use_paths(
 #[derive(Clone, Debug)]
 struct Component {
     path: Vec<String>,
-    args: ComponentArgs,
+    args: ComponentTypes,
 }
 
 impl Component {

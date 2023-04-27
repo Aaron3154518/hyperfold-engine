@@ -4,14 +4,14 @@
 extern crate proc_macro;
 use std::io::Write;
 
-use ecs_macros::structs::ComponentArgs;
+use ecs_macros::structs::ComponentTypes;
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::{format_ident, quote};
-use syn::{parse_macro_input, parse_quote, spanned::Spanned};
+use syn::{parse_macro_input, parse_quote};
 
 mod parse;
-use parse::{find, Component, EventMod, Input, System};
+use parse::{Component, EventMod, Input, System};
 
 use ecs_macros::structs::ComponentType;
 
@@ -42,7 +42,7 @@ impl Out {
 #[proc_macro_attribute]
 pub fn component(input: TokenStream, item: TokenStream) -> TokenStream {
     let args = parse_macro_input!(input as ComponentType);
-    if args.is_dummy() {
+    if args.is_dummy {
         return quote!().into();
     }
 
@@ -61,35 +61,10 @@ pub fn component(input: TokenStream, item: TokenStream) -> TokenStream {
     .into()
 }
 
-// TODO: Don't access global data
 #[proc_macro_attribute]
 pub fn system(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut fun = parse_macro_input!(item as syn::ItemFn);
-
     fun.vis = parse_quote!(pub);
-
-    return quote!(#fun).into();
-
-    // Systems
-    let systems = System::parse(std::env::var("SYSTEMS").expect("SYSTEMS"));
-
-    // Extract function paths
-    let s_names = systems.iter().map(|s| s.path.to_vec()).collect::<Vec<_>>();
-
-    // Match this function to system functions
-    if let Some(s) = systems
-        .get(find(fun.span(), fun.sig.ident.to_string(), s_names).expect("Could not find system"))
-    {
-        // Re-order the function arguments
-        let args = std::mem::replace(&mut fun.sig.inputs, syn::punctuated::Punctuated::new());
-        fun.sig.inputs =
-            s.get_arg_idxs()
-                .iter()
-                .fold(syn::punctuated::Punctuated::new(), |mut p, &idx| {
-                    p.push(args[idx].to_owned());
-                    p
-                });
-    }
 
     quote!(#fun).into()
 }
@@ -227,68 +202,15 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
         .map(|s| (s.get_path(), s.get_args(&components)))
         .unzip::<_, _, Vec<_>, Vec<_>>();
 
-    // Split args types by component type
-    let (mut s_arg_vs, mut s_arg_ts) = (Vec::new(), Vec::new());
-    let (mut s_carg_vs, mut s_carg_ts) = (Vec::new(), Vec::new());
-    let (mut s_garg_vs, mut s_garg_ts) = (Vec::new(), Vec::new());
-    s_args.into_iter().for_each(|v| {
-        let (vs, ts, c_vs, c_ts, g_vs, g_ts) = v.iter().fold(
-            (
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-                Vec::new(),
-            ),
-            |(mut vs, mut ts, mut c_vs, mut c_ts, mut g_vs, mut g_ts), c| {
-                match c.arg_type {
-                    ComponentArgs::None => {
-                        c_vs.push(c.var.to_owned());
-                        c_ts.push(c.ty.to_owned());
-                    }
-                    ComponentArgs::Global => {
-                        g_vs.push(c.var.to_owned());
-                        g_ts.push(c.ty.to_owned());
-                    }
-                    ComponentArgs::Dummy => (),
-                }
-                vs.push(c.var.to_owned());
-                ts.push(c.ty.to_owned());
-                (vs, ts, c_vs, c_ts, g_vs, g_ts)
-            },
-        );
-        s_arg_vs.push(vs);
-        s_arg_ts.push(ts);
-        s_carg_vs.push(c_vs);
-        s_carg_ts.push(c_ts);
-        s_garg_vs.push(g_vs);
-        s_garg_ts.push(g_ts);
-
-        // v.group_by(|c1, c2| c1.arg_type == c2.arg_type)
-        //     .for_each(|v| {
-        //         let (vs, ts) = match v.first().map_or(ComponentArgs::None, |c| c.arg_type) {
-        //             ComponentArgs::None => (&mut s_carg_vs, &mut s_carg_ts),
-        //             ComponentArgs::Global => (&mut s_garg_vs, &mut s_garg_ts),
-        //             _ => return,
-        //         };
-        //         vs.pop();
-        //         vs.push(v.iter().map(|c| c.var.to_owned()).collect::<Vec<_>>());
-        //         ts.pop();
-        //         ts.push(v.iter().map(|c| c.ty.to_owned()).collect::<Vec<_>>());
-        //     });
-    });
-
     // Partition components into types
     let (mut c_vars, mut c_types, mut g_vars, mut g_types) =
         (Vec::new(), Vec::new(), Vec::new(), Vec::new());
     components
         .group_by(|c1, c2| c1.arg_type == c2.arg_type)
         .for_each(|v| {
-            let (vs, ts) = match v.first().map_or(ComponentArgs::None, |c| c.arg_type) {
-                ComponentArgs::None => (&mut c_vars, &mut c_types),
-                ComponentArgs::Global => (&mut g_vars, &mut g_types),
-                _ => return,
+            let (vs, ts) = match v.first().map_or(ComponentTypes::None, |c| c.arg_type) {
+                ComponentTypes::None => (&mut c_vars, &mut c_types),
+                ComponentTypes::Global => (&mut g_vars, &mut g_types),
             };
             vs.extend(v.iter().map(|c| c.var.to_owned()).collect::<Vec<_>>());
             ts.extend(v.iter().map(|c| c.ty.to_owned()).collect::<Vec<_>>());
@@ -298,24 +220,8 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
 
     let funcs = s_names
         .iter()
-        .zip(
-            s_carg_ts
-                .iter()
-                .zip(s_carg_vs.iter())
-                .zip(s_garg_ts.iter().zip(s_garg_vs.iter())),
-        )
-        .map(|(f, ((c_ts, c_vs), (g_ts, g_vs)))| {
-            quote!((
-                |cm: &mut #cm, em: &mut #em| {
-                    if let Some(e) = em.get_event() {
-                        function_body!(cm, #f, e,
-                            c(#(#c_vs, #c_ts),*),
-                            g(#(#g_vs, #g_ts),*)
-                        );
-                    }
-                }
-            ))
-        })
+        .zip(s_args.iter())
+        .map(|(f, args)| args.to_quote(f, &cm, &em))
         .collect::<Vec<_>>();
 
     let code = quote!(
