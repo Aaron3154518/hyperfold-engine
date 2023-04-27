@@ -5,7 +5,6 @@ use std::collections::HashMap;
 
 use ecs_lib;
 
-#[ecs_lib::component(Global)]
 pub struct AssetManager {
     file_imgs: HashMap<&'static str, Texture>,
 }

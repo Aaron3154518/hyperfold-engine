@@ -342,6 +342,10 @@ impl Rect {
         self.set_y(self.y.min(r.y2() - self.h).max(r.y()), Align::TopLeft);
     }
 
+    pub fn intersects(&self, r: &Rect) -> bool {
+        (self.x <= r.x2() && self.x2() >= r.x) || (self.y <= r.y2() && self.y2() >= r.y)
+    }
+
     pub fn get_min_rect(w: f32, h: f32, max_w: f32, max_h: f32) -> Rect {
         let w_ratio = w / max_w;
         let h_ratio = h / max_h;

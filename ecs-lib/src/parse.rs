@@ -127,30 +127,33 @@ impl SystemArgTokens {
         }
     }
 
-    pub fn to_quote(&self, f: &syn::Path, cm: &syn::Ident, em: &syn::Ident) -> TokenStream {
+    pub fn to_quote(
+        &self,
+        f: &syn::Path,
+        cm: &syn::Ident,
+        gm: &syn::Ident,
+        em: &syn::Ident,
+    ) -> TokenStream {
         let args = &self.args;
         let c_args = &self.c_args;
-        if c_args.is_empty() {
-            quote!((
-                |cm: &mut #cm, em: &mut #em| {
-                    if let Some(e) = em.get_event() {
+        let body = if c_args.is_empty() {
+            quote!(#f(#(#args),*))
+        } else {
+            quote!(
+                for key in intersect_keys(&[#(get_keys(&cm.#c_args)),*]).iter() {
+                    if let (#(Some(#c_args)),*) = (#(cm.#c_args.get_mut(key)),*) {
                         #f(#(#args),*)
                     }
                 }
-            ))
-        } else {
-            quote!((
-                |cm: &mut #cm, em: &mut #em| {
-                    if let Some(e) = em.get_event() {
-                        for key in intersect_keys(&[#(get_keys(&cm.#c_args)),*]).iter() {
-                            if let (#(Some(#c_args)),*) = (#(cm.#c_args.get_mut(key)),*) {
-                                #f(#(#args),*)
-                            }
-                        }
-                    }
+            )
+        };
+        quote!((
+            |cm: &mut #cm, gm: &mut #gm, em: &mut #em| {
+                if let Some(e) = em.get_event() {
+                    #body
                 }
-            ))
-        }
+            }
+        ))
     }
 }
 
@@ -202,7 +205,7 @@ impl System {
                             tokens.c_args.push(var);
                         }
                         ComponentTypes::Global => {
-                            tokens.args.push(quote!(&mut cm.#var));
+                            tokens.args.push(quote!(&mut gm.#var));
                             tokens.g_args.push(var);
                         }
                     }
@@ -345,12 +348,14 @@ pub struct Input {
     _1: syn::Token![,],
     cm: syn::Ident,
     _2: syn::Token![,],
+    gm: syn::Ident,
+    _3: syn::Token![,],
     em: syn::Ident,
 }
 
 impl Input {
-    pub fn get(self) -> (syn::Ident, syn::Ident, syn::Ident) {
-        (self.sm, self.cm, self.em)
+    pub fn get(self) -> (syn::Ident, syn::Ident, syn::Ident, syn::Ident) {
+        (self.sm, self.cm, self.gm, self.em)
     }
 }
 
@@ -361,6 +366,8 @@ impl syn::parse::Parse for Input {
             _1: input.parse()?,
             cm: input.parse()?,
             _2: input.parse()?,
+            gm: input.parse()?,
+            _3: input.parse()?,
             em: input.parse()?,
         })
     }

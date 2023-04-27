@@ -80,21 +80,21 @@ pub trait ComponentManager<E, T> {
 }
 
 #[macro_export]
-macro_rules! manager {
-    ($cm: ident,
-        c($($c_v: ident, $c_t: ty),*),
-        g($($g_v: ident, $g_t: ty),*)) => {
+macro_rules! c_manager {
+    ($cm: ident, $($c_v: ident, $c_t: ty),*) => {
         pub struct $cm {
-            $($g_v: $g_t,)*
             $($c_v: std::collections::HashMap<crate::ecs::entity::Entity, $c_t>,)*
         }
 
         impl $cm {
             pub fn new() -> Self {
                 Self {
-                    $($g_v: <$g_t>::new(),)*
                     $($c_v: std::collections::HashMap::new(),)*
                 }
+            }
+
+            pub fn append(&mut self, cm: &mut $cm) {
+                $(self.$c_v.extend(cm.$c_v.drain());)*
             }
         }
 
@@ -105,6 +105,23 @@ macro_rules! manager {
                 }
             }
         )*
+    };
+}
+
+#[macro_export]
+macro_rules! g_manager {
+    ($gm: ident, $($g_v: ident, $g_t: ty),*) => {
+        pub struct $gm {
+            $($g_v: $g_t,)*
+        }
+
+        impl $gm {
+            pub fn new() -> Self {
+                Self {
+                    $($g_v: <$g_t>::new(),)*
+                }
+            }
+        }
     };
 }
 
@@ -128,35 +145,16 @@ pub fn get_keys<'a, K: Eq + Hash + Clone, V>(map: &'a HashMap<K, V>) -> HashSet<
 }
 
 #[macro_export]
-macro_rules! function_body {
-    // Does not take components
-    ($cm: ident, $f: path, $e: ident,
-        c(),
-        g($($g_vs: ident, $g_ts: ty),*)) => {
-        $f($e, $(&mut $cm.$g_vs,)*)
-    };
-
-    ($cm: ident, $f: path, $e: ident,
-        c($($c_vs: ident, $c_ts: ty),*),
-        g($($g_vs: ident, $g_ts: ty),*)
-    ) => {
-        for key in intersect_keys(&[$(get_keys(&$cm.$c_vs)),*]).iter() {
-            if let ($(Some($c_vs)),*) = ($($cm.$c_vs.get_mut(key)),*) {
-                $f($e, $($c_vs,)*$(&mut $cm.$g_vs,)*)
-            }
-        }
-    };
-}
-
-#[macro_export]
 macro_rules! systems {
-    ($sm: ident, $cm: ident, $em: ident, $c_eb: ident, $c_ev: ident, $c_rs: ident,
+    ($sm: ident, $cm: ident, $gm: ident, $em: ident,
+        $g_eb: ident, $g_ev: ident, $g_rs: ident, $g_cm: ident,
         $($e_v: ident, $fs: tt),*
     ) => {
         struct $sm {
+            pub gm: $gm,
             pub cm: $cm,
             stack: Vec<std::collections::VecDeque<(E, usize)>>,
-            services: std::collections::HashMap<E, Vec<Box<dyn Fn(&mut $cm, &mut $em)>>>,
+            services: std::collections::HashMap<E, Vec<Box<dyn Fn(&mut $cm, &mut $gm, &mut $em)>>>,
             // Stores events in the order that they should be handled
             events: $em,
         }
@@ -164,6 +162,7 @@ macro_rules! systems {
         impl $sm {
             pub fn new() -> Self {
                 let mut s = Self {
+                    gm: $gm::new(),
                     cm: $cm::new(),
                     stack: Vec::new(),
                     services: std::collections::HashMap::new(),
@@ -174,11 +173,11 @@ macro_rules! systems {
             }
 
             pub fn quit(&self) -> bool {
-                self.cm.$c_ev.quit
+                self.gm.$g_ev.quit
             }
 
             pub fn get_rs<'a>(&'a mut self) -> &'a mut crate::asset_manager::RenderSystem {
-                &mut self.cm.$c_rs
+                &mut self.gm.$g_rs
             }
 
             fn init(&mut self, ts: u32) -> $em {
@@ -190,8 +189,8 @@ macro_rules! systems {
             }
 
             pub fn tick(&mut self, ts: u32, camera: &Rect, screen: &Dimensions) {
-                self.cm.$c_ev.update(ts, camera, screen);
-                self.cm.$c_rs.r.clear();
+                self.gm.$g_ev.update(ts, camera, screen);
+                self.gm.$g_rs.r.clear();
                 let mut events = self.init(ts);
                 if events.has_events() {
                     self.events.append(&mut events);
@@ -222,26 +221,28 @@ macro_rules! systems {
                             self.pop();
                         }
                         // Add a new queue for new events
-                        self.cm.$c_eb = $em::new();
+                        self.gm.$g_eb = $em::new();
                         // Run the system
                         if let Some(s) = self.services.get(&e).and_then(|v_s| v_s.get(i)) {
-                            (s)(&mut self.cm, &mut self.events);
+                            (s)(&mut self.cm, &mut self.gm, &mut self.events);
                         }
                         // If this is the last system, remove the event
                         if i + 1 >= n {
                             self.events.pop(e);
                         }
                         // Add new events
-                        if self.cm.$c_eb.has_events() {
-                            self.events.append(&mut self.cm.$c_eb);
-                            self.stack.push(self.cm.$c_eb.get_events());
+                        if self.gm.$g_eb.has_events() {
+                            self.events.append(&mut self.gm.$g_eb);
+                            self.stack.push(self.gm.$g_eb.get_events());
                         }
                     } else {
                         // We're done with this event
                         self.pop();
                     }
                 }
-                self.cm.$c_rs.r.present();
+                self.gm.$g_rs.r.present();
+                // Add new entities
+                self.cm.append(&mut self.gm.$g_cm);
             }
 
             fn pop(&mut self) {
@@ -254,7 +255,7 @@ macro_rules! systems {
                 }
             }
 
-            fn add_system(&mut self, e: E, f: Box<dyn Fn(&mut $cm, &mut $em)>) {
+            fn add_system(&mut self, e: E, f: Box<dyn Fn(&mut $cm, &mut $gm, &mut $em)>) {
                 if let Some(v) = self.services.get_mut(&e) {
                     v.push(f);
                 } else {

@@ -134,16 +134,20 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
     let components = Component::parse(std::env::var("COMPONENTS").expect("COMPONENTS"));
 
     // Find specific components
-    let c_eb = Component::find(&components, "crate::EFoo")
+    let g_eb = Component::find(&components, "crate::EFoo")
         .expect("Could not find EFoo")
         .var
         .to_owned();
-    let c_ev = Component::find(&components, "crate::utils::event::Event")
+    let g_ev = Component::find(&components, "crate::utils::event::Event")
         .expect("Could not find Event")
         .var
         .to_owned();
-    let c_rs = Component::find(&components, "crate::asset_manager::RenderSystem")
+    let g_rs = Component::find(&components, "crate::asset_manager::RenderSystem")
         .expect("Could not find RenderSystem")
+        .var
+        .to_owned();
+    let g_cm = Component::find(&components, "crate::CFoo")
+        .expect("Could not find CFoo")
         .var
         .to_owned();
 
@@ -216,12 +220,12 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
             ts.extend(v.iter().map(|c| c.ty.to_owned()).collect::<Vec<_>>());
         });
 
-    let (sm, cm, em) = parse_macro_input!(input as Input).get();
+    let (sm, cm, gm, em) = parse_macro_input!(input as Input).get();
 
     let funcs = s_names
         .iter()
         .zip(s_args.iter())
-        .map(|(f, args)| args.to_quote(f, &cm, &em))
+        .map(|(f, args)| args.to_quote(f, &cm, &gm, &em))
         .collect::<Vec<_>>();
 
     let code = quote!(
@@ -229,11 +233,10 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
         events!(#em,
             #(#((#e_strcts, #e_varis, #e_vars)),*),*
         );
-        manager!(#cm,
-            c(#(#c_vars, #c_types),*),
-            g(#(#g_vars, #g_types),*)
-        );
-        systems!(#sm, #cm, #em, #c_eb, #c_ev, #c_rs,
+        c_manager!(#cm, #(#c_vars, #c_types),*);
+        g_manager!(#gm, #(#g_vars, #g_types),*);
+        systems!(#sm, #cm, #gm, #em,
+            #g_eb, #g_ev, #g_rs, #g_cm,
             #(#s_ev_varis, #funcs),*
         );
     );

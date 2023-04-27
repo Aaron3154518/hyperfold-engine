@@ -21,11 +21,7 @@ use asset_manager::*;
 
 mod utils;
 
-use utils::{
-    event::{Event, Mouse},
-    pointers::Window,
-    rect::{Align, Dimensions, PointF, Rect},
-};
+use utils::rect::{Dimensions, PointF, Rect};
 
 mod ecs;
 
@@ -44,7 +40,10 @@ pub struct MainComponent {}
 #[component(Global, Dummy)]
 struct EFoo;
 
-component_manager!(SFoo, Foo, EFoo);
+#[component(Global, Dummy)]
+struct CFoo;
+
+component_manager!(SFoo, CFoo, GFoo, EFoo);
 
 fn main() {
     // Initialize SDL2
@@ -64,18 +63,6 @@ fn main() {
     let w = 960;
     let h = 720;
     let img_w = 100;
-
-    // Create a window
-    // let mut rs = RenderSystem::new();
-
-    // Create ECSDriver
-    // let mut ecs = ECSDriver::new();
-    // ecs.add_comp(Component {
-    //     name: "Aaron",
-    //     loc: "Boise, Idaho",
-    // });
-    // ecs.add_serv(&greet);
-    // ecs.run();
 
     let screen = Dimensions { w, h };
     let camera = Rect {
@@ -121,8 +108,9 @@ fn main() {
             boundary: camera.clone(),
         },
     );
-    let img = f.get_rs().get_image("res/bra_vector.png");
-    f.cm.add_component(e1, img);
+    let tex = f.get_rs().get_image("res/bra_vector.png");
+    f.cm.add_component(e1, tex);
+    f.cm.add_component(e1, 0 as test::FBallTimer);
 
     f.cm.add_component(
         e2,
