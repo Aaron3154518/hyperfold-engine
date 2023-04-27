@@ -436,6 +436,9 @@ fn get_possible_use_paths(
         .collect::<Vec<_>>()
 }
 
+// Entity
+const ENTITY_PATH: [&str; 4] = ["crate", "ecs", "entity", "Entity"];
+
 // Component
 #[derive(Clone, Debug)]
 struct Component {
@@ -481,10 +484,14 @@ impl Fn {
     pub fn is_valid(&self) -> Result<(), String> {
         let mut set = HashSet::new();
         let mut has_event = false;
+        let mut has_eid = false;
+        let mut has_comps = false;
         for arg in self.args.iter() {
             match arg.ty_type {
                 Some(t) => match t {
+                    FnArgType::EntityId => has_eid = true,
                     FnArgType::Component(i) => {
+                        has_comps = true;
                         if !set.insert(i) {
                             // Duplicate component
                             return Err(format!(
@@ -515,6 +522,9 @@ impl Fn {
                 }
             }
         }
+        if has_eid && !has_comps {
+            return Err("Cannot take entity ID without any entity components".to_string());
+        }
         // if !has_event {
         //     return Err("No event specified");
         // }
@@ -543,6 +553,7 @@ impl Fn {
                     a.name,
                     if a.mutable { "1" } else { "0" },
                     match t {
+                        FnArgType::EntityId => format!("id"),
                         FnArgType::Component(i) => format!("c{}", i),
                         FnArgType::Event(i1, i2) => format!("e{}:{}", i1, i2),
                     }
@@ -561,6 +572,7 @@ impl std::fmt::Display for Fn {
 
 #[derive(Clone, Copy, Debug)]
 enum FnArgType {
+    EntityId,
     Component(usize),
     Event(usize, usize),
 }
@@ -590,6 +602,10 @@ impl FnArg {
         events: &Vec<EventMod>,
     ) {
         let poss_paths = get_possible_use_paths(&self.ty, use_paths);
+        let is_eid = poss_paths
+            .iter()
+            .find(|path| **path == ENTITY_PATH)
+            .map(|_| FnArgType::EntityId);
         let comp_idx = components
             .iter()
             .position(|c| poss_paths.iter().find(|path2| c.path == **path2).is_some())
@@ -607,7 +623,7 @@ impl FnArg {
             }
             None
         });
-        self.ty_type = comp_idx.or(ev_idx);
+        self.ty_type = is_eid.or(comp_idx).or(ev_idx);
     }
 
     pub fn parse_arg(&mut self, super_path: &Vec<String>, arg: &syn::PatType) {

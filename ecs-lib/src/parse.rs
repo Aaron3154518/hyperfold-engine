@@ -100,6 +100,7 @@ pub struct EventData {
 
 #[derive(Clone, Debug)]
 pub enum SystemArgData {
+    EntityId,
     Component { idx: usize },
     Event(EventData),
 }
@@ -140,8 +141,8 @@ impl SystemArgTokens {
             quote!(#f(#(#args),*))
         } else {
             quote!(
-                for key in intersect_keys(&[#(get_keys(&cm.#c_args)),*]).iter() {
-                    if let (#(Some(#c_args)),*) = (#(cm.#c_args.get_mut(key)),*) {
+                for eid in intersect_keys(&[#(get_keys(&cm.#c_args)),*]).iter() {
+                    if let (#(Some(#c_args)),*) = (#(cm.#c_args.get_mut(eid)),*) {
                         #f(#(#args),*)
                     }
                 }
@@ -196,6 +197,7 @@ impl System {
         let mut tokens = SystemArgTokens::new();
         for a in self.args.iter() {
             match a.data {
+                SystemArgData::EntityId => tokens.args.push(quote!(eid)),
                 SystemArgData::Component { idx } => {
                     let c = components.get(idx).expect("Invalid component index");
                     let var = c.var.to_owned();
@@ -225,7 +227,7 @@ struct SystemParser {
 
 impl SystemParser {
     pub fn new() -> Self {
-        let arg_r = r"\w+:\d+:(c\d+|e\d+:\d+)";
+        let arg_r = r"\w+:\d+:(id|c\d+|e\d+:\d+)";
         Self {
             full_r: Regex::new(
                 format!(
@@ -237,7 +239,7 @@ impl SystemParser {
             .expect("Could not parse regex"),
             path_r: Regex::new(r"\w+").expect("Could not parse regex"),
             args_r: Regex::new(
-                r"(?P<var>\w+):(?P<mut>\d+):(c(?P<cidx>\d+)|e(?P<eidx1>\d+):(?P<eidx2>\d+))",
+                r"(?P<var>\w+):(?P<mut>\d+):((?P<eid>id)|c(?P<cidx>\d+)|e(?P<eidx1>\d+):(?P<eidx2>\d+))",
             )
             .expect("Could not parse regex"),
         }
@@ -291,6 +293,12 @@ impl SystemParser {
                             name,
                             is_mut,
                             data: SystemArgData::Event(data),
+                        });
+                    } else if let Some(_) = c.name("eid") {
+                        s.args.push(SystemArg {
+                            name,
+                            is_mut,
+                            data: SystemArgData::EntityId,
                         });
                     }
                 }
