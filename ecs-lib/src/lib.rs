@@ -39,6 +39,7 @@ impl Out {
     }
 }
 
+// TODO: Const can't be taken as mut
 #[proc_macro_attribute]
 pub fn component(input: TokenStream, item: TokenStream) -> TokenStream {
     let args = parse_macro_input!(input as ComponentType);
@@ -150,6 +151,10 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
         .expect("Could not find CFoo")
         .var
         .to_owned();
+    let g_tr = Component::find(&components, "crate::ecs::entity::EntityTrash")
+        .expect("Could not find EntityTrash")
+        .var
+        .to_owned();
 
     // Events
     let events = EventMod::parse(std::env::var("EVENTS").expect("EVENTS"));
@@ -236,7 +241,7 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
         c_manager!(#cm, #(#c_vars, #c_types),*);
         g_manager!(#gm, #(#g_vars, #g_types),*);
         systems!(#sm, #cm, #gm, #em,
-            #g_eb, #g_ev, #g_rs, #g_cm,
+            #g_eb, #g_ev, #g_rs, #g_cm, #g_tr,
             #(#s_ev_varis, #funcs),*
         );
     );

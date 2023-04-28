@@ -96,6 +96,13 @@ macro_rules! c_manager {
             pub fn append(&mut self, cm: &mut $cm) {
                 $(self.$c_v.extend(cm.$c_v.drain());)*
             }
+
+            pub fn remove(&mut self, tr: &mut crate::ecs::entity::EntityTrash) {
+                for eid in tr.iter() {
+                    $(self.$c_v.remove(&eid);)*
+                }
+                tr.clear();
+            }
         }
 
         $(
@@ -147,7 +154,7 @@ pub fn get_keys<'a, K: Eq + Hash + Clone, V>(map: &'a HashMap<K, V>) -> HashSet<
 #[macro_export]
 macro_rules! systems {
     ($sm: ident, $cm: ident, $gm: ident, $em: ident,
-        $g_eb: ident, $g_ev: ident, $g_rs: ident, $g_cm: ident,
+        $g_eb: ident, $g_ev: ident, $g_rs: ident, $g_cm: ident, $g_tr: ident,
         $($e_v: ident, $fs: tt),*
     ) => {
         struct $sm {
@@ -189,8 +196,11 @@ macro_rules! systems {
             }
 
             pub fn tick(&mut self, ts: u32, camera: &Rect, screen: &Dimensions) {
+                // Update events
                 self.gm.$g_ev.update(ts, camera, screen);
+                // Clear the screen
                 self.gm.$g_rs.r.clear();
+                // Add initial events
                 let mut events = self.init(ts);
                 if events.has_events() {
                     self.events.append(&mut events);
@@ -240,7 +250,10 @@ macro_rules! systems {
                         self.pop();
                     }
                 }
+                // Display the screen
                 self.gm.$g_rs.r.present();
+                // Remove marked entities
+                self.cm.remove(&mut self.gm.$g_tr);
                 // Add new entities
                 self.cm.append(&mut self.gm.$g_cm);
             }

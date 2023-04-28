@@ -1,3 +1,4 @@
+use ecs_lib;
 use std::hash::Hash;
 use uuid::Uuid;
 
@@ -9,3 +10,6 @@ impl Entity {
         Self { 0: Uuid::new_v4() }
     }
 }
+
+#[ecs_lib::component(Global)]
+type EntityTrash = Vec<Entity>;
