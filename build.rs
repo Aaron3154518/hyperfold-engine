@@ -113,29 +113,35 @@ fn main() {
         .join(" ");
 
     // Get Service data
-    let mut servs = Vec::new();
-    let mut serv_data = Vec::new();
+    let mut systs = Vec::new();
     for v in vecs.iter_mut() {
-        for s in v.services.iter_mut() {
-            s.map_to_objects(&v.uses, &comps, &events);
-            if let Err(e) = s.is_valid() {
-                panic!("{}", e);
-            }
-        }
-        servs.append(&mut v.services.to_vec());
-        serv_data.append(&mut v.services.iter().map(|f| f.to_data()).collect());
+        let data = v
+            .systems
+            .iter()
+            .map(|s| s.to_data(&v.uses, &comps, &events))
+            .collect::<Vec<_>>();
+        systs.push(data);
     }
-    let serv_data = serv_data.join(" ");
+    let sys_data = systs
+        .iter()
+        .map(|v| v.join(" "))
+        .collect::<Vec<_>>()
+        .join(" ");
 
     // Print
-    for v in vecs.iter() {
-        eprintln!("\n{}", v);
+    for (v, sys) in vecs.iter().zip(systs.iter()) {
+        eprintln!("File: {}", v.to_file());
+        eprintln!("Uses: {}", v.uses_string());
+        eprintln!("Components: {}", v.components_string());
+        eprintln!("Systems: {}", sys.join(", "));
+        eprintln!("Events: {}", v.events_string());
+        eprintln!("");
     }
     eprintln!("\n{}", comp_data);
-    eprintln!("{}", serv_data);
+    eprintln!("{}", sys_data);
     eprintln!("{}", events_data);
     println!("cargo:rustc-env=COMPONENTS={}", comp_data);
-    println!("cargo:rustc-env=SYSTEMS={}", serv_data);
+    println!("cargo:rustc-env=SYSTEMS={}", sys_data);
     println!("cargo:rustc-env=EVENTS={}", events_data);
 }
 
@@ -156,7 +162,7 @@ fn end<T>(v: &Vec<T>) -> usize {
 struct Visitor {
     components: Vec<Component>,
     modules: Vec<String>,
-    services: Vec<Fn>,
+    systems: Vec<Fn>,
     events: Vec<EventMod>,
     path: Vec<String>,
     uses: Vec<(Vec<String>, String)>,
@@ -168,7 +174,7 @@ impl Visitor {
         Self {
             components: Vec::new(),
             modules: Vec::new(),
-            services: Vec::new(),
+            systems: Vec::new(),
             events: Vec::new(),
             // This is empty for main.rs
             path: Vec::new(),
@@ -217,7 +223,25 @@ impl Visitor {
         format!("{}", self.get_mod_path().join("::"))
     }
 
-    pub fn to_string(&self) -> String {
+    pub fn uses_string(&self) -> String {
+        self.uses
+            .iter()
+            .map(|u| {
+                format!(
+                    "{}{}",
+                    u.0.join("::"),
+                    if u.1.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" as {}", u.1)
+                    }
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n      ")
+    }
+
+    pub fn components_string(&self) -> String {
         format!(
             "{}::{{{}}}",
             self.to_mod(),
@@ -228,41 +252,13 @@ impl Visitor {
                 .join(",")
         )
     }
-}
 
-impl std::fmt::Display for Visitor {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(
-            format!(
-                "File: {}\nUses: {}\nComponents: {}\nServices: {}\nEvents: {}",
-                self.to_file(),
-                self.uses
-                    .iter()
-                    .map(|u| format!(
-                        "{}{}",
-                        u.0.join("::"),
-                        if u.1.is_empty() {
-                            String::new()
-                        } else {
-                            format!(" as {}", u.1)
-                        }
-                    ))
-                    .collect::<Vec<_>>()
-                    .join("\n      "),
-                self.to_string(),
-                self.services
-                    .iter()
-                    .map(|s| s.to_data())
-                    .collect::<Vec<_>>()
-                    .join(","),
-                self.events
-                    .iter()
-                    .map(|e| e.path.join("::"))
-                    .collect::<Vec<_>>()
-                    .join(",")
-            )
-            .as_str(),
-        )
+    pub fn events_string(&self) -> String {
+        self.events
+            .iter()
+            .map(|e| e.path.join("::"))
+            .collect::<Vec<_>>()
+            .join(",")
     }
 }
 
@@ -328,21 +324,20 @@ impl syn::visit_mut::VisitMut for Visitor {
     fn visit_item_fn_mut(&mut self, i: &mut syn::ItemFn) {
         if let Some(_) = find_attribute(&i.attrs, "system") {
             // Parse function path and args
-            self.services.push(Fn {
+            self.systems.push(Fn {
                 path: concat(self.path.to_vec(), vec![i.sig.ident.to_string()]),
                 args: i
                     .sig
                     .inputs
                     .iter()
-                    .map(|arg| match arg {
+                    .filter_map(|arg| match arg {
                         syn::FnArg::Typed(t) => {
                             let mut fn_arg = FnArg::new();
                             fn_arg.parse_arg(&self.get_mod_path(), &t);
-                            fn_arg
+                            Some(fn_arg)
                         }
-                        _ => FnArg::new(),
+                        syn::FnArg::Receiver(_) => None,
                     })
-                    .filter(|arg| !arg.ty.is_empty())
                     .collect(),
             });
         }
@@ -481,86 +476,102 @@ struct Fn {
 }
 
 impl Fn {
-    pub fn is_valid(&self) -> Result<(), String> {
+    pub fn to_data(
+        &self,
+        use_paths: &Vec<(Vec<String>, String)>,
+        components: &Vec<Component>,
+        events: &Vec<EventMod>,
+    ) -> String {
         let mut set = HashSet::new();
         let mut has_event = false;
         let mut has_eid = false;
         let mut has_comps = false;
-        for arg in self.args.iter() {
-            match arg.ty_type {
-                Some(t) => match t {
-                    FnArgType::EntityId => has_eid = true,
-                    FnArgType::Component(i) => {
-                        has_comps = true;
-                        if !set.insert(i) {
-                            // Duplicate component
-                            return Err(format!(
-                                "Duplicate component argument \"{}\" for {}()",
-                                arg.ty.join("::"),
-                                self.path.join("::")
-                            ));
-                        }
-                    }
-                    FnArgType::Event(_, _) => {
-                        if has_event {
-                            // Multiple events
-                            return Err(format!(
-                                "Multiple events accepted by {}()",
-                                self.path.join("::")
-                            ));
-                        }
-                        has_event = true;
-                    }
-                },
-                // Invalid argument
-                None => {
-                    return Err(format!(
-                        "Argument \"{}\" on {}() is not a component or event",
-                        arg.ty.join("::"),
-                        self.path.join("::")
-                    ))
-                }
-            }
-        }
-        if has_eid && !has_comps {
-            return Err("Cannot take entity ID without any entity components".to_string());
-        }
-        // if !has_event {
-        //     return Err("No event specified");
-        // }
-        Ok(())
-    }
-
-    pub fn map_to_objects(
-        &mut self,
-        use_paths: &Vec<(Vec<String>, String)>,
-        components: &Vec<Component>,
-        events: &Vec<EventMod>,
-    ) {
-        for arg in self.args.iter_mut() {
-            arg.map_to_objects(use_paths, components, events);
-        }
-    }
-
-    pub fn to_data(&self) -> String {
-        format!(
+        let mut has_vec = false;
+        let mut errs = Vec::new();
+        let data = format!(
             "crate::{}({})",
             self.path.join("::"),
             self.args
                 .iter()
-                .filter_map(|a| a.ty_type.map(|t| format!(
-                    "{}:{}:{}",
-                    a.name,
-                    if a.mutable { "1" } else { "0" },
-                    match t {
-                        FnArgType::EntityId => format!("id"),
-                        FnArgType::Component(i) => format!("c{}", i),
-                        FnArgType::Event(i1, i2) => format!("e{}:{}", i1, i2),
+                .map(|a| {
+                    let err_head = format!("In system {}, arg {}", self.path.join("::"), a.name);
+                    let k = a.map_to_objects(use_paths, components, events);
+                    match k {
+                        FnArgKind::Unknown => {
+                            errs.push(format!("{}: Type was not recognized", err_head));
+                            String::new()
+                        }
+                        FnArgKind::EntityId => {
+                            has_eid = true;
+                            format!("eid")
+                        }
+                        FnArgKind::Component(i, t) => {
+                            if let ComponentTypes::None = t {
+                                has_comps = true;
+                            }
+                            if !set.insert(i) {
+                                errs.push(format!(
+                                    "{}: Duplicate component type, \"{}\"",
+                                    err_head,
+                                    a.get_type(),
+                                ));
+                            }
+                            format!("c{}", i)
+                        }
+                        FnArgKind::Event(ei, vi) => {
+                            if has_event {
+                                errs.push(format!(
+                                    "{}: Found event, \"{}\", but an event has already been found",
+                                    err_head,
+                                    a.get_type()
+                                ));
+                            }
+                            has_event = true;
+                            format!("e{}:{}", ei, vi)
+                        }
+                        FnArgKind::Vector(v) => {
+                            if has_vec {
+                                errs.push(format!(
+                                    "{}: Found vector, \"{}\", but a vector has already been found",
+                                    err_head,
+                                    a.get_type()
+                                ));
+                            }
+                            has_vec = true;
+                            format!(
+                                "v{}",
+                                v.iter()
+                                    .map(|i| i.to_string())
+                                    .collect::<Vec<_>>()
+                                    .join(":")
+                            )
+                        }
                     }
-                )))
+                })
                 .collect::<Vec<_>>()
                 .join(",")
-        )
+        );
+        let err_head = format!("In system {}", self.path.join("::"));
+        if has_eid && !has_comps {
+            errs.push(format!(
+                "{}: Cannot take entity ID without any entity components",
+                err_head
+            ));
+        }
+        if has_vec && has_comps {
+            errs.push(format!(
+                "{}: Cannot take wrap components in a vector and take them individually",
+                err_head
+            ));
+        }
+        if errs.is_empty() {
+            data
+        } else {
+            for err in errs {
+                eprintln!("{}", err);
+            }
+            panic!()
+        }
     }
 }
 
@@ -570,17 +581,36 @@ impl std::fmt::Display for Fn {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-enum FnArgType {
+#[derive(Clone, Debug)]
+enum FnArgKind {
+    Unknown,
     EntityId,
-    Component(usize),
+    Component(usize, ComponentTypes),
     Event(usize, usize),
+    Vector(Vec<usize>),
+}
+
+impl std::fmt::Display for FnArgKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Unknown => "Unknown",
+            Self::EntityId => "EntityId",
+            Self::Component(_, _) => "Component",
+            Self::Event(_, _) => "Event",
+            Self::Vector(_) => "Vector",
+        })
+    }
+}
+
+#[derive(Clone, Debug)]
+enum FnArgType {
+    Path(Vec<String>),
+    Vector(Vec<FnArg>),
 }
 
 #[derive(Clone, Debug)]
 struct FnArg {
-    ty: Vec<String>,
-    ty_type: Option<FnArgType>,
+    ty: FnArgType,
     name: String,
     mutable: bool,
 }
@@ -588,42 +618,87 @@ struct FnArg {
 impl FnArg {
     pub fn new() -> Self {
         Self {
-            ty: Vec::new(),
-            ty_type: None,
+            ty: FnArgType::Path(Vec::new()),
             name: String::new(),
             mutable: false,
         }
     }
 
+    pub fn get_type(&self) -> String {
+        match &self.ty {
+            FnArgType::Path(p) => format!("{}", p.join("::")),
+            FnArgType::Vector(v) => format!(
+                "Vec<{}>",
+                v.iter()
+                    .map(|a| a.get_type())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        }
+    }
+
     pub fn map_to_objects(
-        &mut self,
+        &self,
         use_paths: &Vec<(Vec<String>, String)>,
         components: &Vec<Component>,
         events: &Vec<EventMod>,
-    ) {
-        let poss_paths = get_possible_use_paths(&self.ty, use_paths);
-        let is_eid = poss_paths
-            .iter()
-            .find(|path| **path == ENTITY_PATH)
-            .map(|_| FnArgType::EntityId);
-        let comp_idx = components
-            .iter()
-            .position(|c| poss_paths.iter().find(|path2| c.path == **path2).is_some())
-            .map(|i| FnArgType::Component(i));
-        let ev_idx = events.iter().enumerate().find_map(|(i, e)| {
-            // Find matching enum
-            if let Some(path) = poss_paths.iter().find(|path| e.path == path[..end(path)]) {
-                // Find matching variant
-                if let Some(p) = path
-                    .last()
-                    .and_then(|p| e.events.iter().position(|n| p == n))
-                {
-                    return Some(FnArgType::Event(i, p));
-                }
+    ) -> FnArgKind {
+        match &self.ty {
+            FnArgType::Path(p) => {
+                let poss_paths = get_possible_use_paths(&p, use_paths);
+                let is_eid = poss_paths
+                    .iter()
+                    .find(|path| **path == ENTITY_PATH)
+                    .map(|_| FnArgKind::EntityId);
+                let comp_idx = components
+                    .iter()
+                    .position(|c| poss_paths.iter().find(|path2| c.path == **path2).is_some())
+                    .map(|i| FnArgKind::Component(i, components[i].args));
+                let ev_idx = events.iter().enumerate().find_map(|(i, e)| {
+                    // Find matching enum
+                    if let Some(path) = poss_paths.iter().find(|path| e.path == path[..end(path)]) {
+                        // Find matching variant
+                        if let Some(p) = path
+                            .last()
+                            .and_then(|p| e.events.iter().position(|n| p == n))
+                        {
+                            return Some(FnArgKind::Event(i, p));
+                        }
+                    }
+                    None
+                });
+                is_eid
+                    .or(comp_idx)
+                    .or(ev_idx)
+                    .map_or(FnArgKind::Unknown, |k| k)
             }
-            None
-        });
-        self.ty_type = is_eid.or(comp_idx).or(ev_idx);
+            FnArgType::Vector(v) => {
+                FnArgKind::Vector(
+                    v.iter()
+                        .map(|a| {
+                            let k = a.map_to_objects(use_paths, components, events);
+                            match k {
+                                FnArgKind::Component(i, t) => {
+                                    match t {
+                                        ComponentTypes::None => i,
+                                        ComponentTypes::Global => panic!("In argument {}: Vec arguments can only have regular components, but {} is marked Global",
+                                        self.name,
+                                            a.get_type(),
+                                        ),
+                                    }
+                                },
+                                _ => panic!(
+                                    "In argument {}: Vec arguments can only include Components, but {} is {}",
+                                    self.name,
+                                    a.get_type(),
+                                    k
+                                ),
+                            }
+                        })
+                        .collect()
+                )
+            }
+        }
     }
 
     pub fn parse_arg(&mut self, super_path: &Vec<String>, arg: &syn::PatType) {
@@ -636,16 +711,49 @@ impl FnArg {
     pub fn parse_type(&mut self, super_path: &Vec<String>, ty: &syn::Type) {
         match ty {
             syn::Type::Path(p) => {
-                for s in p.path.segments.iter() {
-                    if s.ident == "super" {
-                        if self.ty.is_empty() {
-                            self.ty.append(&mut super_path[..end(super_path)].to_vec());
-                        } else {
-                            self.ty.pop();
-                        }
+                if let Some(args) = p.path.segments.first().and_then(|s| {
+                    if s.ident == "Vec" {
+                        Some(&s.arguments)
                     } else {
-                        self.ty.push(s.ident.to_string());
+                        None
                     }
+                }) {
+                    match args {
+                        syn::PathArguments::AngleBracketed(ab) => {
+                            if let Some(a) = ab.args.first() {
+                                match a {
+                                    syn::GenericArgument::Type(t) => match t {
+                                        syn::Type::Tuple(tup) => {
+                                            let mut v = Vec::new();
+                                            for tup_ty in tup.elems.iter() {
+                                                let mut arg = FnArg::new();
+                                                arg.parse_type(super_path, &tup_ty);
+                                                v.push(arg);
+                                            }
+                                            self.ty = FnArgType::Vector(v);
+                                        }
+                                        _ => (),
+                                    },
+                                    _ => (),
+                                }
+                            }
+                        }
+                        _ => (),
+                    }
+                } else {
+                    let mut v = Vec::new();
+                    for s in p.path.segments.iter() {
+                        if s.ident == "super" {
+                            if v.is_empty() {
+                                v.append(&mut super_path[..end(super_path)].to_vec());
+                            } else {
+                                v.pop();
+                            }
+                        } else {
+                            v.push(s.ident.to_string());
+                        }
+                    }
+                    self.ty = FnArgType::Path(v);
                 }
             }
             syn::Type::Reference(r) => {
