@@ -73,8 +73,8 @@ fn main() {
     };
 
     let mut f = SFoo::new();
-    let e1 = ecs::entity::Entity::new();
-    let e2 = ecs::entity::Entity::new();
+    let e1 = ecs::entity::new();
+    let e2 = ecs::entity::new();
 
     f.cm.add_component(
         e1,

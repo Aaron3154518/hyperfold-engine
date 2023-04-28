@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeSet, HashMap, HashSet},
     hash::Hash,
 };
 
@@ -136,7 +136,7 @@ pub trait ComponentSystems<F> {
     fn add_system(&mut self, f: F);
 }
 
-pub fn intersect_keys<K: Eq + Hash + Clone>(keys: &[HashSet<&K>]) -> HashSet<K> {
+pub fn intersect_keys<K: Eq + Hash + Clone + Ord>(keys: &[HashSet<&K>]) -> BTreeSet<K> {
     if let Some(k1) = keys.first() {
         let mut k1 = k1.clone();
         keys[1..]
@@ -144,7 +144,7 @@ pub fn intersect_keys<K: Eq + Hash + Clone>(keys: &[HashSet<&K>]) -> HashSet<K> 
             .for_each(|k| k1 = k1.intersection(k).map(|k| *k).collect::<HashSet<_>>());
         return k1.iter().map(|k| (*k).clone()).collect();
     }
-    HashSet::new()
+    BTreeSet::new()
 }
 
 pub fn get_keys<'a, K: Eq + Hash + Clone, V>(map: &'a HashMap<K, V>) -> HashSet<&'a K> {
