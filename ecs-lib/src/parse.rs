@@ -43,7 +43,6 @@ pub fn find(span: Span, name: String, paths: Vec<Vec<String>>) -> Option<usize> 
 pub struct Component {
     pub var: syn::Ident,
     pub ty: syn::Type,
-    pub arg_type: ComponentTypes,
 }
 
 impl Component {
@@ -61,33 +60,19 @@ impl Component {
         })
     }
 
-    pub fn parse(data: String) -> Vec<Self> {
-        // Extract component names, types, and args
-        let r = Regex::new(r"(?P<name>\w+(::\w+)*)\((?P<args>\d+)\)")
-            .expect("Could not construct regex");
+    pub fn parse(data: String, ty: ComponentTypes) -> Vec<Self> {
+        let ty_char = match ty {
+            ComponentTypes::None => "c",
+            ComponentTypes::Global => "g",
+        };
         data.split(" ")
-            .filter_map(|s| {
-                if let Some(c) = r.captures(s) {
-                    if let (Some(name), Some(args)) = (c.name("name"), c.name("args")) {
-                        if let Some(a) = <ComponentTypes as FromPrimitive>::from_u8(
-                            args.as_str()
-                                .parse::<u8>()
-                                .expect("Could not parse component type code"),
-                        ) {
-                            return Some((name.as_str().to_string(), a));
-                        }
-                    }
-                }
-                None
-            })
             .enumerate()
-            .map(|(i, (s, t))| Component {
-                var: format_ident!("c{}", i),
-                ty: syn::parse_str::<syn::Type>(s.as_str())
-                    .expect(format!("Could not parse Component type: {:#?}", t).as_str()),
-                arg_type: t,
+            .map(|(i, s)| Component {
+                var: format_ident!("{}{}", ty_char, i),
+                ty: syn::parse_str::<syn::Type>(s)
+                    .expect(format!("Could not parse Component type: {:#?}", s).as_str()),
             })
-            .collect::<Vec<_>>()
+            .collect()
     }
 }
 

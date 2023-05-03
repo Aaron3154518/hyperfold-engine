@@ -132,29 +132,24 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
     let mut f = Out::new("out3.txt", false);
 
     // Components
-    let components = Component::parse(std::env::var("COMPONENTS").expect("COMPONENTS"));
+    let components = Component::parse(
+        std::env::var("COMPONENTS").expect("COMPONENTS"),
+        ComponentTypes::None,
+    );
+    let globals = Component::parse(
+        std::env::var("GLOBALS").expect("GLOBALS"),
+        ComponentTypes::Global,
+    );
 
     // Find specific components
-    let g_eb = Component::find(&components, "crate::EFoo")
-        .expect("Could not find EFoo")
-        .var
-        .to_owned();
-    let g_ev = Component::find(&components, "crate::utils::event::Event")
-        .expect("Could not find Event")
-        .var
-        .to_owned();
-    let g_rs = Component::find(&components, "crate::asset_manager::RenderSystem")
-        .expect("Could not find RenderSystem")
-        .var
-        .to_owned();
-    let g_cm = Component::find(&components, "crate::CFoo")
-        .expect("Could not find CFoo")
-        .var
-        .to_owned();
-    let g_tr = Component::find(&components, "crate::ecs::entity::EntityTrash")
-        .expect("Could not find EntityTrash")
-        .var
-        .to_owned();
+    let [g_eb, g_ev, g_rs, g_cm, g_tr] = [
+        "crate::EFoo",
+        "crate::utils::event::Event",
+        "crate::asset_manager::RenderSystem",
+        "crate::CFoo",
+        "crate::ecs::entity::EntityTrash",
+    ]
+    .map(|s| Component::find(&globals, s).expect(s).var.to_owned());
 
     // Events
     let events = EventMod::parse(std::env::var("EVENTS").expect("EVENTS"));
