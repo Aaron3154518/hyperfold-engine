@@ -110,7 +110,7 @@ impl Drop for Texture {
 }
 
 // TextureAccess
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct TextureAccess {
     pub(crate) tex: NonNull<sdl2::SDL_Texture>,
 }

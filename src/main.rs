@@ -1,5 +1,7 @@
 #![feature(specialization)]
 #![feature(const_type_id)]
+#![feature(map_many_mut)]
+#![feature(hash_raw_entry)]
 
 use std::{
     any::TypeId,
@@ -8,6 +10,7 @@ use std::{
 };
 
 mod sdl2_bindings;
+use framework::render_system::Elevation;
 use sdl2_bindings::sdl2_ as sdl2;
 
 mod sdl2_image_bindings;
@@ -73,9 +76,8 @@ fn main() {
     };
 
     let mut f = SFoo::new();
-    let e1 = ecs::entity::new();
-    let e2 = ecs::entity::new();
 
+    let e1 = ecs::entity::new();
     f.cm.add_component(
         e1,
         ecs::component::Component {
@@ -91,6 +93,7 @@ fn main() {
     );
     f.cm.add_component(e1, ecs::test::tmp::Component { i: 666 });
     f.cm.add_component(e1, MainComponent {});
+    f.cm.add_component(e1, 0 as Elevation);
     f.cm.add_component(
         e1,
         framework::physics::Position {
@@ -110,8 +113,9 @@ fn main() {
     );
     let tex = f.get_rs().get_image("res/bra_vector.png");
     f.cm.add_component(e1, tex);
-    f.cm.add_component(e1, 0 as test::FBallTimer);
+    f.cm.add_component(e1, 1 as test::FBallTimer);
 
+    let e2 = ecs::entity::new();
     f.cm.add_component(
         e2,
         ecs::component::Component {
@@ -129,6 +133,8 @@ fn main() {
 
     let mut t = unsafe { sdl2::SDL_GetTicks() };
     let mut dt;
+    let mut tsum: u64 = 0;
+    let mut tcnt: u64 = 0;
     while !f.quit() {
         dt = unsafe { sdl2::SDL_GetTicks() } - t;
         t += dt;
@@ -136,10 +142,14 @@ fn main() {
         f.tick(dt, &camera, &screen);
 
         dt = unsafe { sdl2::SDL_GetTicks() } - t;
+        tsum += dt as u64;
+        tcnt += 1;
         if dt < FRAME_TIME {
             unsafe { sdl2::SDL_Delay(FRAME_TIME - dt) };
         }
     }
+
+    println!("Average Frame Time: {}ms", tsum as f64 / tcnt as f64);
 
     // Destroy RenderSystem
     // drop(rs);

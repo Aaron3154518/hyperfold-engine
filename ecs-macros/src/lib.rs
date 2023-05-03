@@ -1,3 +1,5 @@
+#![feature(hash_drain_filter)]
+
 use std::{
     collections::{BTreeSet, HashMap, HashSet},
     hash::Hash,
@@ -136,7 +138,44 @@ pub trait ComponentSystems<F> {
     fn add_system(&mut self, f: F);
 }
 
-pub fn intersect_keys<K: Eq + Hash + Clone + Ord>(keys: &[HashSet<&K>]) -> BTreeSet<K> {
+pub fn intersect<'a, K, V1, V2, F>(
+    mut h: HashMap<&'a K, V1>,
+    h_new: &'a HashMap<K, V2>,
+    get: F,
+) -> HashMap<&'a K, V1>
+where
+    K: Eq + Hash + Clone + Ord,
+    F: Fn(&mut V1) -> &mut Option<&'a V2>,
+{
+    for (k, v) in h_new.iter() {
+        if let Some(v2) = h.get_mut(k) {
+            *get(v2) = Some(v)
+        }
+    }
+    h.drain_filter(|_k, v| get(v).is_none());
+    h
+}
+
+pub fn intersect_mut<'a, K, V1, V2, F>(
+    mut h: HashMap<&'a K, V1>,
+    h_new: &'a mut HashMap<K, V2>,
+    get: F,
+) -> HashMap<&'a K, V1>
+where
+    K: Eq + Hash + Clone + Ord,
+    F: Fn(&mut V1) -> &mut Option<&'a V2>,
+{
+    for (k, v) in h_new.iter_mut() {
+        if let Some(v2) = h.get_mut(k) {
+            *get(v2) = Some(v)
+        }
+    }
+    h.drain_filter(|_k, v| get(v).is_none());
+    h
+}
+
+pub fn intersect_keys<K: Eq + Hash + Clone + Ord>(keys: &mut [HashSet<&K>]) -> BTreeSet<K> {
+    keys.sort_by(|s1, s2| s1.len().cmp(&s2.len()));
     if let Some(k1) = keys.first() {
         let mut k1 = k1.clone();
         keys[1..]

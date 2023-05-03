@@ -103,6 +103,7 @@ pub enum SystemArgData {
     EntityId,
     Component { idx: usize },
     Event(EventData),
+    Vector(Vec<(usize, bool)>),
 }
 
 #[derive(Clone, Debug)]
@@ -116,7 +117,11 @@ pub struct SystemArg {
 pub struct SystemArgTokens {
     args: Vec<TokenStream>,
     c_args: Vec<syn::Ident>,
+    // Includes reference and mutability
+    c_types: Vec<syn::Type>,
+    v_mut: Vec<bool>,
     g_args: Vec<syn::Ident>,
+    is_vec: bool,
 }
 
 impl SystemArgTokens {
@@ -124,8 +129,29 @@ impl SystemArgTokens {
         Self {
             args: Vec::new(),
             c_args: Vec::new(),
+            c_types: Vec::new(),
+            v_mut: Vec::new(),
             g_args: Vec::new(),
+            is_vec: false,
         }
+    }
+
+    fn get_ref_types(&self) -> Vec<syn::Type> {
+        self.c_types
+            .iter()
+            .zip(self.v_mut.iter())
+            .map(|(t, m)| {
+                syn::parse_str::<syn::Type>(
+                    format!(
+                        "&{}{}",
+                        if *m { "mut " } else { "" },
+                        t.to_token_stream().to_string()
+                    )
+                    .as_str(),
+                )
+                .expect("Could not parse type")
+            })
+            .collect()
     }
 
     pub fn to_quote(
@@ -136,16 +162,85 @@ impl SystemArgTokens {
         em: &syn::Ident,
     ) -> TokenStream {
         let args = &self.args;
-        let c_args = &self.c_args;
-        let body = if c_args.is_empty() {
+
+        let body = if self.c_args.is_empty() {
             quote!(#f(#(#args),*))
-        } else {
+        } else if !self.is_vec {
+            let c_args = &self.c_args;
             quote!(
-                for eid in intersect_keys(&[#(get_keys(&cm.#c_args)),*]).iter() {
+                for eid in intersect_keys(&mut [#(get_keys(&cm.#c_args)),*]).iter() {
                     if let (#(Some(#c_args)),*) = (#(cm.#c_args.get_mut(eid)),*) {
                         #f(#(#args),*)
                     }
                 }
+            )
+        } else {
+            let c_types = self.get_ref_types();
+            let c_arg1 = self.c_args.first().expect("No first component");
+            let iter1 = if *self.v_mut.first().expect("No first mutability") {
+                format_ident!("iter_mut")
+            } else {
+                format_ident!("iter")
+            };
+
+            // Tail args and getters
+            let (c_args, c_gets) = self.c_args[1..]
+                .iter()
+                .enumerate()
+                .map(|(i, a)| {
+                    (
+                        a,
+                        syn::parse_str::<syn::ExprClosure>(
+                            format!("|t| &mut t.{}", i + 1).as_str(),
+                        )
+                        .expect("Could not parse closure"),
+                    )
+                })
+                .unzip::<_, _, Vec<_>, Vec<_>>();
+            // intersect or intersect_mut
+            let c_intersect = self.v_mut[1..]
+                .iter()
+                .map(|b| {
+                    if *b {
+                        format_ident!("intersect_mut")
+                    } else {
+                        format_ident!("intersect")
+                    }
+                })
+                .collect::<Vec<_>>();
+            // v1, v2, ...
+            let c_vars = self
+                .c_args
+                .iter()
+                .enumerate()
+                .map(|(i, _a)| format_ident!("v{}", i))
+                .collect::<Vec<_>>();
+            // (Some(v), None, None, ...)
+            let c_tuple_init = syn::parse_str::<syn::ExprClosure>(
+                format!(
+                    "|(k, v)| (k, (Some(v), {}))",
+                    ["None"].repeat(self.c_args.len() - 1).join(",")
+                )
+                .as_str(),
+            )
+            .expect("Could not parse tuple");
+            quote!(
+                let mut v = cm.#c_arg1
+                    .#iter1()
+                    .map(#c_tuple_init)
+                    .collect::<HashMap<_, (#(Option<#c_types>),*)>>();
+                #(v = #c_intersect(v, &mut cm.#c_args, #c_gets);)*
+                let v = v
+                    .into_values()
+                    .filter_map(|(#(#c_vars),*)| {
+                        if let (#(Some(#c_vars)),*) = (#(#c_vars),*) {
+                            Some((#(#c_vars),*))
+                        } else {
+                            None
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                #f(#(#args),*);
             )
         };
         quote!((
@@ -196,10 +291,10 @@ impl System {
     pub fn get_args(&self, components: &Vec<Component>) -> SystemArgTokens {
         let mut tokens = SystemArgTokens::new();
         for a in self.args.iter() {
-            match a.data {
+            match &a.data {
                 SystemArgData::EntityId => tokens.args.push(quote!(eid)),
                 SystemArgData::Component { idx } => {
-                    let c = components.get(idx).expect("Invalid component index");
+                    let c = components.get(*idx).expect("Invalid component index");
                     let var = c.var.to_owned();
                     match c.arg_type {
                         ComponentTypes::None => {
@@ -213,6 +308,18 @@ impl System {
                     }
                 }
                 SystemArgData::Event { .. } => tokens.args.push(quote!(e)),
+                SystemArgData::Vector(v) => {
+                    tokens.args.push(quote!(v));
+                    (tokens.c_types, tokens.c_args) = v
+                        .iter()
+                        .map(|(i, _m)| {
+                            let c = components.get(*i).expect("Invalid component index");
+                            (c.ty.to_owned(), c.var.to_owned())
+                        })
+                        .unzip();
+                    tokens.v_mut = v.iter().map(|(_i, m)| *m).collect();
+                    tokens.is_vec = true;
+                }
             }
         }
         tokens
@@ -227,7 +334,7 @@ struct SystemParser {
 
 impl SystemParser {
     pub fn new() -> Self {
-        let arg_r = r"\w+:\d+:(id|c\d+|e\d+:\d+)";
+        let arg_r = r"\w+:\d+:(id|c\d+|e\d+:\d+|vm?\d+(:m?\d+)*)";
         Self {
             full_r: Regex::new(
                 format!(
@@ -239,7 +346,7 @@ impl SystemParser {
             .expect("Could not parse regex"),
             path_r: Regex::new(r"\w+").expect("Could not parse regex"),
             args_r: Regex::new(
-                r"(?P<var>\w+):(?P<mut>\d+):((?P<eid>id)|c(?P<cidx>\d+)|e(?P<eidx1>\d+):(?P<eidx2>\d+))",
+                r"(?P<var>\w+):(?P<mut>\d+):((?P<eid>id)|c(?P<cidx>\d+)|e(?P<eidx1>\d+):(?P<eidx2>\d+)|v(?P<vidxs>m?\d+(:m?\d+)*))",
             )
             .expect("Could not parse regex"),
         }
@@ -299,6 +406,29 @@ impl SystemParser {
                             name,
                             is_mut,
                             data: SystemArgData::EntityId,
+                        });
+                    } else if let Some(idxs) = c.name("vidxs") {
+                        s.args.push(SystemArg {
+                            name,
+                            is_mut,
+                            data: SystemArgData::Vector(
+                                idxs.as_str()
+                                    .split(":")
+                                    .map(|mut s| {
+                                        let mut is_mut = false;
+                                        if s.starts_with("m") {
+                                            s = s.split_at(1).1;
+                                            is_mut = true;
+                                        }
+                                        (
+                                            s.parse::<usize>().expect(
+                                                "Could not parse component index in vector",
+                                            ),
+                                            is_mut,
+                                        )
+                                    })
+                                    .collect(),
+                            ),
                         });
                     }
                 }

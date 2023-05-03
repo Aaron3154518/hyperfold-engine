@@ -124,6 +124,7 @@ fn main() {
     }
     let sys_data = systs
         .iter()
+        .filter(|v| !v.is_empty())
         .map(|v| v.join(" "))
         .collect::<Vec<_>>()
         .join(" ");
@@ -468,6 +469,7 @@ impl EventMod {
     }
 }
 
+// TODO: eid in vector
 // Functions
 #[derive(Clone, Debug)]
 struct Fn {
@@ -496,57 +498,69 @@ impl Fn {
                 .map(|a| {
                     let err_head = format!("In system {}, arg {}", self.path.join("::"), a.name);
                     let k = a.map_to_objects(use_paths, components, events);
-                    match k {
-                        FnArgKind::Unknown => {
-                            errs.push(format!("{}: Type was not recognized", err_head));
-                            String::new()
-                        }
-                        FnArgKind::EntityId => {
-                            has_eid = true;
-                            format!("eid")
-                        }
-                        FnArgKind::Component(i, t) => {
-                            if let ComponentTypes::None = t {
-                                has_comps = true;
+                    format!(
+                        "{}:{}:{}",
+                        a.name,
+                        if a.mutable { "1" } else { "0" },
+                        match k {
+                            FnArgKind::Unknown => {
+                                errs.push(format!("{}: Type was not recognized", err_head));
+                                String::new()
                             }
-                            if !set.insert(i) {
-                                errs.push(format!(
-                                    "{}: Duplicate component type, \"{}\"",
-                                    err_head,
-                                    a.get_type(),
-                                ));
+                            FnArgKind::EntityId => {
+                                has_eid = true;
+                                format!("eid")
                             }
-                            format!("c{}", i)
-                        }
-                        FnArgKind::Event(ei, vi) => {
-                            if has_event {
-                                errs.push(format!(
+                            FnArgKind::Component(i, t) => {
+                                if let ComponentTypes::None = t {
+                                    has_comps = true;
+                                }
+                                if !set.insert(i) {
+                                    errs.push(format!(
+                                        "{}: Duplicate component type, \"{}\"",
+                                        err_head,
+                                        a.get_type(),
+                                    ));
+                                }
+                                format!("c{}", i)
+                            }
+                            FnArgKind::Event(ei, vi) => {
+                                if has_event {
+                                    errs.push(format!(
                                     "{}: Found event, \"{}\", but an event has already been found",
                                     err_head,
                                     a.get_type()
                                 ));
+                                }
+                                has_event = true;
+                                format!("e{}:{}", ei, vi)
                             }
-                            has_event = true;
-                            format!("e{}:{}", ei, vi)
-                        }
-                        FnArgKind::Vector(v) => {
-                            if has_vec {
-                                errs.push(format!(
+                            FnArgKind::Vector(v) => {
+                                if v.is_empty() {
+                                    errs.push(format!(
+                                        "{}: Vector \"{}\" has no components",
+                                        err_head,
+                                        a.get_type()
+                                    ));
+                                }
+                                if has_vec {
+                                    errs.push(format!(
                                     "{}: Found vector, \"{}\", but a vector has already been found",
                                     err_head,
                                     a.get_type()
                                 ));
+                                }
+                                has_vec = true;
+                                format!(
+                                    "v{}",
+                                    v.iter()
+                                        .map(|a| format!("{}{}", if a.1 { "m" } else { "" }, a.0))
+                                        .collect::<Vec<_>>()
+                                        .join(":")
+                                )
                             }
-                            has_vec = true;
-                            format!(
-                                "v{}",
-                                v.iter()
-                                    .map(|i| i.to_string())
-                                    .collect::<Vec<_>>()
-                                    .join(":")
-                            )
                         }
-                    }
+                    )
                 })
                 .collect::<Vec<_>>()
                 .join(",")
@@ -560,7 +574,13 @@ impl Fn {
         }
         if has_vec && has_comps {
             errs.push(format!(
-                "{}: Cannot take wrap components in a vector and take them individually",
+                "{}: Cannot wrap components in a vector and take them individually",
+                err_head
+            ));
+        }
+        if has_vec && has_eid {
+            errs.push(format!(
+                "{}: Cannot wrap components in a vector and take entity ids",
                 err_head
             ));
         }
@@ -587,7 +607,7 @@ enum FnArgKind {
     EntityId,
     Component(usize, ComponentTypes),
     Event(usize, usize),
-    Vector(Vec<usize>),
+    Vector(Vec<(usize, bool)>),
 }
 
 impl std::fmt::Display for FnArgKind {
@@ -680,7 +700,7 @@ impl FnArg {
                             match k {
                                 FnArgKind::Component(i, t) => {
                                     match t {
-                                        ComponentTypes::None => i,
+                                        ComponentTypes::None => (i, a.mutable),
                                         ComponentTypes::Global => panic!("In argument {}: Vec arguments can only have regular components, but {} is marked Global",
                                         self.name,
                                             a.get_type(),

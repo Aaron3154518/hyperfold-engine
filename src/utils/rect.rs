@@ -1,12 +1,12 @@
 use crate::sdl2;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Dimensions {
     pub w: i32,
     pub h: i32,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct DimensionsF {
     pub w: f32,
     pub h: f32,
@@ -36,14 +36,14 @@ impl PointF {
 }
 
 #[repr(u8)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum Align {
     TopLeft = 0,
     Center,
     BotRight,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct Rect {
     pub x: f32,
     pub y: f32,
