@@ -1,42 +1,7 @@
-use std::path::PathBuf;
-
 use ecs_macros::structs::ComponentTypes;
-use num_traits::FromPrimitive;
-use proc_macro2::{Span, TokenStream};
+use proc_macro2::TokenStream;
 use quote::{format_ident, quote, ToTokens};
 use regex::Regex;
-
-// Match local instance to list
-pub fn find(span: Span, name: String, paths: Vec<Vec<String>>) -> Option<usize> {
-    let path = span.unwrap().source_file().path();
-    if let Some(dir) = path.parent() {
-        let mut no_ext = PathBuf::new();
-        no_ext.push(dir);
-        no_ext.push(path.file_stem().expect("No file prefix"));
-        let mut idxs = (0..paths.len()).collect::<Vec<_>>();
-        // Repeatedly prune impossible paths
-        for (i, p) in no_ext.iter().enumerate() {
-            let p = p
-                .to_str()
-                .expect(format!("Could not convert path segment to string: {:#?}", p).as_str());
-            idxs.retain(|j| {
-                paths.get(*j).is_some_and(|s| {
-                    s.get(i)
-                        .is_some_and(|s| (*s == "crate" && p == "src") || *s == p)
-                })
-            });
-        }
-        // Find this function in the possible paths
-        let n = no_ext.iter().count();
-        idxs.retain(|j| {
-            paths
-                .get(*j)
-                .is_some_and(|s| s.len() == n + 1 && s.last().is_some_and(|s| *s == name))
-        });
-        return idxs.first().cloned();
-    }
-    None
-}
 
 // Component parser
 #[derive(Clone, Debug)]
@@ -86,7 +51,8 @@ pub struct EventData {
 #[derive(Clone, Debug)]
 pub enum SystemArgData {
     EntityId,
-    Component { idx: usize },
+    Component(usize),
+    Global(usize),
     Event(EventData),
     Vector(Vec<(usize, bool)>),
 }
@@ -273,24 +239,28 @@ impl System {
         }
     }
 
-    pub fn get_args(&self, components: &Vec<Component>) -> SystemArgTokens {
+    pub fn get_args(&self, comps: &Vec<Component>, globals: &Vec<Component>) -> SystemArgTokens {
         let mut tokens = SystemArgTokens::new();
         for a in self.args.iter() {
             match &a.data {
                 SystemArgData::EntityId => tokens.args.push(quote!(eid)),
-                SystemArgData::Component { idx } => {
-                    let c = components.get(*idx).expect("Invalid component index");
-                    let var = c.var.to_owned();
-                    match c.arg_type {
-                        ComponentTypes::None => {
-                            tokens.args.push(quote!(#var));
-                            tokens.c_args.push(var);
-                        }
-                        ComponentTypes::Global => {
-                            tokens.args.push(quote!(&mut gm.#var));
-                            tokens.g_args.push(var);
-                        }
-                    }
+                SystemArgData::Component(i) => {
+                    let var = comps
+                        .get(*i)
+                        .expect("Invalid component index")
+                        .var
+                        .to_owned();
+                    tokens.args.push(quote!(#var));
+                    tokens.c_args.push(var);
+                }
+                SystemArgData::Global(i) => {
+                    let var = globals
+                        .get(*i)
+                        .expect("Invalid component index")
+                        .var
+                        .to_owned();
+                    tokens.args.push(quote!(&mut gm.#var));
+                    tokens.g_args.push(var);
                 }
                 SystemArgData::Event { .. } => tokens.args.push(quote!(e)),
                 SystemArgData::Vector(v) => {
@@ -298,7 +268,7 @@ impl System {
                     (tokens.c_types, tokens.c_args) = v
                         .iter()
                         .map(|(i, _m)| {
-                            let c = components.get(*i).expect("Invalid component index");
+                            let c = comps.get(*i).expect("Invalid component index");
                             (c.ty.to_owned(), c.var.to_owned())
                         })
                         .unzip();
@@ -319,7 +289,7 @@ struct SystemParser {
 
 impl SystemParser {
     pub fn new() -> Self {
-        let arg_r = r"\w+:\d+:(id|c\d+|e\d+:\d+|vm?\d+(:m?\d+)*)";
+        let arg_r = r"\w+:\d+:(id|c\d+|g\d+|e\d+:\d+|vm?\d+(:m?\d+)*)";
         Self {
             full_r: Regex::new(
                 format!(
@@ -331,7 +301,7 @@ impl SystemParser {
             .expect("Could not parse regex"),
             path_r: Regex::new(r"\w+").expect("Could not parse regex"),
             args_r: Regex::new(
-                r"(?P<var>\w+):(?P<mut>\d+):((?P<eid>id)|c(?P<cidx>\d+)|e(?P<eidx1>\d+):(?P<eidx2>\d+)|v(?P<vidxs>m?\d+(:m?\d+)*))",
+                r"(?P<var>\w+):(?P<mut>\d+):((?P<eid>id)|c(?P<cidx>\d+)|g(?P<gidx>\d+)|e(?P<eidx1>\d+):(?P<eidx2>\d+)|v(?P<vidxs>m?\d+(:m?\d+)*))",
             )
             .expect("Could not parse regex"),
         }
@@ -362,12 +332,21 @@ impl SystemParser {
                         s.args.push(SystemArg {
                             name,
                             is_mut,
-                            data: SystemArgData::Component {
-                                idx: i
-                                    .as_str()
+                            data: SystemArgData::Component(
+                                i.as_str()
                                     .parse::<usize>()
                                     .expect("Could not parse component index"),
-                            },
+                            ),
+                        });
+                    } else if let Some(i) = c.name("gidx") {
+                        s.args.push(SystemArg {
+                            name,
+                            is_mut,
+                            data: SystemArgData::Global(
+                                i.as_str()
+                                    .parse::<usize>()
+                                    .expect("Could not parse global index"),
+                            ),
                         });
                     } else if let Some((i1, i2)) = c.name("eidx1").zip(c.name("eidx2")) {
                         let data = EventData {

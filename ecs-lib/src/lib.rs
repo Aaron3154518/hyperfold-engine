@@ -203,22 +203,18 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
     // Get system names and signatures
     let (s_names, s_args) = systems
         .iter()
-        .map(|s| (s.get_path(), s.get_args(&components)))
+        .map(|s| (s.get_path(), s.get_args(&components, &globals)))
         .unzip::<_, _, Vec<_>, Vec<_>>();
 
     // Partition components into types
-    let (mut c_vars, mut c_types, mut g_vars, mut g_types) =
-        (Vec::new(), Vec::new(), Vec::new(), Vec::new());
-    components
-        .group_by(|c1, c2| c1.arg_type == c2.arg_type)
-        .for_each(|v| {
-            let (vs, ts) = match v.first().map_or(ComponentTypes::None, |c| c.arg_type) {
-                ComponentTypes::None => (&mut c_vars, &mut c_types),
-                ComponentTypes::Global => (&mut g_vars, &mut g_types),
-            };
-            vs.extend(v.iter().map(|c| c.var.to_owned()).collect::<Vec<_>>());
-            ts.extend(v.iter().map(|c| c.ty.to_owned()).collect::<Vec<_>>());
-        });
+    let (c_vars, c_types) = components
+        .into_iter()
+        .map(|c| (c.var, c.ty))
+        .unzip::<_, _, Vec<_>, Vec<_>>();
+    let (g_vars, g_types) = globals
+        .into_iter()
+        .map(|g| (g.var, g.ty))
+        .unzip::<_, _, Vec<_>, Vec<_>>();
 
     let (sm, cm, gm, em) = parse_macro_input!(input as Input).get();
 
