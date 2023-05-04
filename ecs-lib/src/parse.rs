@@ -203,13 +203,13 @@ impl SystemArgTokens {
                 let mut v = cm.#arg
                     .#iter()
                     .map(#tuple_init)
-                    .collect::<HashMap<_, (#(Option<#v_types>),*)>>();
+                    .collect::<HashMap<_, (#(Option<#v_types>,)*)>>();
                 #(v = #intersect_stmts;)*
                 let v = v
                     .into_iter()
-                    .filter_map(|(k, (#(#all_vars),*))| {
-                        if let (#(Some(#c_vars)),*) = (#(#c_vars),*) {
-                            Some((#(#all_args),*))
+                    .filter_map(|(k, (#(#all_vars,)*))| {
+                        if let (#(Some(#c_vars),)*) = (#(#c_vars,)*) {
+                            Some((#(#all_args,)*))
                         } else {
                             None
                         }
