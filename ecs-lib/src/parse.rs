@@ -1,9 +1,14 @@
 use std::collections::HashSet;
 
-use ecs_macros::structs::{ComponentTypes, ENTITY_PATH};
+use ecs_macros::structs::{ComponentTypes, LabelType, ENTITY_PATH, NUM_LABEL_TYPES};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote, ToTokens};
 use regex::Regex;
+
+const AND: usize = LabelType::And as usize;
+const OR: usize = LabelType::Or as usize;
+const NAND: usize = LabelType::Nand as usize;
+const NOR: usize = LabelType::Nor as usize;
 
 pub fn type_to_ref_type(ty: &syn::Type, m: bool) -> syn::Type {
     string_to_ref_type(ty.to_token_stream().to_string(), m)
@@ -76,7 +81,7 @@ pub enum SystemArgData {
     Global(usize),
     Event(EventData),
     Container(Vec<VecArgData>),
-    Labels,
+    LabelType,
 }
 
 #[derive(Clone, Debug)]
@@ -96,7 +101,7 @@ pub enum VecArgTokens {
 pub struct SystemArgTokens {
     args: Vec<TokenStream>,
     c_args: Vec<syn::Ident>,
-    labels: Vec<syn::Ident>,
+    labels: [Vec<syn::Ident>; NUM_LABEL_TYPES],
     // Includes reference and mutability
     v_types: Vec<VecArgTokens>,
     g_args: Vec<syn::Ident>,
@@ -108,10 +113,44 @@ impl SystemArgTokens {
         Self {
             args: Vec::new(),
             c_args: Vec::new(),
-            labels: Vec::new(),
+            labels: [Vec::new(), Vec::new(), Vec::new(), Vec::new()],
             v_types: Vec::new(),
             g_args: Vec::new(),
             is_vec: false,
+        }
+    }
+
+    fn quote_labels(&self, body: TokenStream) -> TokenStream {
+        let ops = [
+            (AND, false, true),
+            (OR, false, false),
+            (NAND, true, false),
+            (NOR, true, true),
+        ]
+        .iter()
+        .filter_map(|(ty, neg, and)| {
+            let labels = &self.labels[*ty];
+            if labels.is_empty() {
+                None
+            } else {
+                let neg = if *neg { quote!(!) } else { quote!() };
+                Some(if *and {
+                    quote!(#(#neg cm.#labels.contains_key(eid))&&*)
+                } else {
+                    quote!(#(#neg cm.#labels.contains_key(eid))||*)
+                })
+            }
+        })
+        .collect::<Vec<_>>();
+
+        if ops.is_empty() {
+            body
+        } else {
+            quote!(
+                if (#((#ops))&&*) {
+                    #body
+                }
+            )
         }
     }
 
@@ -128,15 +167,12 @@ impl SystemArgTokens {
             quote!(#f(#(#args),*))
         } else if !self.is_vec {
             let c_args = &self.c_args;
-            let labels = self
-                .labels
-                .iter()
-                .filter(|l| !self.c_args.contains(*l))
-                .collect::<Vec<_>>();
+            let if_stmt = self.quote_labels(quote!(#f(#(#args),*)));
+
             quote!(
                 for eid in intersect_keys(&mut [#(get_keys(&cm.#c_args)),*]).iter() {
-                    if let (#(Some(#c_args),)* #(Some(#labels),)*) = (#(cm.#c_args.get_mut(eid),)* #(cm.#labels.get(eid),)*) {
-                        #f(#(#args),*)
+                    if let (#(Some(#c_args),)*) = (#(cm.#c_args.get_mut(eid),)*) {
+                        #if_stmt
                     }
                 }
             )
@@ -209,11 +245,7 @@ impl SystemArgTokens {
                 })
                 .unzip::<_, _, Vec<_>, Vec<_>>();
 
-            let labels = self
-                .labels
-                .iter()
-                .filter(|l| !self.c_args.contains(*l))
-                .collect::<Vec<_>>();
+            let if_stmt = self.quote_labels(quote!(return Some((#(#all_args,)*));));
 
             quote!(
                 let mut v = cm.#arg
@@ -224,11 +256,10 @@ impl SystemArgTokens {
                 let v = v
                     .into_iter()
                     .filter_map(|(eid, (#(#all_vars,)*))| {
-                        if let (#(Some(#c_vars),)* #(Some(#labels),)*) = (#(#c_vars,)* #(cm.#labels.get(eid),)*) {
-                            Some((#(#all_args,)*))
-                        } else {
-                            None
+                        if let (#(Some(#c_vars),)*) = (#(#c_vars,)*) {
+                            #if_stmt
                         }
+                        None
                     })
                     .collect::<Vec<_>>();
                 #f(#(#args),*);
@@ -249,7 +280,7 @@ pub struct System {
     pub path: Vec<String>,
     pub args: Vec<SystemArg>,
     pub event: Option<EventData>,
-    pub labels: HashSet<usize>,
+    pub labels: [HashSet<usize>; NUM_LABEL_TYPES],
 }
 
 impl System {
@@ -258,7 +289,12 @@ impl System {
             path: Vec::new(),
             args: Vec::new(),
             event: None,
-            labels: HashSet::new(),
+            labels: [
+                HashSet::new(),
+                HashSet::new(),
+                HashSet::new(),
+                HashSet::new(),
+            ],
         }
     }
 
@@ -283,6 +319,7 @@ impl System {
 
     pub fn get_args(&self, comps: &Vec<Component>, globals: &Vec<Component>) -> SystemArgTokens {
         let mut tokens = SystemArgTokens::new();
+        let mut c_idxs = HashSet::new();
         for a in self.args.iter() {
             match &a.data {
                 SystemArgData::EntityId => tokens.args.push(quote!(eid)),
@@ -294,6 +331,7 @@ impl System {
                         .to_owned();
                     tokens.args.push(quote!(#var));
                     tokens.c_args.push(var);
+                    c_idxs.insert(*i);
                 }
                 SystemArgData::Global(i) => {
                     let var = globals
@@ -318,6 +356,7 @@ impl System {
                                 format_ident!("eids"),
                             ),
                             VecArgData::Component(i, m) => {
+                                c_idxs.insert(*i);
                                 let c = comps.get(*i).expect("Invalid component index");
                                 (
                                     VecArgTokens::Component(type_to_ref_type(&c.ty, *m), *m),
@@ -328,11 +367,24 @@ impl System {
                         .unzip();
                     tokens.is_vec = true;
                 }
-                SystemArgData::Labels => tokens.args.push(quote!(std::marker::PhantomData)),
+                SystemArgData::LabelType => tokens.args.push(quote!(std::marker::PhantomData)),
             }
         }
-        tokens.labels = self
-            .labels
+
+        // Label checks
+        // Any components are implicitly a part of AND
+        let mut and_labels = self.labels[AND].to_owned();
+        and_labels.extend(c_idxs.iter());
+        // NOR can't include the label, but AND must include the label
+        // After this, there are no components in NOR
+        if !and_labels.is_disjoint(&self.labels[NOR]) {
+            panic!(
+                "{}\n{}",
+                "A label is in both AND and NOR. The label condition cannot be satisfied",
+                "Note that all components are implicitly AND labels"
+            )
+        }
+        tokens.labels[NOR] = self.labels[NOR]
             .iter()
             .map(|i| {
                 comps
@@ -342,6 +394,62 @@ impl System {
                     .to_owned()
             })
             .collect();
+        // AND must have it, so OR is automatically satisfied
+        if self.labels[OR].is_empty() || !and_labels.is_disjoint(&self.labels[OR]) {
+            tokens.labels[OR] = Vec::new()
+        // NOR must not have it, so OR is automatically checked
+        } else {
+            tokens.labels[OR] = self.labels[OR]
+                .difference(&self.labels[NOR])
+                .map(|i| {
+                    comps
+                        .get(*i)
+                        .expect("Invalid component index for label")
+                        .var
+                        .to_owned()
+                })
+                .collect();
+            // NOR must have none, but OR must have at least one
+            if tokens.labels[OR].is_empty() {
+                panic!("All labels in OR are also in NOR. The label condition cannot be satisfied")
+            }
+        }
+        // NOR must not have it, so NAND is automatically satisfied
+        if self.labels[NAND].is_empty() || !self.labels[NOR].is_disjoint(&self.labels[NAND]) {
+            tokens.labels[NAND] = Vec::new()
+        // AND must have it, so NAND is automatically checked
+        } else {
+            tokens.labels[NAND] = self.labels[NAND]
+                .difference(&and_labels)
+                .map(|i| {
+                    comps
+                        .get(*i)
+                        .expect("Invalid component index for label")
+                        .var
+                        .to_owned()
+                })
+                .collect();
+            // AND must have all, but NAND must not have at least one
+            if tokens.labels[NAND].is_empty() {
+                panic!(
+                    "{}\n{}",
+                    "All labels in NAND are also in AND. The label condition cannot be satisfied",
+                    "Note that all components are implicitly AND labels"
+                )
+            }
+        }
+        // Remove all components from AND
+        tokens.labels[AND] = and_labels
+            .difference(&c_idxs)
+            .map(|i| {
+                comps
+                    .get(*i)
+                    .expect("Invalid component index for label")
+                    .var
+                    .to_owned()
+            })
+            .collect();
+
         tokens
     }
 }
@@ -356,8 +464,10 @@ impl SystemParser {
     pub fn new() -> Self {
         let vec_r = r"(m?\d+|id)";
         let arg_r = format!(
-            r"\w+:\d+:(id|c\d+|g\d+|e\d+:\d+|v{}(:{})*|l\d+(:\d+)*)",
-            vec_r, vec_r
+            r"\w+:\d+:(id|c\d+|g\d+|e\d+:\d+|v{}(:{})*|l{}\d+(:\d+)*)",
+            vec_r,
+            vec_r,
+            LabelType::regex()
         );
         Self {
             full_r: Regex::new(
@@ -377,7 +487,7 @@ impl SystemParser {
                     r"(?P<gidx>\d+)",
                     r"(?P<eidx1>\d+):(?P<eidx2>\d+)",
                     format!(r"(?P<vidxs>{}(:{})*)", vec_r, vec_r),
-                    r"(?P<labels>\d+(:\d+)*)",
+                    format!(r"(?P<ltype>{})(?P<lidxs>\d+(:\d+)*)", LabelType::regex()),
                 )
                 .as_str(),
             )
@@ -483,17 +593,22 @@ impl SystemParser {
                             .collect(),
                     ),
                 });
-            } else if let Some(idxs) = c.name("labels") {
+            } else if let (Some(ty), Some(idxs)) = (c.name("ltype"), c.name("lidxs")) {
                 s.args.push(SystemArg {
                     name,
                     is_mut,
-                    data: SystemArgData::Labels,
+                    data: SystemArgData::LabelType,
                 });
-                s.labels.extend(
-                    idxs.as_str()
-                        .split(":")
-                        .map(|s| s.parse::<usize>().expect("Coult not parse label index")),
-                )
+                s.labels
+                    .get_mut(
+                        LabelType::from_data(ty.as_str()).expect("Invalid label type") as usize,
+                    )
+                    .expect("Label type index is out of bounds")
+                    .extend(
+                        idxs.as_str()
+                            .split(":")
+                            .map(|s| s.parse::<usize>().expect("Could not parse label index")),
+                    )
             } else {
                 panic!(
                     "Could not parse system arg: {}",

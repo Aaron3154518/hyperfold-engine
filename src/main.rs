@@ -4,7 +4,6 @@
 #![feature(hash_raw_entry)]
 
 use std::{
-    any::TypeId,
     collections::{HashMap, VecDeque},
     hash::Hash,
 };
@@ -19,8 +18,6 @@ use sdl2_image_bindings::sdl2_image_ as sdl2_image;
 use ecs_macros::events;
 
 mod asset_manager;
-
-use asset_manager::*;
 
 mod utils;
 

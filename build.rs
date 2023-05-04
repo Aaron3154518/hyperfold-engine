@@ -3,7 +3,8 @@
 use bindgen;
 use bindgen::callbacks::{DeriveInfo, ParseCallbacks};
 use ecs_macros::structs::{
-    ComponentType, ComponentTypes, COMPONENTS_PATH, ENTITY_PATH, LABELS_PATH,
+    ComponentType, ComponentTypes, LabelType, COMPONENTS_PATH, ENTITY_PATH,
+    LABEL_PATH, 
 };
 use quote::ToTokens;
 use std::collections::HashSet;
@@ -498,7 +499,7 @@ enum FnArgKind {
     Global(usize),
     Event(usize, usize),
     Container(Vec<VecArgKind>),
-    Label(Vec<usize>),
+    Label(Vec<usize>, LabelType),
 }
 
 impl std::fmt::Display for FnArgKind {
@@ -506,11 +507,11 @@ impl std::fmt::Display for FnArgKind {
         f.write_str(match self {
             Self::Unknown => "Unknown",
             Self::EntityId => "EntityId",
-            Self::Component(_) => "Component",
-            Self::Global(_) => "Global",
-            Self::Event(_, _) => "Event",
-            Self::Container(_) => "Container",
-            Self::Label(_) => "Label",
+            Self::Component(..) => "Component",
+            Self::Global(..) => "Global",
+            Self::Event(..) => "Event",
+            Self::Container(..) => "Container",
+            Self::Label(..) => "Label",
         })
     }
 }
@@ -622,7 +623,7 @@ impl Fn {
                                     .join(":")
                             )
                         }
-                        FnArgKind::Label(v) => {
+                        FnArgKind::Label(v, l) => {
                             if v.is_empty() {
                                 errs.push(format!(
                                     "{}: Container \"{}\" has no components",
@@ -631,7 +632,8 @@ impl Fn {
                                 ));
                             }
                             format!(
-                                "l{}",
+                                "l{}{}",
+                                l.to_data(),
                                 v.iter()
                                     .map(|i| format!("{}", i))
                                     .collect::<Vec<_>>()
@@ -684,6 +686,7 @@ impl std::fmt::Display for Fn {
 #[derive(Clone, Debug)]
 enum FnArgType {
     Path(Vec<String>),
+    SContainer(Vec<String>, Box<FnArg>),
     Container(Vec<String>, Vec<FnArg>),
 }
 
@@ -702,6 +705,14 @@ impl std::fmt::Display for FnArgType {
                 )
                 .as_str(),
             ),
+            FnArgType::SContainer(p, a) => f.write_str(
+                format!(
+                    "{}<({})>",
+                    p.join("::"),
+                    a
+                ).as_str(),
+            )
+            ,
         }
     }
 }
@@ -800,7 +811,7 @@ impl FnArg {
                                 })
                                 .collect()
                             ))
-                        } else if *path == LABELS_PATH {
+                        } else if let Some(l) = LabelType::from(path) {
                             Some(FnArgKind::Label(
                                 v.iter()
                                 .map(|a| {
@@ -815,13 +826,41 @@ impl FnArg {
                                         ),
                                     }
                                 })
-                                .collect()
+                                .collect(),
+                                l
                             ))
                         } else {
                             None
                         }
                     })
                     .expect(format!("Unknown container type: \"{}\"", p.join("::")).as_str())
+            }
+            FnArgType::SContainer(p, a) => {
+                let poss_paths = get_possible_use_paths(&p, use_paths);
+                eprintln!("{:#?}\n{:#?}", poss_paths, LABEL_PATH);
+                // Check against container paths
+                poss_paths
+                 .iter()
+                 .find_map(|path| {
+                     if *path == LABEL_PATH {
+                        let k = a.map_to_objects(use_paths, components, globals, events);                        
+                        Some(FnArgKind::Label(
+                            match k {
+                                FnArgKind::Component(i) => vec![i],
+                                _ => panic!(
+                                    "In argument {}: Label arguments can only include Components, but {} is {}",
+                                    self.name,
+                                    a.get_type(),
+                                    k
+                                ),
+                            },
+                            LabelType::And
+                        ))
+                     } else {
+                         None
+                     }
+                 })
+                 .expect(format!("Unknown container type: \"{}\"", p.join("::")).as_str())
             }
         }
     }
@@ -841,7 +880,7 @@ impl FnArg {
                     p.path.segments.last().map(|s| &s.arguments)
                 {
                     if let Some(a) = ab.args.first() {
-                        match a {
+                        self.ty = match a {
                             syn::GenericArgument::Type(t) => match t {
                                 syn::Type::Tuple(tup) => {
                                     let mut v = Vec::new();
@@ -850,18 +889,30 @@ impl FnArg {
                                         arg.parse_type(super_path, &tup_ty);
                                         v.push(arg);
                                     }
-                                    self.ty = FnArgType::Container(
+                                    FnArgType::Container(
                                         p.path
                                             .segments
                                             .iter()
                                             .map(|s| s.ident.to_string())
                                             .collect(),
                                         v,
-                                    );
+                                    )
                                 }
-                                _ => (),
+                                syn::Type::Path(_) => {
+                                    let mut arg = FnArg::new();
+                                    arg.parse_type(super_path, t);
+                                    FnArgType::SContainer(
+                                        p.path
+                                            .segments
+                                            .iter()
+                                            .map(|s| s.ident.to_string())
+                                            .collect(),
+                                        Box::new(arg),
+                                    )
+                                }
+                                _ => panic!("Unknown generic argument"),
                             },
-                            _ => (),
+                            _ => panic!("Missing generic argument"),
                         }
                     }
                 // Normal type

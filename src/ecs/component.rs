@@ -3,7 +3,11 @@ use std::marker::PhantomData;
 use ecs_lib::{component, event};
 
 pub type Components<T> = Vec<T>;
-pub type Labels<T> = PhantomData<T>;
+pub type Label<T> = PhantomData<T>;
+pub type AndLabels<T> = PhantomData<T>;
+pub type OrLabels<T> = PhantomData<T>;
+pub type NandLabels<T> = PhantomData<T>;
+pub type NorLabels<T> = PhantomData<T>;
 
 #[component]
 pub struct Component {
