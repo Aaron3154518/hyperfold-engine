@@ -1,8 +1,10 @@
 use num_derive::FromPrimitive;
 use syn;
 
-// Entity
+// Hardcoded struct paths
 pub const ENTITY_PATH: [&str; 4] = ["crate", "ecs", "entity", "Entity"];
+pub const COMPONENTS_PATH: [&str; 4] = ["crate", "ecs", "component", "Components"];
+pub const LABELS_PATH: [&str; 4] = ["crate", "ecs", "component", "Labels"];
 
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, FromPrimitive)]

@@ -1,4 +1,9 @@
+use std::marker::PhantomData;
+
 use ecs_lib::{component, event};
+
+pub type Components<T> = Vec<T>;
+pub type Labels<T> = PhantomData<T>;
 
 #[component]
 pub struct Component {

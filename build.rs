@@ -2,7 +2,9 @@
 
 use bindgen;
 use bindgen::callbacks::{DeriveInfo, ParseCallbacks};
-use ecs_macros::structs::{ComponentType, ComponentTypes, ENTITY_PATH};
+use ecs_macros::structs::{
+    ComponentType, ComponentTypes, COMPONENTS_PATH, ENTITY_PATH, LABELS_PATH,
+};
 use quote::ToTokens;
 use std::collections::HashSet;
 use std::env;
@@ -495,7 +497,8 @@ enum FnArgKind {
     Component(usize),
     Global(usize),
     Event(usize, usize),
-    Vector(Vec<VecArgKind>),
+    Container(Vec<VecArgKind>),
+    Label(Vec<usize>),
 }
 
 impl std::fmt::Display for FnArgKind {
@@ -506,7 +509,8 @@ impl std::fmt::Display for FnArgKind {
             Self::Component(_) => "Component",
             Self::Global(_) => "Global",
             Self::Event(_, _) => "Event",
-            Self::Vector(_) => "Vector",
+            Self::Container(_) => "Container",
+            Self::Label(_) => "Label",
         })
     }
 }
@@ -590,10 +594,10 @@ impl Fn {
                             has_event = true;
                             format!("e{}:{}", ei, vi)
                         }
-                        FnArgKind::Vector(v) => {
+                        FnArgKind::Container(v) => {
                             if v.is_empty() {
                                 errs.push(format!(
-                                    "{}: Vector \"{}\" has no components",
+                                    "{}: Container \"{}\" has no components",
                                     err_head,
                                     a.get_type()
                                 ));
@@ -614,6 +618,22 @@ impl Fn {
                                         VecArgKind::Component(i, m) =>
                                             format!("{}{}", if *m { "m" } else { "" }, i),
                                     })
+                                    .collect::<Vec<_>>()
+                                    .join(":")
+                            )
+                        }
+                        FnArgKind::Label(v) => {
+                            if v.is_empty() {
+                                errs.push(format!(
+                                    "{}: Container \"{}\" has no components",
+                                    err_head,
+                                    a.get_type()
+                                ));
+                            }
+                            format!(
+                                "l{}",
+                                v.iter()
+                                    .map(|i| format!("{}", i))
                                     .collect::<Vec<_>>()
                                     .join(":")
                             )
@@ -664,16 +684,17 @@ impl std::fmt::Display for Fn {
 #[derive(Clone, Debug)]
 enum FnArgType {
     Path(Vec<String>),
-    Vector(Vec<FnArg>),
+    Container(Vec<String>, Vec<FnArg>),
 }
 
 impl std::fmt::Display for FnArgType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             FnArgType::Path(p) => f.write_str(p.join("::").as_str()),
-            FnArgType::Vector(v) => f.write_str(
+            FnArgType::Container(p, v) => f.write_str(
                 format!(
-                    "Vec<({})>",
+                    "{}<({})>",
+                    p.join("::"),
                     v.iter()
                         .map(|a| format!("{}", a))
                         .collect::<Vec<_>>()
@@ -703,16 +724,7 @@ impl FnArg {
     }
 
     pub fn get_type(&self) -> String {
-        match &self.ty {
-            FnArgType::Path(p) => format!("{}", p.join("::")),
-            FnArgType::Vector(v) => format!(
-                "Vec<{}>",
-                v.iter()
-                    .map(|a| a.get_type())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
-        }
+        format!("{}", self.ty)
     }
 
     pub fn map_to_objects(
@@ -725,65 +737,91 @@ impl FnArg {
         match &self.ty {
             FnArgType::Path(p) => {
                 let poss_paths = get_possible_use_paths(&p, use_paths);
-                // Check is EntityID
                 poss_paths
                     .iter()
-                    .find(|path| **path == ENTITY_PATH)
-                    .map(|_| FnArgKind::EntityId)
-                    .or(
+                    .find_map(|path| {
+                        // Check is EntityID
+                        if *path == ENTITY_PATH {
+                            Some(FnArgKind::EntityId)
                         // Component
-                        components
-                        .iter()
-                        .position(|c| poss_paths.iter().find(|path2| c.path == **path2).is_some())
-                        .map(|i| FnArgKind::Component(i))
-                    ).or (
+                        } else if let Some(i) = components.iter().position(|c| c.path == *path) {
+                            Some(FnArgKind::Component(i))
                         // Global
-                        globals
-                        .iter()
-                        .position(|c| poss_paths.iter().find(|path2| c.path == **path2).is_some())
-                        .map(|i| FnArgKind::Global(i))
-                    ).or (
-                        // Event
-                        events.iter().enumerate().find_map(|(i, e)| {
-                            // Find matching enum
-                            if let Some(path) = poss_paths.iter().find(|path| e.path == path[..end(path)]) {
-                                // Find matching variant
-                                if let Some(p) = path
-                                    .last()
-                                    .and_then(|p| e.events.iter().position(|n| p == n))
-                                {
-                                    return Some(FnArgKind::Event(i, p));
-                                }
-                            }
-                            None
-                        })
-                    ).map_or(FnArgKind::Unknown, |k| k)
-            },
-            FnArgType::Vector(v) => {
-                FnArgKind::Vector(
-                    v.iter()
-                        .map(|a| {
-                            let k = a.map_to_objects(use_paths, components, globals, events);
-                            match k {
-                                FnArgKind::Component(i) => {
-                                    VecArgKind::Component(i, a.mutable)
-                                },
-                                FnArgKind::EntityId => {
-                                    if a.mutable {
-                                        panic!("In argument {}: Entity ID cannot be taken mutably", self.name);
+                        } else if let Some(i) = globals.iter().position(|g| g.path == *path) {
+                            Some(FnArgKind::Global(i))
+                        } else if let Some((e_i, v_i)) =
+                            events.iter().enumerate().find_map(|(i, e)| {
+                                // Find matching enum
+                                if e.path == path[..end(path)] {
+                                    // Find matching variant
+                                    if let Some(p) = path
+                                        .last()
+                                        .and_then(|p| e.events.iter().position(|n| p == n))
+                                    {
+                                        return Some((i, p));
                                     }
-                                    VecArgKind::EntityId
-                                },
-                                _ => panic!(
-                                    "In argument {}: Vec arguments can only include Components, but {} is {}",
-                                    self.name,
-                                    a.get_type(),
-                                    k
-                                ),
-                            }
-                        })
-                        .collect()
-                )
+                                }
+                                None
+                            })
+                        {
+                            Some(FnArgKind::Event(e_i, v_i))
+                        } else {
+                            None
+                        }
+                    })
+                    .map_or(FnArgKind::Unknown, |k| k)
+            }
+            FnArgType::Container(p, v) => {
+                let poss_paths = get_possible_use_paths(&p, use_paths);
+                // Check against container paths
+                poss_paths
+                    .iter()
+                    .find_map(|path| {
+                        if *path == COMPONENTS_PATH {
+                            Some(FnArgKind::Container(
+                                v.iter()
+                                .map(|a| {
+                                    let k = a.map_to_objects(use_paths, components, globals, events);
+                                    match k {
+                                        FnArgKind::Component(i) => VecArgKind::Component(i, a.mutable),
+                                        FnArgKind::EntityId => {
+                                            if a.mutable {
+                                                panic!("In argument {}: Entity ID cannot be taken mutably", self.name);
+                                            }
+                                            VecArgKind::EntityId
+                                        },
+                                        _ => panic!(
+                                            "In argument {}: Container arguments can only include Components or EntityId, but {} is {}",
+                                            self.name,
+                                            a.get_type(),
+                                            k
+                                        ),
+                                    }
+                                })
+                                .collect()
+                            ))
+                        } else if *path == LABELS_PATH {
+                            Some(FnArgKind::Label(
+                                v.iter()
+                                .map(|a| {
+                                    let k = a.map_to_objects(use_paths, components, globals, events);
+                                    match k {
+                                        FnArgKind::Component(i) => i,
+                                        _ => panic!(
+                                            "In argument {}: Label arguments can only include Components, but {} is {}",
+                                            self.name,
+                                            a.get_type(),
+                                            k
+                                        ),
+                                    }
+                                })
+                                .collect()
+                            ))
+                        } else {
+                            None
+                        }
+                    })
+                    .expect(format!("Unknown container type: \"{}\"", p.join("::")).as_str())
             }
         }
     }
@@ -798,35 +836,35 @@ impl FnArg {
     pub fn parse_type(&mut self, super_path: &Vec<String>, ty: &syn::Type) {
         match ty {
             syn::Type::Path(p) => {
-                if let Some(args) = p.path.segments.first().and_then(|s| {
-                    if s.ident == "Vec" {
-                        Some(&s.arguments)
-                    } else {
-                        None
-                    }
-                }) {
-                    match args {
-                        syn::PathArguments::AngleBracketed(ab) => {
-                            if let Some(a) = ab.args.first() {
-                                match a {
-                                    syn::GenericArgument::Type(t) => match t {
-                                        syn::Type::Tuple(tup) => {
-                                            let mut v = Vec::new();
-                                            for tup_ty in tup.elems.iter() {
-                                                let mut arg = FnArg::new();
-                                                arg.parse_type(super_path, &tup_ty);
-                                                v.push(arg);
-                                            }
-                                            self.ty = FnArgType::Vector(v);
-                                        }
-                                        _ => (),
-                                    },
-                                    _ => (),
+                // Type container with generic tuple
+                if let Some(syn::PathArguments::AngleBracketed(ab)) =
+                    p.path.segments.last().map(|s| &s.arguments)
+                {
+                    if let Some(a) = ab.args.first() {
+                        match a {
+                            syn::GenericArgument::Type(t) => match t {
+                                syn::Type::Tuple(tup) => {
+                                    let mut v = Vec::new();
+                                    for tup_ty in tup.elems.iter() {
+                                        let mut arg = FnArg::new();
+                                        arg.parse_type(super_path, &tup_ty);
+                                        v.push(arg);
+                                    }
+                                    self.ty = FnArgType::Container(
+                                        p.path
+                                            .segments
+                                            .iter()
+                                            .map(|s| s.ident.to_string())
+                                            .collect(),
+                                        v,
+                                    );
                                 }
-                            }
+                                _ => (),
+                            },
+                            _ => (),
                         }
-                        _ => (),
                     }
+                // Normal type
                 } else {
                     let mut v = Vec::new();
                     for s in p.path.segments.iter() {

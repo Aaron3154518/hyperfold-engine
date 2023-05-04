@@ -2,6 +2,7 @@ use std::cmp::Ordering;
 
 use super::physics;
 use crate::asset_manager::RenderSystem;
+use crate::ecs::component::Components;
 use crate::ecs::entity::Entity;
 use crate::ecs::event;
 use crate::utils::pointers;
@@ -16,7 +17,7 @@ type Image = Option<pointers::TextureAccess>;
 #[ecs_lib::system]
 fn render(
     _e: &event::CoreEvent::Render,
-    mut comps: Vec<(&Entity, &mut Elevation, &Entity, &physics::Position, &Image)>,
+    mut comps: Components<(&Entity, &mut Elevation, &Entity, &physics::Position, &Image)>,
     rs: &RenderSystem,
 ) {
     comps.sort_by(|(id1, e1, ..), (id2, e2, ..)| {

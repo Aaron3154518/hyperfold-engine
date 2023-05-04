@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use ecs_macros::structs::{ComponentTypes, ENTITY_PATH};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote, ToTokens};
@@ -73,7 +75,8 @@ pub enum SystemArgData {
     Component(usize),
     Global(usize),
     Event(EventData),
-    Vector(Vec<VecArgData>),
+    Container(Vec<VecArgData>),
+    Labels,
 }
 
 #[derive(Clone, Debug)]
@@ -93,6 +96,7 @@ pub enum VecArgTokens {
 pub struct SystemArgTokens {
     args: Vec<TokenStream>,
     c_args: Vec<syn::Ident>,
+    labels: Vec<syn::Ident>,
     // Includes reference and mutability
     v_types: Vec<VecArgTokens>,
     g_args: Vec<syn::Ident>,
@@ -104,6 +108,7 @@ impl SystemArgTokens {
         Self {
             args: Vec::new(),
             c_args: Vec::new(),
+            labels: Vec::new(),
             v_types: Vec::new(),
             g_args: Vec::new(),
             is_vec: false,
@@ -123,15 +128,20 @@ impl SystemArgTokens {
             quote!(#f(#(#args),*))
         } else if !self.is_vec {
             let c_args = &self.c_args;
+            let labels = self
+                .labels
+                .iter()
+                .filter(|l| !self.c_args.contains(*l))
+                .collect::<Vec<_>>();
             quote!(
                 for eid in intersect_keys(&mut [#(get_keys(&cm.#c_args)),*]).iter() {
-                    if let (#(Some(#c_args)),*) = (#(cm.#c_args.get_mut(eid)),*) {
+                    if let (#(Some(#c_args),)* #(Some(#labels),)*) = (#(cm.#c_args.get_mut(eid),)* #(cm.#labels.get(eid),)*) {
                         #f(#(#args),*)
                     }
                 }
             )
         } else {
-            // Vector argument types
+            // Container argument types
             let v_types = self
                 .v_types
                 .iter()
@@ -190,7 +200,7 @@ impl SystemArgTokens {
                 .map(|(i, (_v, ty))| {
                     let v_i = format_ident!("v{}", i);
                     match ty {
-                        VecArgTokens::EntityId(_) => (v_i, format_ident!("k")),
+                        VecArgTokens::EntityId(_) => (v_i, format_ident!("eid")),
                         VecArgTokens::Component(_, _) => {
                             c_vars.push(v_i.to_owned());
                             (v_i.to_owned(), v_i)
@@ -198,6 +208,12 @@ impl SystemArgTokens {
                     }
                 })
                 .unzip::<_, _, Vec<_>, Vec<_>>();
+
+            let labels = self
+                .labels
+                .iter()
+                .filter(|l| !self.c_args.contains(*l))
+                .collect::<Vec<_>>();
 
             quote!(
                 let mut v = cm.#arg
@@ -207,8 +223,8 @@ impl SystemArgTokens {
                 #(v = #intersect_stmts;)*
                 let v = v
                     .into_iter()
-                    .filter_map(|(k, (#(#all_vars,)*))| {
-                        if let (#(Some(#c_vars),)*) = (#(#c_vars,)*) {
+                    .filter_map(|(eid, (#(#all_vars,)*))| {
+                        if let (#(Some(#c_vars),)* #(Some(#labels),)*) = (#(#c_vars,)* #(cm.#labels.get(eid),)*) {
                             Some((#(#all_args,)*))
                         } else {
                             None
@@ -233,6 +249,7 @@ pub struct System {
     pub path: Vec<String>,
     pub args: Vec<SystemArg>,
     pub event: Option<EventData>,
+    pub labels: HashSet<usize>,
 }
 
 impl System {
@@ -241,6 +258,7 @@ impl System {
             path: Vec::new(),
             args: Vec::new(),
             event: None,
+            labels: HashSet::new(),
         }
     }
 
@@ -287,7 +305,7 @@ impl System {
                     tokens.g_args.push(var);
                 }
                 SystemArgData::Event { .. } => tokens.args.push(quote!(e)),
-                SystemArgData::Vector(v) => {
+                SystemArgData::Container(v) => {
                     tokens.args.push(quote!(v));
                     (tokens.v_types, tokens.c_args) = v
                         .iter()
@@ -310,8 +328,20 @@ impl System {
                         .unzip();
                     tokens.is_vec = true;
                 }
+                SystemArgData::Labels => tokens.args.push(quote!(std::marker::PhantomData)),
             }
         }
+        tokens.labels = self
+            .labels
+            .iter()
+            .map(|i| {
+                comps
+                    .get(*i)
+                    .expect("Invalid component index for label")
+                    .var
+                    .to_owned()
+            })
+            .collect();
         tokens
     }
 }
@@ -325,7 +355,10 @@ struct SystemParser {
 impl SystemParser {
     pub fn new() -> Self {
         let vec_r = r"(m?\d+|id)";
-        let arg_r = format!(r"\w+:\d+:(id|c\d+|g\d+|e\d+:\d+|v{}(:{})*)", vec_r, vec_r);
+        let arg_r = format!(
+            r"\w+:\d+:(id|c\d+|g\d+|e\d+:\d+|v{}(:{})*|l\d+(:\d+)*)",
+            vec_r, vec_r
+        );
         Self {
             full_r: Regex::new(
                 format!(
@@ -338,9 +371,15 @@ impl SystemParser {
             path_r: Regex::new(r"\w+").expect("Could not parse regex"),
             args_r: Regex::new(
                 format!(
-                    r"(?P<var>\w+):(?P<mut>\d+):((?P<eid>id)|c(?P<cidx>\d+)|g(?P<gidx>\d+)|e(?P<eidx1>\d+):(?P<eidx2>\d+)|v(?P<vidxs>{}(:{})*))",
-                    vec_r, vec_r
-                ).as_str(),
+                    r"(?P<var>\w+):(?P<mut>\d+):({}|c{}|g{}|e{}|v{}|l{})",
+                    r"(?P<eid>id)",
+                    r"(?P<cidx>\d+)",
+                    r"(?P<gidx>\d+)",
+                    r"(?P<eidx1>\d+):(?P<eidx2>\d+)",
+                    format!(r"(?P<vidxs>{}(:{})*)", vec_r, vec_r),
+                    r"(?P<labels>\d+(:\d+)*)",
+                )
+                .as_str(),
             )
             .expect("Could not parse regex"),
         }
@@ -422,7 +461,7 @@ impl SystemParser {
                 s.args.push(SystemArg {
                     name,
                     is_mut,
-                    data: SystemArgData::Vector(
+                    data: SystemArgData::Container(
                         idxs.as_str()
                             .split(":")
                             .map(|mut s| {
@@ -436,7 +475,7 @@ impl SystemParser {
                                     }
                                     VecArgData::Component(
                                         s.parse::<usize>()
-                                            .expect("Could not parse component index in vector"),
+                                            .expect("Could not parse container index in"),
                                         is_mut,
                                     )
                                 }
@@ -444,6 +483,17 @@ impl SystemParser {
                             .collect(),
                     ),
                 });
+            } else if let Some(idxs) = c.name("labels") {
+                s.args.push(SystemArg {
+                    name,
+                    is_mut,
+                    data: SystemArgData::Labels,
+                });
+                s.labels.extend(
+                    idxs.as_str()
+                        .split(":")
+                        .map(|s| s.parse::<usize>().expect("Coult not parse label index")),
+                )
             } else {
                 panic!(
                     "Could not parse system arg: {}",
