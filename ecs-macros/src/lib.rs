@@ -98,15 +98,19 @@ macro_rules! c_manager {
             }
 
             pub fn append(&mut self, cm: &mut $cm) {
+                self.eids.extend(cm.eids.drain());
                 $(self.$c_v.extend(cm.$c_v.drain());)*
             }
 
             pub fn remove(&mut self, tr: &mut crate::ecs::entity::EntityTrash) {
-                for eid in tr.iter() {
+                let drain = !tr.is_empty();
+                for eid in tr.drain(..) {
                     self.eids.remove(&eid);
                     $(self.$c_v.remove(&eid);)*
                 }
-                tr.clear();
+                if drain {
+                    println!("{:#?}", self.eids);
+                }
             }
         }
 
@@ -160,23 +164,6 @@ where
     h
 }
 
-pub fn add_keys<'a, K, V>(
-    mut h: HashMap<&'a K, (Option<&'a u8>, Option<&'a K>, Option<&'a u8>)>,
-) -> Vec<(&'a u8, &'a K, &'a u8)>
-where
-    K: Eq + Hash + Clone + Ord,
-{
-    h.into_iter()
-        .filter_map(|(k, (v1, v2, v3))| {
-            if let (Some(v1), Some(v3)) = (v1, v3) {
-                Some((v1, k, v3))
-            } else {
-                None
-            }
-        })
-        .collect()
-}
-
 pub fn intersect_mut<'a, K, V1, V2, F>(
     mut h: HashMap<&'a K, V1>,
     h_new: &'a mut HashMap<K, V2>,
@@ -184,7 +171,7 @@ pub fn intersect_mut<'a, K, V1, V2, F>(
 ) -> HashMap<&'a K, V1>
 where
     K: Eq + Hash + Clone + Ord,
-    F: Fn(&mut V1) -> &mut Option<&'a V2>,
+    F: Fn(&mut V1) -> &mut Option<&'a mut V2>,
 {
     for (k, v) in h_new.iter_mut() {
         if let Some(v2) = h.get_mut(k) {

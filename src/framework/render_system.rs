@@ -16,10 +16,10 @@ type Image = Option<pointers::TextureAccess>;
 #[ecs_lib::system]
 fn render(
     _e: &event::CoreEvent::Render,
-    mut comps: Vec<(&mut Elevation, &Entity, &physics::Position, &Image)>,
+    mut comps: Vec<(&Entity, &mut Elevation, &Entity, &physics::Position, &Image)>,
     rs: &RenderSystem,
 ) {
-    comps.sort_by(|(e1, id1, ..), (e2, id2, ..)| {
+    comps.sort_by(|(id1, e1, ..), (id2, e2, ..)| {
         let cmp = e1.cmp(&e2);
         if cmp == Ordering::Equal {
             id1.cmp(&id2)
@@ -27,7 +27,7 @@ fn render(
             cmp
         }
     });
-    for (_, _, pos, img) in comps {
+    for (_, _, _, pos, img) in comps {
         if let Some(tex) = img {
             rs.draw(&tex, std::ptr::null(), &pos.to_sdl_rect())
         }

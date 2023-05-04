@@ -144,7 +144,7 @@ impl SystemArgTokens {
             let arg = self.c_args.first().expect("No first component");
             let nones = ["None"].repeat(self.v_types.len() - 1).join(",");
             let (iter, tuple_init) = match self.v_types.first().expect("No first vector types") {
-                VecArgTokens::EntityId(_) => ("iter", format!("|k| (k, (Some(k), {}))", nones)),
+                VecArgTokens::EntityId(_) => ("iter", format!("|k| (k, (None, {}))", nones)),
                 VecArgTokens::Component(_, m) => (
                     if *m { "iter_mut" } else { "iter" },
                     format!("|(k, v)| (k, (Some(v), {}))", nones),
@@ -297,7 +297,7 @@ impl System {
                                     ENTITY_PATH.join("::"),
                                     false,
                                 )),
-                                format_ident!("k"),
+                                format_ident!("eids"),
                             ),
                             VecArgData::Component(i, m) => {
                                 let c = comps.get(*i).expect("Invalid component index");
