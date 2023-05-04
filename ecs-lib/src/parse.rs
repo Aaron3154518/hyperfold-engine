@@ -1,7 +1,20 @@
-use ecs_macros::structs::ComponentTypes;
+use ecs_macros::structs::{ComponentTypes, ENTITY_PATH};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote, ToTokens};
 use regex::Regex;
+
+pub fn type_to_ref_type(ty: &syn::Type, m: bool) -> syn::Type {
+    string_to_ref_type(ty.to_token_stream().to_string(), m)
+}
+
+pub fn path_to_ref_type(path: Vec<String>, m: bool) -> syn::Type {
+    string_to_ref_type(path.join("::"), m)
+}
+
+pub fn string_to_ref_type(ty: String, m: bool) -> syn::Type {
+    syn::parse_str::<syn::Type>(format!("&{}{}", if m { "mut " } else { "" }, ty).as_str())
+        .expect("Could not parse type")
+}
 
 // Component parser
 #[derive(Clone, Debug)]
@@ -49,12 +62,18 @@ pub struct EventData {
 }
 
 #[derive(Clone, Debug)]
+pub enum VecArgData {
+    EntityId,
+    Component(usize, bool),
+}
+
+#[derive(Clone, Debug)]
 pub enum SystemArgData {
     EntityId,
     Component(usize),
     Global(usize),
     Event(EventData),
-    Vector(Vec<(usize, bool)>),
+    Vector(Vec<VecArgData>),
 }
 
 #[derive(Clone, Debug)]
@@ -65,12 +84,17 @@ pub struct SystemArg {
 }
 
 #[derive(Clone, Debug)]
+pub enum VecArgTokens {
+    EntityId(syn::Type),
+    Component(syn::Type, bool),
+}
+
+#[derive(Clone, Debug)]
 pub struct SystemArgTokens {
     args: Vec<TokenStream>,
     c_args: Vec<syn::Ident>,
     // Includes reference and mutability
-    c_types: Vec<syn::Type>,
-    v_mut: Vec<bool>,
+    v_types: Vec<VecArgTokens>,
     g_args: Vec<syn::Ident>,
     is_vec: bool,
 }
@@ -80,29 +104,10 @@ impl SystemArgTokens {
         Self {
             args: Vec::new(),
             c_args: Vec::new(),
-            c_types: Vec::new(),
-            v_mut: Vec::new(),
+            v_types: Vec::new(),
             g_args: Vec::new(),
             is_vec: false,
         }
-    }
-
-    fn get_ref_types(&self) -> Vec<syn::Type> {
-        self.c_types
-            .iter()
-            .zip(self.v_mut.iter())
-            .map(|(t, m)| {
-                syn::parse_str::<syn::Type>(
-                    format!(
-                        "&{}{}",
-                        if *m { "mut " } else { "" },
-                        t.to_token_stream().to_string()
-                    )
-                    .as_str(),
-                )
-                .expect("Could not parse type")
-            })
-            .collect()
     }
 
     pub fn to_quote(
@@ -126,66 +131,85 @@ impl SystemArgTokens {
                 }
             )
         } else {
-            let c_types = self.get_ref_types();
-            let c_arg1 = self.c_args.first().expect("No first component");
-            let iter1 = if *self.v_mut.first().expect("No first mutability") {
-                format_ident!("iter_mut")
-            } else {
-                format_ident!("iter")
-            };
-
-            // Tail args and getters
-            let (c_args, c_gets) = self.c_args[1..]
+            // Vector argument types
+            let v_types = self
+                .v_types
                 .iter()
-                .enumerate()
-                .map(|(i, a)| {
-                    (
-                        a,
-                        syn::parse_str::<syn::ExprClosure>(
-                            format!("|t| &mut t.{}", i + 1).as_str(),
-                        )
-                        .expect("Could not parse closure"),
-                    )
-                })
-                .unzip::<_, _, Vec<_>, Vec<_>>();
-            // intersect or intersect_mut
-            let c_intersect = self.v_mut[1..]
-                .iter()
-                .map(|b| {
-                    if *b {
-                        format_ident!("intersect_mut")
-                    } else {
-                        format_ident!("intersect")
-                    }
+                .map(|a| match a {
+                    VecArgTokens::EntityId(ty) => ty,
+                    VecArgTokens::Component(ty, _) => ty,
                 })
                 .collect::<Vec<_>>();
+            // Get first argument to initialize the result hashmap
+            let arg = self.c_args.first().expect("No first component");
+            let nones = ["None"].repeat(self.v_types.len() - 1).join(",");
+            let (iter, tuple_init) = match self.v_types.first().expect("No first vector types") {
+                VecArgTokens::EntityId(_) => ("iter", format!("|k| (k, (Some(k), {}))", nones)),
+                VecArgTokens::Component(_, m) => (
+                    if *m { "iter_mut" } else { "iter" },
+                    format!("|(k, v)| (k, (Some(v), {}))", nones),
+                ),
+            };
+            let iter = format_ident!("{}", iter);
+            let tuple_init = syn::parse_str::<syn::ExprClosure>(tuple_init.as_str())
+                .expect("Could not parse tuple init closure");
+
+            // Intersect with tail args
+            let intersect_stmts = self.c_args[1..]
+                .iter()
+                .zip(self.v_types[1..].iter())
+                .enumerate()
+                .filter_map(|(i, (a, ty))| match ty {
+                    VecArgTokens::EntityId(_) => None,
+                    VecArgTokens::Component(_, m) => Some(
+                        syn::parse_str::<syn::ExprCall>(
+                            format!(
+                                "intersect{}(v, &mut cm.{}, |t| &mut t.{})",
+                                if *m { "_mut" } else { "" },
+                                a,
+                                i + 1
+                            )
+                            .as_str(),
+                        )
+                        .expect("Could not parse intersect call"),
+                    ),
+                })
+                .collect::<Vec<_>>();
+
+            // Contsruct final vector
             // v1, v2, ...
-            let c_vars = self
+            // c_vars only contains v_i where i is not an eid
+            let mut c_vars = Vec::new();
+            // all_vars contains all v_i
+            // all_args replaces eids with "k"
+            let (all_vars, all_args) = self
                 .c_args
                 .iter()
+                .zip(self.v_types.iter())
                 .enumerate()
-                .map(|(i, _a)| format_ident!("v{}", i))
-                .collect::<Vec<_>>();
-            // (Some(v), None, None, ...)
-            let c_tuple_init = syn::parse_str::<syn::ExprClosure>(
-                format!(
-                    "|(k, v)| (k, (Some(v), {}))",
-                    ["None"].repeat(self.c_args.len() - 1).join(",")
-                )
-                .as_str(),
-            )
-            .expect("Could not parse tuple");
+                .map(|(i, (_v, ty))| {
+                    let v_i = format_ident!("v{}", i);
+                    match ty {
+                        VecArgTokens::EntityId(_) => (v_i, format_ident!("k")),
+                        VecArgTokens::Component(_, _) => {
+                            c_vars.push(v_i.to_owned());
+                            (v_i.to_owned(), v_i)
+                        }
+                    }
+                })
+                .unzip::<_, _, Vec<_>, Vec<_>>();
+
             quote!(
-                let mut v = cm.#c_arg1
-                    .#iter1()
-                    .map(#c_tuple_init)
-                    .collect::<HashMap<_, (#(Option<#c_types>),*)>>();
-                #(v = #c_intersect(v, &mut cm.#c_args, #c_gets);)*
+                let mut v = cm.#arg
+                    .#iter()
+                    .map(#tuple_init)
+                    .collect::<HashMap<_, (#(Option<#v_types>),*)>>();
+                #(v = #intersect_stmts;)*
                 let v = v
-                    .into_values()
-                    .filter_map(|(#(#c_vars),*)| {
+                    .into_iter()
+                    .filter_map(|(k, (#(#all_vars),*))| {
                         if let (#(Some(#c_vars)),*) = (#(#c_vars),*) {
-                            Some((#(#c_vars),*))
+                            Some((#(#all_args),*))
                         } else {
                             None
                         }
@@ -265,14 +289,25 @@ impl System {
                 SystemArgData::Event { .. } => tokens.args.push(quote!(e)),
                 SystemArgData::Vector(v) => {
                     tokens.args.push(quote!(v));
-                    (tokens.c_types, tokens.c_args) = v
+                    (tokens.v_types, tokens.c_args) = v
                         .iter()
-                        .map(|(i, _m)| {
-                            let c = comps.get(*i).expect("Invalid component index");
-                            (c.ty.to_owned(), c.var.to_owned())
+                        .map(|a| match a {
+                            VecArgData::EntityId => (
+                                VecArgTokens::EntityId(string_to_ref_type(
+                                    ENTITY_PATH.join("::"),
+                                    false,
+                                )),
+                                format_ident!("k"),
+                            ),
+                            VecArgData::Component(i, m) => {
+                                let c = comps.get(*i).expect("Invalid component index");
+                                (
+                                    VecArgTokens::Component(type_to_ref_type(&c.ty, *m), *m),
+                                    c.var.to_owned(),
+                                )
+                            }
                         })
                         .unzip();
-                    tokens.v_mut = v.iter().map(|(_i, m)| *m).collect();
                     tokens.is_vec = true;
                 }
             }
@@ -289,7 +324,8 @@ struct SystemParser {
 
 impl SystemParser {
     pub fn new() -> Self {
-        let arg_r = r"\w+:\d+:(id|c\d+|g\d+|e\d+:\d+|vm?\d+(:m?\d+)*)";
+        let vec_r = r"(m?\d+|id)";
+        let arg_r = format!(r"\w+:\d+:(id|c\d+|g\d+|e\d+:\d+|v{}(:{})*)", vec_r, vec_r);
         Self {
             full_r: Regex::new(
                 format!(
@@ -301,7 +337,10 @@ impl SystemParser {
             .expect("Could not parse regex"),
             path_r: Regex::new(r"\w+").expect("Could not parse regex"),
             args_r: Regex::new(
-                r"(?P<var>\w+):(?P<mut>\d+):((?P<eid>id)|c(?P<cidx>\d+)|g(?P<gidx>\d+)|e(?P<eidx1>\d+):(?P<eidx2>\d+)|v(?P<vidxs>m?\d+(:m?\d+)*))",
+                format!(
+                    r"(?P<var>\w+):(?P<mut>\d+):((?P<eid>id)|c(?P<cidx>\d+)|g(?P<gidx>\d+)|e(?P<eidx1>\d+):(?P<eidx2>\d+)|v(?P<vidxs>{}(:{})*))",
+                    vec_r, vec_r
+                ).as_str(),
             )
             .expect("Could not parse regex"),
         }
@@ -380,16 +419,20 @@ impl SystemParser {
                                     .split(":")
                                     .map(|mut s| {
                                         let mut is_mut = false;
-                                        if s.starts_with("m") {
-                                            s = s.split_at(1).1;
-                                            is_mut = true;
+                                        if s == "id" {
+                                            VecArgData::EntityId
+                                        } else {
+                                            if s.starts_with("m") {
+                                                s = s.split_at(1).1;
+                                                is_mut = true;
+                                            }
+                                            VecArgData::Component(
+                                                s.parse::<usize>().expect(
+                                                    "Could not parse component index in vector",
+                                                ),
+                                                is_mut,
+                                            )
                                         }
-                                        (
-                                            s.parse::<usize>().expect(
-                                                "Could not parse component index in vector",
-                                            ),
-                                            is_mut,
-                                        )
                                     })
                                     .collect(),
                             ),

@@ -85,12 +85,14 @@ pub trait ComponentManager<E, T> {
 macro_rules! c_manager {
     ($cm: ident, $($c_v: ident, $c_t: ty),*) => {
         pub struct $cm {
+            eids: std::collections::HashSet<crate::ecs::entity::Entity>,
             $($c_v: std::collections::HashMap<crate::ecs::entity::Entity, $c_t>,)*
         }
 
         impl $cm {
             pub fn new() -> Self {
                 Self {
+                    eids: std::collections::HashSet::new(),
                     $($c_v: std::collections::HashMap::new(),)*
                 }
             }
@@ -101,6 +103,7 @@ macro_rules! c_manager {
 
             pub fn remove(&mut self, tr: &mut crate::ecs::entity::EntityTrash) {
                 for eid in tr.iter() {
+                    self.eids.remove(&eid);
                     $(self.$c_v.remove(&eid);)*
                 }
                 tr.clear();
@@ -110,6 +113,7 @@ macro_rules! c_manager {
         $(
             impl ComponentManager<crate::ecs::entity::Entity, $c_t> for $cm {
                 fn add_component(&mut self, e: crate::ecs::entity::Entity, t: $c_t) {
+                    self.eids.insert(e);
                     self.$c_v.insert(e, t);
                 }
             }
@@ -154,6 +158,23 @@ where
     }
     h.drain_filter(|_k, v| get(v).is_none());
     h
+}
+
+pub fn add_keys<'a, K, V>(
+    mut h: HashMap<&'a K, (Option<&'a u8>, Option<&'a K>, Option<&'a u8>)>,
+) -> Vec<(&'a u8, &'a K, &'a u8)>
+where
+    K: Eq + Hash + Clone + Ord,
+{
+    h.into_iter()
+        .filter_map(|(k, (v1, v2, v3))| {
+            if let (Some(v1), Some(v3)) = (v1, v3) {
+                Some((v1, k, v3))
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 pub fn intersect_mut<'a, K, V1, V2, F>(

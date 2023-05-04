@@ -1,6 +1,9 @@
 use num_derive::FromPrimitive;
 use syn;
 
+// Entity
+pub const ENTITY_PATH: [&str; 4] = ["crate", "ecs", "entity", "Entity"];
+
 #[repr(u8)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, FromPrimitive)]
 pub enum ComponentTypes {

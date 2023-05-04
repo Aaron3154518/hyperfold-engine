@@ -32,6 +32,8 @@ mod framework;
 
 use ecs_lib::{component, component_manager};
 
+use crate::test::Player;
+
 mod test;
 
 const FPS: u32 = 60;
@@ -93,7 +95,7 @@ fn main() {
     );
     f.cm.add_component(e1, ecs::test::tmp::Component { i: 666 });
     f.cm.add_component(e1, MainComponent {});
-    f.cm.add_component(e1, 0 as Elevation);
+    f.cm.add_component(e1, 1 as Elevation);
     f.cm.add_component(
         e1,
         framework::physics::Position {
@@ -114,6 +116,7 @@ fn main() {
     let tex = f.get_rs().get_image("res/bra_vector.png");
     f.cm.add_component(e1, tex);
     f.cm.add_component(e1, 1 as test::FBallTimer);
+    f.cm.add_component(e1, Player);
 
     let e2 = ecs::entity::new();
     f.cm.add_component(

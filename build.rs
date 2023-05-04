@@ -2,7 +2,7 @@
 
 use bindgen;
 use bindgen::callbacks::{DeriveInfo, ParseCallbacks};
-use ecs_macros::structs::{ComponentType, ComponentTypes};
+use ecs_macros::structs::{ComponentType, ComponentTypes, ENTITY_PATH};
 use quote::ToTokens;
 use std::collections::HashSet;
 use std::env;
@@ -92,7 +92,7 @@ fn main() {
     let (comps, comp_data) = get_data(&vecs, |v| &v.components, |c, _| c.to_data());
     let (globals, glob_data) = get_data(&vecs, |v| &v.globals, |g, _| g.to_data());
     let (events, event_data) = get_data(&vecs, |v| &v.events, |e, _| e.to_data());
-    let (systs, sys_data) = get_data(
+    let (_systs, sys_data) = get_data(
         &vecs,
         |v| &v.systems,
         |s, v| s.to_data(&v.uses, &comps, &globals, &events),
@@ -431,9 +431,6 @@ fn get_possible_use_paths(
         .collect::<Vec<_>>()
 }
 
-// Entity
-const ENTITY_PATH: [&str; 4] = ["crate", "ecs", "entity", "Entity"];
-
 trait HasPath {
     fn get_path_str(&self) -> String;
 }
@@ -483,11 +480,11 @@ impl HasPath for EventMod {
     }
 }
 
-// TODO:
+// Possible vector engine components
 #[derive(Clone, Debug)]
 enum VecArgKind {
     EntityId,
-    Component(usize),
+    Component(usize, bool),
 }
 
 // Possible function arg types as engine components
@@ -498,7 +495,7 @@ enum FnArgKind {
     Component(usize),
     Global(usize),
     Event(usize, usize),
-    Vector(Vec<(usize, bool)>),
+    Vector(Vec<VecArgKind>),
 }
 
 impl std::fmt::Display for FnArgKind {
@@ -536,90 +533,97 @@ impl Fn {
         let mut has_comps = false;
         let mut has_vec = false;
         let mut errs = Vec::new();
-        let data = format!(
-            "{}({})",
-            self.path.join("::"),
-            self.args
-                .iter()
-                .map(|a| {
-                    let err_head =
-                        format!("In system {}, arg \"{}\"", self.path.join("::"), a.name);
-                    let k = a.map_to_objects(use_paths, components, globals, events);
-                    format!(
-                        "{}:{}:{}",
-                        a.name,
-                        if a.mutable { "1" } else { "0" },
-                        match k {
-                            FnArgKind::Unknown => {
-                                errs.push(format!("{}: Type was not recognized", err_head));
-                                String::new()
+        let args = self
+            .args
+            .iter()
+            .map(|a| {
+                let err_head = format!("In system {}, arg \"{}\"", self.path.join("::"), a.name);
+                let k = a.map_to_objects(use_paths, components, globals, events);
+                format!(
+                    "{}:{}:{}",
+                    a.name,
+                    if a.mutable { "1" } else { "0" },
+                    match k {
+                        FnArgKind::Unknown => {
+                            errs.push(format!("{}: Type was not recognized", err_head));
+                            String::new()
+                        }
+                        FnArgKind::EntityId => {
+                            has_eid = true;
+                            if a.mutable {
+                                errs.push(format!(
+                                    "{}: Entity ID cannot be taken mutably",
+                                    err_head
+                                ));
                             }
-                            FnArgKind::EntityId => {
-                                has_eid = true;
-                                format!("eid")
+                            format!("eid")
+                        }
+                        FnArgKind::Component(i) => {
+                            has_comps = true;
+                            if !c_set.insert(i) {
+                                errs.push(format!(
+                                    "{}: Duplicate component type, \"{}\"",
+                                    err_head,
+                                    a.get_type(),
+                                ));
                             }
-                            FnArgKind::Component(i) => {
-                                has_comps = true;
-                                if !c_set.insert(i) {
-                                    errs.push(format!(
-                                        "{}: Duplicate component type, \"{}\"",
-                                        err_head,
-                                        a.get_type(),
-                                    ));
-                                }
-                                format!("c{}", i)
+                            format!("c{}", i)
+                        }
+                        FnArgKind::Global(i) => {
+                            if !g_set.insert(i) {
+                                errs.push(format!(
+                                    "{}: Duplicate component type, \"{}\"",
+                                    err_head,
+                                    a.get_type(),
+                                ));
                             }
-                            FnArgKind::Global(i) => {
-                                if !g_set.insert(i) {
-                                    errs.push(format!(
-                                        "{}: Duplicate component type, \"{}\"",
-                                        err_head,
-                                        a.get_type(),
-                                    ));
-                                }
-                                format!("g{}", i)
-                            }
-                            FnArgKind::Event(ei, vi) => {
-                                if has_event {
-                                    errs.push(format!(
+                            format!("g{}", i)
+                        }
+                        FnArgKind::Event(ei, vi) => {
+                            if has_event {
+                                errs.push(format!(
                                     "{}: Found event, \"{}\", but an event has already been found",
                                     err_head,
                                     a.get_type()
                                 ));
-                                }
-                                has_event = true;
-                                format!("e{}:{}", ei, vi)
                             }
-                            FnArgKind::Vector(v) => {
-                                if v.is_empty() {
-                                    errs.push(format!(
-                                        "{}: Vector \"{}\" has no components",
-                                        err_head,
-                                        a.get_type()
-                                    ));
-                                }
-                                if has_vec {
-                                    errs.push(format!(
+                            has_event = true;
+                            format!("e{}:{}", ei, vi)
+                        }
+                        FnArgKind::Vector(v) => {
+                            if v.is_empty() {
+                                errs.push(format!(
+                                    "{}: Vector \"{}\" has no components",
+                                    err_head,
+                                    a.get_type()
+                                ));
+                            }
+                            if has_vec {
+                                errs.push(format!(
                                     "{}: Found vector, \"{}\", but a vector has already been found",
                                     err_head,
                                     a.get_type()
                                 ));
-                                }
-                                has_vec = true;
-                                format!(
-                                    "v{}",
-                                    v.iter()
-                                        .map(|a| format!("{}{}", if a.1 { "m" } else { "" }, a.0))
-                                        .collect::<Vec<_>>()
-                                        .join(":")
-                                )
                             }
+                            has_vec = true;
+                            format!(
+                                "v{}",
+                                v.iter()
+                                    .map(|a| match a {
+                                        VecArgKind::EntityId => "id".to_string(),
+                                        VecArgKind::Component(i, m) =>
+                                            format!("{}{}", if *m { "m" } else { "" }, i),
+                                    })
+                                    .collect::<Vec<_>>()
+                                    .join(":")
+                            )
                         }
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join(",")
-        );
+                    }
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+        let data = format!("{}({})", self.path.join("::"), args);
         let err_head = format!("In system {}", self.path.join("::"));
         if has_eid && !has_comps {
             errs.push(format!(
@@ -762,7 +766,13 @@ impl FnArg {
                             let k = a.map_to_objects(use_paths, components, globals, events);
                             match k {
                                 FnArgKind::Component(i) => {
-                                    (i, a.mutable)
+                                    VecArgKind::Component(i, a.mutable)
+                                },
+                                FnArgKind::EntityId => {
+                                    if a.mutable {
+                                        panic!("In argument {}: Entity ID cannot be taken mutably", self.name);
+                                    }
+                                    VecArgKind::EntityId
                                 },
                                 _ => panic!(
                                     "In argument {}: Vec arguments can only include Components, but {} is {}",
