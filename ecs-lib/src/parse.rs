@@ -348,97 +348,107 @@ impl SystemParser {
 
     fn parse(&self, data: &str) -> System {
         let mut s = System::new();
-        if let Some(c) = self.full_r.captures(data) {
-            if let Some(p) = c.name("path") {
-                // Parse system path
-                s.path = self
-                    .path_r
-                    .find_iter(p.as_str())
-                    .map(|m| m.as_str().to_string())
-                    .collect::<Vec<_>>();
-            }
+        let c = self
+            .full_r
+            .captures(data)
+            .expect(format!("Could not parse system: {}", data).as_str());
+        // Parse system path
+        s.path = self
+            .path_r
+            .find_iter(
+                c.name("path")
+                    .expect(format!("Could not parse path from system: {}", data).as_str())
+                    .as_str(),
+            )
+            .map(|m| m.as_str().to_string())
+            .collect::<Vec<_>>();
 
-            if let Some(a) = c.name("args") {
-                // Parse system args
-                for c in self.args_r.captures_iter(a.as_str()) {
-                    let (name, is_mut) = c
-                        .name("var")
-                        .zip(c.name("mut"))
-                        .map(|(v, m)| (v.as_str().to_string(), m.as_str() == "1"))
-                        .expect("Could not parse variable and mutability");
+        // Parse system args
+        for c in self.args_r.captures_iter(
+            c.name("args")
+                .expect(format!("Could not parse args from system: {}", data).as_str())
+                .as_str(),
+        ) {
+            let (name, is_mut) = c
+                .name("var")
+                .zip(c.name("mut"))
+                .map(|(v, m)| (v.as_str().to_string(), m.as_str() == "1"))
+                .expect("Could not parse variable and mutability");
 
-                    if let Some(i) = c.name("cidx") {
-                        s.args.push(SystemArg {
-                            name,
-                            is_mut,
-                            data: SystemArgData::Component(
-                                i.as_str()
-                                    .parse::<usize>()
-                                    .expect("Could not parse component index"),
-                            ),
-                        });
-                    } else if let Some(i) = c.name("gidx") {
-                        s.args.push(SystemArg {
-                            name,
-                            is_mut,
-                            data: SystemArgData::Global(
-                                i.as_str()
-                                    .parse::<usize>()
-                                    .expect("Could not parse global index"),
-                            ),
-                        });
-                    } else if let Some((i1, i2)) = c.name("eidx1").zip(c.name("eidx2")) {
-                        let data = EventData {
-                            e_idx: i1
-                                .as_str()
-                                .parse::<usize>()
-                                .expect("Could not parse event index"),
-                            v_idx: i2
-                                .as_str()
-                                .parse::<usize>()
-                                .expect("Could not parse event index"),
-                        };
-                        s.event = Some(data.to_owned());
-                        s.args.push(SystemArg {
-                            name,
-                            is_mut,
-                            data: SystemArgData::Event(data),
-                        });
-                    } else if let Some(_) = c.name("eid") {
-                        s.args.push(SystemArg {
-                            name,
-                            is_mut,
-                            data: SystemArgData::EntityId,
-                        });
-                    } else if let Some(idxs) = c.name("vidxs") {
-                        s.args.push(SystemArg {
-                            name,
-                            is_mut,
-                            data: SystemArgData::Vector(
-                                idxs.as_str()
-                                    .split(":")
-                                    .map(|mut s| {
-                                        let mut is_mut = false;
-                                        if s == "id" {
-                                            VecArgData::EntityId
-                                        } else {
-                                            if s.starts_with("m") {
-                                                s = s.split_at(1).1;
-                                                is_mut = true;
-                                            }
-                                            VecArgData::Component(
-                                                s.parse::<usize>().expect(
-                                                    "Could not parse component index in vector",
-                                                ),
-                                                is_mut,
-                                            )
-                                        }
-                                    })
-                                    .collect(),
-                            ),
-                        });
-                    }
-                }
+            if let Some(i) = c.name("cidx") {
+                s.args.push(SystemArg {
+                    name,
+                    is_mut,
+                    data: SystemArgData::Component(
+                        i.as_str()
+                            .parse::<usize>()
+                            .expect("Could not parse component index"),
+                    ),
+                });
+            } else if let Some(i) = c.name("gidx") {
+                s.args.push(SystemArg {
+                    name,
+                    is_mut,
+                    data: SystemArgData::Global(
+                        i.as_str()
+                            .parse::<usize>()
+                            .expect("Could not parse global index"),
+                    ),
+                });
+            } else if let Some((i1, i2)) = c.name("eidx1").zip(c.name("eidx2")) {
+                let data = EventData {
+                    e_idx: i1
+                        .as_str()
+                        .parse::<usize>()
+                        .expect("Could not parse event index"),
+                    v_idx: i2
+                        .as_str()
+                        .parse::<usize>()
+                        .expect("Could not parse event index"),
+                };
+                s.event = Some(data.to_owned());
+                s.args.push(SystemArg {
+                    name,
+                    is_mut,
+                    data: SystemArgData::Event(data),
+                });
+            } else if let Some(_) = c.name("eid") {
+                s.args.push(SystemArg {
+                    name,
+                    is_mut,
+                    data: SystemArgData::EntityId,
+                });
+            } else if let Some(idxs) = c.name("vidxs") {
+                s.args.push(SystemArg {
+                    name,
+                    is_mut,
+                    data: SystemArgData::Vector(
+                        idxs.as_str()
+                            .split(":")
+                            .map(|mut s| {
+                                let mut is_mut = false;
+                                if s == "id" {
+                                    VecArgData::EntityId
+                                } else {
+                                    if s.starts_with("m") {
+                                        s = s.split_at(1).1;
+                                        is_mut = true;
+                                    }
+                                    VecArgData::Component(
+                                        s.parse::<usize>()
+                                            .expect("Could not parse component index in vector"),
+                                        is_mut,
+                                    )
+                                }
+                            })
+                            .collect(),
+                    ),
+                });
+            } else {
+                panic!(
+                    "Could not parse system arg: {}",
+                    c.get(0).map_or("None", |m| m.as_str())
+                )
             }
         }
         s

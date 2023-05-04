@@ -103,13 +103,9 @@ macro_rules! c_manager {
             }
 
             pub fn remove(&mut self, tr: &mut crate::ecs::entity::EntityTrash) {
-                let drain = !tr.is_empty();
                 for eid in tr.drain(..) {
                     self.eids.remove(&eid);
                     $(self.$c_v.remove(&eid);)*
-                }
-                if drain {
-                    println!("{:#?}", self.eids);
                 }
             }
         }

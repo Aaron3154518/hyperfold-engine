@@ -33,8 +33,3 @@ fn render(
         }
     }
 }
-
-#[ecs_lib::system]
-fn test_empty(_e: &event::CoreEvent::Render, mut v: Vec<(&Entity,)>) {
-    println!("Hi: {}", v.len());
-}

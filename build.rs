@@ -556,7 +556,7 @@ impl Fn {
                                     err_head
                                 ));
                             }
-                            format!("eid")
+                            format!("id")
                         }
                         FnArgKind::Component(i) => {
                             has_comps = true;
