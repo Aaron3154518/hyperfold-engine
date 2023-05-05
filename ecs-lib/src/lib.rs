@@ -3,7 +3,6 @@
 #![feature(drain_filter)]
 
 extern crate proc_macro;
-use std::io::Write;
 
 use ecs_macros::structs::GlobalMacroArgs;
 use proc_macro::TokenStream;
@@ -17,33 +16,10 @@ use parse::{
     event::EventMod,
     input::Input,
     system::System,
+    util::Out,
 };
 
 use ecs_macros::structs::ComponentMacroArgs;
-
-struct Out {
-    f: std::fs::File,
-}
-
-impl Out {
-    pub fn new(f: &'static str, app: bool) -> Self {
-        Self {
-            f: std::fs::OpenOptions::new()
-                .create(true)
-                .append(app)
-                .write(true)
-                .truncate(!app)
-                .open(f)
-                .expect(format!("Could not open {}", f).as_str()),
-        }
-    }
-
-    pub fn write(&mut self, s: String) {
-        self.f
-            .write(s.as_bytes())
-            .expect("Could not write to out.txt");
-    }
-}
 
 #[proc_macro_attribute]
 pub fn component(input: TokenStream, item: TokenStream) -> TokenStream {

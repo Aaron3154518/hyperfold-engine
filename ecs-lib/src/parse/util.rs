@@ -1,3 +1,5 @@
+use std::io::Write;
+
 use ecs_macros::structs::LabelType;
 use quote::ToTokens;
 
@@ -17,4 +19,29 @@ pub fn path_to_ref_type(path: Vec<String>, m: bool) -> syn::Type {
 pub fn string_to_ref_type(ty: String, m: bool) -> syn::Type {
     syn::parse_str::<syn::Type>(format!("&{}{}", if m { "mut " } else { "" }, ty).as_str())
         .expect("Could not parse type")
+}
+
+// For writing to files
+pub struct Out {
+    f: std::fs::File,
+}
+
+impl Out {
+    pub fn new(f: &'static str, app: bool) -> Self {
+        Self {
+            f: std::fs::OpenOptions::new()
+                .create(true)
+                .append(app)
+                .write(true)
+                .truncate(!app)
+                .open(f)
+                .expect(format!("Could not open {}", f).as_str()),
+        }
+    }
+
+    pub fn write(&mut self, s: String) {
+        self.f
+            .write(s.as_bytes())
+            .expect("Could not write to out.txt");
+    }
 }
