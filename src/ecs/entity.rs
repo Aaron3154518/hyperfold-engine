@@ -8,4 +8,10 @@ pub fn new() -> Entity {
 }
 
 #[ecs_lib::component(Global)]
-type EntityTrash = Vec<Entity>;
+struct EntityTrash(pub Vec<Entity>);
+
+impl EntityTrash {
+    pub fn new() -> Self {
+        Self(Vec::new())
+    }
+}

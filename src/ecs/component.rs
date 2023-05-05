@@ -8,6 +8,7 @@ pub type AndLabels<T> = PhantomData<T>;
 pub type OrLabels<T> = PhantomData<T>;
 pub type NandLabels<T> = PhantomData<T>;
 pub type NorLabels<T> = PhantomData<T>;
+pub type L = PhantomData<()>;
 
 #[component]
 pub struct Component {

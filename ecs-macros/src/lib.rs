@@ -103,7 +103,7 @@ macro_rules! c_manager {
             }
 
             pub fn remove(&mut self, tr: &mut crate::ecs::entity::EntityTrash) {
-                for eid in tr.drain(..) {
+                for eid in tr.0.drain(..) {
                     self.eids.remove(&eid);
                     $(self.$c_v.remove(&eid);)*
                 }

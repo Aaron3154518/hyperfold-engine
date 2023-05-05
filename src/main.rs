@@ -6,10 +6,11 @@
 use std::{
     collections::{HashMap, VecDeque},
     hash::Hash,
+    marker::PhantomData,
 };
 
 mod sdl2_bindings;
-use framework::render_system::Elevation;
+use framework::render_system::{Elevation, Image};
 use sdl2_bindings::sdl2_ as sdl2;
 
 mod sdl2_image_bindings;
@@ -92,15 +93,15 @@ fn main() {
     );
     f.cm.add_component(e1, ecs::test::tmp::Component { i: 666 });
     f.cm.add_component(e1, MainComponent {});
-    f.cm.add_component(e1, 1 as Elevation);
+    f.cm.add_component(e1, Elevation(1));
     f.cm.add_component(
         e1,
-        framework::physics::Position {
+        framework::physics::Position(Rect {
             x: (w - img_w) as f32 / 2.0,
             y: (h - img_w) as f32 / 2.0,
             w: img_w as f32,
             h: img_w as f32,
-        },
+        }),
     );
     f.cm.add_component(
         e1,
@@ -111,9 +112,9 @@ fn main() {
         },
     );
     let tex = f.get_rs().get_image("res/bra_vector.png");
-    f.cm.add_component(e1, tex);
-    f.cm.add_component(e1, 1 as test::FBallTimer);
-    f.cm.add_component(e1, Player);
+    f.cm.add_component(e1, Image(tex));
+    f.cm.add_component(e1, test::FBallTimer(1));
+    f.cm.add_component(e1, Player(PhantomData));
 
     let e2 = ecs::entity::new();
     f.cm.add_component(

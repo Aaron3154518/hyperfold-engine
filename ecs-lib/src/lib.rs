@@ -53,11 +53,7 @@ pub fn component(input: TokenStream, item: TokenStream) -> TokenStream {
             s.vis = syn::parse_quote!(pub);
             quote!(#s)
         }
-        syn::Item::Type(mut t) => {
-            t.vis = syn::parse_quote!(pub);
-            quote!(#t)
-        }
-        _ => panic!("Only structs and types can be components"),
+        _ => panic!("Only structs can be components"),
     }
     .into()
 }

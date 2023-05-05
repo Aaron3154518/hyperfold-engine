@@ -311,17 +311,17 @@ impl syn::visit_mut::VisitMut for Visitor {
         syn::visit_mut::visit_item_struct_mut(self, i);
     }
 
-    fn visit_item_type_mut(&mut self, i: &mut syn::ItemType) {
-        if let Some(a) = find_attribute(&i.attrs, "component") {
-            self.add_component(
-                Component {
-                    path: concat(self.get_mod_path(), vec![i.ident.to_string()]),
-                },
-                ComponentType::from(parse_attr_args(a)).ty,
-            );
-        }
-        syn::visit_mut::visit_item_type_mut(self, i);
-    }
+    // fn visit_item_type_mut(&mut self, i: &mut syn::ItemType) {
+    //     if let Some(a) = find_attribute(&i.attrs, "component") {
+    //         self.add_component(
+    //             Component {
+    //                 path: concat(self.get_mod_path(), vec![i.ident.to_string()]),
+    //             },
+    //             ComponentType::from(parse_attr_args(a)).ty,
+    //         );
+    //     }
+    //     syn::visit_mut::visit_item_type_mut(self, i);
+    // }
 
     // Functions
     fn visit_item_fn_mut(&mut self, i: &mut syn::ItemFn) {
@@ -837,7 +837,6 @@ impl FnArg {
             }
             FnArgType::SContainer(p, a) => {
                 let poss_paths = get_possible_use_paths(&p, use_paths);
-                eprintln!("{:#?}\n{:#?}", poss_paths, LABEL_PATH);
                 // Check against container paths
                 poss_paths
                  .iter()
