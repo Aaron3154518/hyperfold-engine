@@ -603,10 +603,10 @@ impl System {
                         SystemArgKind::Global(_) => (),
                         _ => errs.push(
                             format!(
-                                "{}: Init system may only take global components but \"{}\" is {}",
+                                "{}: Init system may only take globals but \"{}\" is {}",
                                 err_head,
-                                a.name,
-                                a.get_type()
+                                a.get_type(),
+                                k
                             )
                         )
                     }
