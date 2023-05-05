@@ -178,7 +178,7 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
     // Events
     let events = EventMod::parse(std::env::var("EVENTS").expect("EVENTS"));
 
-    let mut cnt = 0;
+    let mut cnt = 0usize;
     let (e_strcts, e_varis, e_vars) = events.iter().enumerate().fold(
         (Vec::new(), Vec::new(), Vec::new()),
         |(mut strcts, mut varis, mut vars), (i, em)| {
@@ -204,6 +204,7 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
             (strcts, varis, vars)
         },
     );
+    let num_events = syn::LitInt::new(cnt.to_string().as_str(), Span::call_site());
 
     // Systems
     let mut systems = System::parse(std::env::var("SYSTEMS").expect("SYSTEMS"));
@@ -255,7 +256,7 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
 
     let code = quote!(
         use ecs_macros::*;
-        events!(#em,
+        events!(#em, #num_events,
             #(#((#e_strcts, #e_varis, #e_vars)),*),*
         );
         c_manager!(#cm, #(#c_vars, #c_types),*);

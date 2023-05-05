@@ -47,6 +47,8 @@ struct CFoo;
 component_manager!(SFoo, CFoo, GFoo, EFoo);
 
 fn main() {
+    println!("{}", E_LEN);
+
     // Initialize SDL2
     if unsafe { sdl2::SDL_Init(sdl2::SDL_INIT_EVERYTHING) } == 0 {
         println!("SDL Initialized");

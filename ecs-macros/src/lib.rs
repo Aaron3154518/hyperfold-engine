@@ -15,11 +15,13 @@ pub trait Mut<T> {
 
 #[macro_export]
 macro_rules! events {
-    ($em: ident, $(($s: path, $e: ident, $v: ident)),*) => {
+    ($em: ident, $n: literal, $(($s: path, $e: ident, $v: ident)),*) => {
         #[derive(Hash, Clone, Copy, Eq, PartialEq, Debug)]
         pub enum E {
             $($e),*
         }
+
+        pub const E_LEN: usize = $n;
 
         #[derive(Debug)]
         pub struct $em {
@@ -214,7 +216,7 @@ macro_rules! systems {
             pub gm: $gm,
             pub cm: $cm,
             stack: Vec<std::collections::VecDeque<(E, usize)>>,
-            services: std::collections::HashMap<E, Vec<Box<dyn Fn(&mut $cm, &mut $gm, &mut $em)>>>,
+            services: [Vec<Box<dyn Fn(&mut $cm, &mut $gm, &mut $em)>>; E_LEN],
             // Stores events in the order that they should be handled
             events: $em,
         }
@@ -225,7 +227,7 @@ macro_rules! systems {
                     gm: $gm::new(),
                     cm: $cm::new(),
                     stack: Vec::new(),
-                    services: std::collections::HashMap::new(),
+                    services: structs::ArrayCreator::create(|_| Vec::new()),
                     events: $em::new()
                 };
                 s.init();
@@ -285,13 +287,12 @@ macro_rules! systems {
                         .and_then(|queue| queue.front_mut())
                         // Check if the system exists
                         .and_then(|(e, i)| {
-                            self.services.get(e).and_then(|v_s| {
-                                // Increment the event idx and return the old values
-                                v_s.get(*i).map(|_| {
-                                    let vals = (e.clone(), i.clone(), v_s.len());
-                                    *i += 1;
-                                    vals
-                                })
+                            // Increment the event idx and return the old values
+                            let v_s = &self.services[*e as usize];
+                            v_s.get(*i).map(|_| {
+                                let vals = (e.clone(), i.clone(), v_s.len());
+                                *i += 1;
+                                vals
                             })
                         })
                     {
@@ -302,7 +303,7 @@ macro_rules! systems {
                         // Add a new queue for new events
                         self.gm.$g_eb = $em::new();
                         // Run the system
-                        if let Some(s) = self.services.get(&e).and_then(|v_s| v_s.get(i)) {
+                        if let Some(s) = self.services[e as usize].get(i) {
                             (s)(&mut self.cm, &mut self.gm, &mut self.events);
                         }
                         // If this is the last system, remove the event
@@ -334,11 +335,7 @@ macro_rules! systems {
             }
 
             fn add_system(&mut self, e: E, f: Box<dyn Fn(&mut $cm, &mut $gm, &mut $em)>) {
-                if let Some(v) = self.services.get_mut(&e) {
-                    v.push(f);
-                } else {
-                    self.services.insert(e, vec![f]);
-                }
+                self.services[e as usize].push(f);
             }
 
             fn add_systems(&mut self) {
