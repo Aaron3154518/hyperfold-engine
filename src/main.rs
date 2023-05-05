@@ -10,19 +10,18 @@ use std::{
 };
 
 mod sdl2_bindings;
-use framework::render_system::{Elevation, Image};
 use sdl2_bindings::sdl2_ as sdl2;
 
 mod sdl2_image_bindings;
 use sdl2_image_bindings::sdl2_image_ as sdl2_image;
 
-use ecs_macros::events;
-
 mod asset_manager;
+
+mod includes;
 
 mod utils;
 
-use utils::rect::{Dimensions, PointF, Rect};
+use utils::rect::{Dimensions, Rect};
 
 mod ecs;
 

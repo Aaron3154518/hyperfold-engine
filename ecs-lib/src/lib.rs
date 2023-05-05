@@ -4,7 +4,7 @@
 
 extern crate proc_macro;
 
-use ecs_macros::structs::GlobalMacroArgs;
+use ecs_macros::shared::macro_args::{ComponentMacroArgs, GlobalMacroArgs};
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::{format_ident, quote};
@@ -18,8 +18,6 @@ use parse::{
     system::System,
     util::Out,
 };
-
-use ecs_macros::structs::ComponentMacroArgs;
 
 #[proc_macro_attribute]
 pub fn component(input: TokenStream, item: TokenStream) -> TokenStream {
@@ -236,7 +234,7 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
         .unzip::<_, _, Vec<_>, Vec<_>>();
 
     let code = quote!(
-        use ecs_macros::{Mut, ComponentManager};
+        pub use ecs_macros::shared::traits::*;
         ecs_macros::events!(#em, #num_events,
             #(#((#e_strcts, #e_varis, #e_vars)),*),*
         );

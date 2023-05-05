@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use ecs_macros::structs::LabelType;
+use ecs_macros::shared::label::LabelType;
 use quote::ToTokens;
 
 pub const AND: usize = LabelType::And as usize;

@@ -1,6 +1,9 @@
 use std::collections::HashSet;
 
-use ecs_macros::structs::{LabelType, ENTITY_PATH, NUM_LABEL_TYPES};
+use ecs_macros::shared::{
+    label::{LabelType, NUM_LABEL_TYPES},
+    paths::ENTITY_PATH,
+};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use regex::Regex;
@@ -37,200 +40,7 @@ pub struct SystemArg {
     pub data: SystemArgData,
 }
 
-#[derive(Clone, Debug)]
-pub enum VecArgTokens {
-    EntityId(syn::Type),
-    Component(syn::Type, bool),
-}
-
-#[derive(Clone, Debug)]
-pub struct SystemArgTokens {
-    args: Vec<TokenStream>,
-    c_args: Vec<syn::Ident>,
-    labels: [Vec<syn::Ident>; NUM_LABEL_TYPES],
-    // Includes reference and mutability
-    v_types: Vec<VecArgTokens>,
-    g_args: Vec<syn::Ident>,
-    is_vec: bool,
-    has_event: bool,
-}
-
-impl SystemArgTokens {
-    pub fn new() -> Self {
-        Self {
-            args: Vec::new(),
-            c_args: Vec::new(),
-            labels: [Vec::new(), Vec::new(), Vec::new(), Vec::new()],
-            v_types: Vec::new(),
-            g_args: Vec::new(),
-            is_vec: false,
-            has_event: false,
-        }
-    }
-
-    fn quote_labels(&self, body: TokenStream) -> TokenStream {
-        let ops = [
-            (AND, false, true),
-            (OR, false, false),
-            (NAND, true, false),
-            (NOR, true, true),
-        ]
-        .iter()
-        .filter_map(|(ty, neg, and)| {
-            let labels = &self.labels[*ty];
-            if labels.is_empty() {
-                None
-            } else {
-                let neg = if *neg { quote!(!) } else { quote!() };
-                Some(if *and {
-                    quote!(#(#neg cm.#labels.contains_key(eid))&&*)
-                } else {
-                    quote!(#(#neg cm.#labels.contains_key(eid))||*)
-                })
-            }
-        })
-        .collect::<Vec<_>>();
-
-        if ops.is_empty() {
-            body
-        } else {
-            quote!(
-                if (#((#ops))&&*) {
-                    #body
-                }
-            )
-        }
-    }
-
-    pub fn to_quote(
-        &self,
-        f: &syn::Path,
-        cm: &syn::Ident,
-        gm: &syn::Ident,
-        em: &syn::Ident,
-    ) -> TokenStream {
-        let args = &self.args;
-
-        let body = if self.c_args.is_empty() {
-            quote!(#f(#(#args),*))
-        } else if !self.is_vec {
-            let c_args = &self.c_args;
-            let if_stmt = self.quote_labels(quote!(#f(#(#args),*)));
-
-            quote!(
-                for eid in ecs_macros::intersect_keys(&mut [#(ecs_macros::get_keys(&cm.#c_args)),*]).iter() {
-                    if let (#(Some(#c_args),)*) = (#(cm.#c_args.get_mut(eid),)*) {
-                        #if_stmt
-                    }
-                }
-            )
-        } else {
-            // Container argument types
-            let v_types = self
-                .v_types
-                .iter()
-                .map(|a| match a {
-                    VecArgTokens::EntityId(ty) => ty,
-                    VecArgTokens::Component(ty, _) => ty,
-                })
-                .collect::<Vec<_>>();
-            // Get first argument to initialize the result hashmap
-            let arg = self.c_args.first().expect("No first component");
-            let nones = ["None"].repeat(self.v_types.len() - 1).join(",");
-            let (iter, tuple_init) = match self.v_types.first().expect("No first vector types") {
-                VecArgTokens::EntityId(_) => ("iter", format!("|k| (k, (None, {}))", nones)),
-                VecArgTokens::Component(_, m) => (
-                    if *m { "iter_mut" } else { "iter" },
-                    format!("|(k, v)| (k, (Some(v), {}))", nones),
-                ),
-            };
-            let iter = format_ident!("{}", iter);
-            let tuple_init = syn::parse_str::<syn::ExprClosure>(tuple_init.as_str())
-                .expect("Could not parse tuple init closure");
-
-            // Intersect with tail args
-            let intersect_stmts = self.c_args[1..]
-                .iter()
-                .zip(self.v_types[1..].iter())
-                .enumerate()
-                .filter_map(|(i, (a, ty))| match ty {
-                    VecArgTokens::EntityId(_) => None,
-                    VecArgTokens::Component(_, m) => Some(
-                        syn::parse_str::<syn::ExprCall>(
-                            format!(
-                                "ecs_macros::intersect{}(v, &mut cm.{}, |t| &mut t.{})",
-                                if *m { "_mut" } else { "" },
-                                a,
-                                i + 1
-                            )
-                            .as_str(),
-                        )
-                        .expect("Could not parse intersect call"),
-                    ),
-                })
-                .collect::<Vec<_>>();
-
-            // Contsruct final vector
-            // v1, v2, ...
-            // c_vars only contains v_i where i is not an eid
-            let mut c_vars = Vec::new();
-            // all_vars contains all v_i
-            // all_args replaces eids with "k"
-            let (all_vars, all_args) = self
-                .c_args
-                .iter()
-                .zip(self.v_types.iter())
-                .enumerate()
-                .map(|(i, (_v, ty))| {
-                    let v_i = format_ident!("v{}", i);
-                    match ty {
-                        VecArgTokens::EntityId(_) => (v_i, format_ident!("eid")),
-                        VecArgTokens::Component(_, _) => {
-                            c_vars.push(v_i.to_owned());
-                            (v_i.to_owned(), v_i)
-                        }
-                    }
-                })
-                .unzip::<_, _, Vec<_>, Vec<_>>();
-
-            let if_stmt = self.quote_labels(quote!(return Some((#(#all_args,)*));));
-
-            quote!(
-                let mut v = cm.#arg
-                    .#iter()
-                    .map(#tuple_init)
-                    .collect::<HashMap<_, (#(Option<#v_types>,)*)>>();
-                #(v = #intersect_stmts;)*
-                let v = v
-                    .into_iter()
-                    .filter_map(|(eid, (#(#all_vars,)*))| {
-                        if let (#(Some(#c_vars),)*) = (#(#c_vars,)*) {
-                            #if_stmt
-                        }
-                        None
-                    })
-                    .collect::<Vec<_>>();
-                #f(#(#args),*);
-            )
-        };
-        if self.has_event {
-            quote!((
-                |cm: &mut #cm, gm: &mut #gm, em: &mut #em| {
-                    if let Some(e) = em.get_event() {
-                        #body
-                    }
-                }
-            ))
-        } else {
-            quote!((
-                |cm: &mut #cm, gm: &mut #gm, em: &mut #em| {
-                    #body
-                }
-            ))
-        }
-    }
-}
-
+// Parse systems
 #[derive(Clone, Debug)]
 pub struct System {
     pub is_init: bool,
@@ -588,5 +398,200 @@ impl SystemParser {
             }
         }
         s
+    }
+}
+
+// Codegen systems
+#[derive(Clone, Debug)]
+pub enum VecArgTokens {
+    EntityId(syn::Type),
+    Component(syn::Type, bool),
+}
+
+#[derive(Clone, Debug)]
+pub struct SystemArgTokens {
+    args: Vec<TokenStream>,
+    c_args: Vec<syn::Ident>,
+    labels: [Vec<syn::Ident>; NUM_LABEL_TYPES],
+    // Includes reference and mutability
+    v_types: Vec<VecArgTokens>,
+    g_args: Vec<syn::Ident>,
+    is_vec: bool,
+    has_event: bool,
+}
+
+impl SystemArgTokens {
+    pub fn new() -> Self {
+        Self {
+            args: Vec::new(),
+            c_args: Vec::new(),
+            labels: [Vec::new(), Vec::new(), Vec::new(), Vec::new()],
+            v_types: Vec::new(),
+            g_args: Vec::new(),
+            is_vec: false,
+            has_event: false,
+        }
+    }
+
+    fn quote_labels(&self, body: TokenStream) -> TokenStream {
+        let ops = [
+            (AND, false, true),
+            (OR, false, false),
+            (NAND, true, false),
+            (NOR, true, true),
+        ]
+        .iter()
+        .filter_map(|(ty, neg, and)| {
+            let labels = &self.labels[*ty];
+            if labels.is_empty() {
+                None
+            } else {
+                let neg = if *neg { quote!(!) } else { quote!() };
+                Some(if *and {
+                    quote!(#(#neg cm.#labels.contains_key(eid))&&*)
+                } else {
+                    quote!(#(#neg cm.#labels.contains_key(eid))||*)
+                })
+            }
+        })
+        .collect::<Vec<_>>();
+
+        if ops.is_empty() {
+            body
+        } else {
+            quote!(
+                if (#((#ops))&&*) {
+                    #body
+                }
+            )
+        }
+    }
+
+    pub fn to_quote(
+        &self,
+        f: &syn::Path,
+        cm: &syn::Ident,
+        gm: &syn::Ident,
+        em: &syn::Ident,
+    ) -> TokenStream {
+        let args = &self.args;
+
+        let body = if self.c_args.is_empty() {
+            quote!(#f(#(#args),*))
+        } else if !self.is_vec {
+            let c_args = &self.c_args;
+            let if_stmt = self.quote_labels(quote!(#f(#(#args),*)));
+
+            quote!(
+                for eid in ecs_macros::shared::intersect::intersect_keys(&mut [#(ecs_macros::shared::intersect::get_keys(&cm.#c_args)),*]).iter() {
+                    if let (#(Some(#c_args),)*) = (#(cm.#c_args.get_mut(eid),)*) {
+                        #if_stmt
+                    }
+                }
+            )
+        } else {
+            // Container argument types
+            let v_types = self
+                .v_types
+                .iter()
+                .map(|a| match a {
+                    VecArgTokens::EntityId(ty) => ty,
+                    VecArgTokens::Component(ty, _) => ty,
+                })
+                .collect::<Vec<_>>();
+            // Get first argument to initialize the result hashmap
+            let arg = self.c_args.first().expect("No first component");
+            let nones = ["None"].repeat(self.v_types.len() - 1).join(",");
+            let (iter, tuple_init) = match self.v_types.first().expect("No first vector types") {
+                VecArgTokens::EntityId(_) => ("iter", format!("|k| (k, (None, {}))", nones)),
+                VecArgTokens::Component(_, m) => (
+                    if *m { "iter_mut" } else { "iter" },
+                    format!("|(k, v)| (k, (Some(v), {}))", nones),
+                ),
+            };
+            let iter = format_ident!("{}", iter);
+            let tuple_init = syn::parse_str::<syn::ExprClosure>(tuple_init.as_str())
+                .expect("Could not parse tuple init closure");
+
+            // Intersect with tail args
+            let intersect_stmts = self.c_args[1..]
+                .iter()
+                .zip(self.v_types[1..].iter())
+                .enumerate()
+                .filter_map(|(i, (a, ty))| match ty {
+                    VecArgTokens::EntityId(_) => None,
+                    VecArgTokens::Component(_, m) => Some(
+                        syn::parse_str::<syn::ExprCall>(
+                            format!(
+                                "ecs_macros::shared::intersect::intersect{}(v, &mut cm.{}, |t| &mut t.{})",
+                                if *m { "_mut" } else { "" },
+                                a,
+                                i + 1
+                            )
+                            .as_str(),
+                        )
+                        .expect("Could not parse intersect call"),
+                    ),
+                })
+                .collect::<Vec<_>>();
+
+            // Contsruct final vector
+            // v1, v2, ...
+            // c_vars only contains v_i where i is not an eid
+            let mut c_vars = Vec::new();
+            // all_vars contains all v_i
+            // all_args replaces eids with "k"
+            let (all_vars, all_args) = self
+                .c_args
+                .iter()
+                .zip(self.v_types.iter())
+                .enumerate()
+                .map(|(i, (_v, ty))| {
+                    let v_i = format_ident!("v{}", i);
+                    match ty {
+                        VecArgTokens::EntityId(_) => (v_i, format_ident!("eid")),
+                        VecArgTokens::Component(_, _) => {
+                            c_vars.push(v_i.to_owned());
+                            (v_i.to_owned(), v_i)
+                        }
+                    }
+                })
+                .unzip::<_, _, Vec<_>, Vec<_>>();
+
+            let if_stmt = self.quote_labels(quote!(return Some((#(#all_args,)*));));
+
+            quote!(
+                let mut v = cm.#arg
+                    .#iter()
+                    .map(#tuple_init)
+                    .collect::<HashMap<_, (#(Option<#v_types>,)*)>>();
+                #(v = #intersect_stmts;)*
+                let v = v
+                    .into_iter()
+                    .filter_map(|(eid, (#(#all_vars,)*))| {
+                        if let (#(Some(#c_vars),)*) = (#(#c_vars,)*) {
+                            #if_stmt
+                        }
+                        None
+                    })
+                    .collect::<Vec<_>>();
+                #f(#(#args),*);
+            )
+        };
+        if self.has_event {
+            quote!((
+                |cm: &mut #cm, gm: &mut #gm, em: &mut #em| {
+                    if let Some(e) = em.get_event() {
+                        #body
+                    }
+                }
+            ))
+        } else {
+            quote!((
+                |cm: &mut #cm, gm: &mut #gm, em: &mut #em| {
+                    #body
+                }
+            ))
+        }
     }
 }

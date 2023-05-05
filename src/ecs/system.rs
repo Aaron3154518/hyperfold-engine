@@ -1,8 +1,8 @@
+use crate::includes::*;
 use ecs_lib::system;
-use ecs_macros::Mut;
 
 use super::component::Component as Comp2;
-use super::event::{CoreEvent, MyEvent};
+use super::event::MyEvent;
 
 #[system]
 pub fn empty(res: &super::component::Resource) {

@@ -1,17 +1,6 @@
 #![feature(hash_drain_filter)]
 
-use std::{
-    collections::{BTreeSet, HashMap, HashSet},
-    hash::Hash,
-};
-
-pub mod structs;
-
-pub trait Mut<T> {
-    fn new_event(&mut self, t: T);
-
-    fn get_event<'a>(&'a self) -> Option<&'a T>;
-}
+pub mod shared;
 
 #[macro_export]
 macro_rules! events {
@@ -65,7 +54,7 @@ macro_rules! events {
         }
 
         $(
-            impl ecs_macros::Mut<$s> for $em {
+            impl ecs_macros::shared::traits::Mut<$s> for $em {
                 fn new_event(&mut self, t: $s) {
                     self.$v.push(t);
                     self.add_event(E::$e);
@@ -77,10 +66,6 @@ macro_rules! events {
             }
         )*
     }
-}
-
-pub trait ComponentManager<E, T> {
-    fn add_component(&mut self, e: E, t: T);
 }
 
 #[macro_export]
@@ -123,7 +108,7 @@ macro_rules! c_manager {
         }
 
         $(
-            impl ecs_macros::ComponentManager<crate::ecs::entity::Entity, $c_t> for $cm {
+            impl ecs_macros::shared::traits::ComponentManager<crate::ecs::entity::Entity, $c_t> for $cm {
                 fn add_component(&mut self, e: crate::ecs::entity::Entity, t: $c_t) {
                     self.eids.insert(e);
                     self.$c_v.insert(e, t);
@@ -150,58 +135,6 @@ macro_rules! g_manager {
     };
 }
 
-pub fn intersect<'a, K, V1, V2, F>(
-    mut h: HashMap<&'a K, V1>,
-    h_new: &'a HashMap<K, V2>,
-    get: F,
-) -> HashMap<&'a K, V1>
-where
-    K: Eq + Hash + Clone + Ord,
-    F: Fn(&mut V1) -> &mut Option<&'a V2>,
-{
-    for (k, v) in h_new.iter() {
-        if let Some(v2) = h.get_mut(k) {
-            *get(v2) = Some(v)
-        }
-    }
-    h.drain_filter(|_k, v| get(v).is_none());
-    h
-}
-
-pub fn intersect_mut<'a, K, V1, V2, F>(
-    mut h: HashMap<&'a K, V1>,
-    h_new: &'a mut HashMap<K, V2>,
-    get: F,
-) -> HashMap<&'a K, V1>
-where
-    K: Eq + Hash + Clone + Ord,
-    F: Fn(&mut V1) -> &mut Option<&'a mut V2>,
-{
-    for (k, v) in h_new.iter_mut() {
-        if let Some(v2) = h.get_mut(k) {
-            *get(v2) = Some(v)
-        }
-    }
-    h.drain_filter(|_k, v| get(v).is_none());
-    h
-}
-
-pub fn intersect_keys<K: Eq + Hash + Clone + Ord>(keys: &mut [HashSet<&K>]) -> BTreeSet<K> {
-    keys.sort_by(|s1, s2| s1.len().cmp(&s2.len()));
-    if let Some(k1) = keys.first() {
-        let mut k1 = k1.clone();
-        keys[1..]
-            .iter()
-            .for_each(|k| k1 = k1.intersection(k).map(|k| *k).collect::<HashSet<_>>());
-        return k1.iter().map(|k| (*k).clone()).collect();
-    }
-    BTreeSet::new()
-}
-
-pub fn get_keys<'a, K: Eq + Hash + Clone, V>(map: &'a HashMap<K, V>) -> HashSet<&'a K> {
-    map.keys().collect()
-}
-
 #[macro_export]
 macro_rules! systems {
     ($sm: ident, $cm: ident, $gm: ident, $em: ident,
@@ -223,7 +156,7 @@ macro_rules! systems {
                     gm: $gm::new(),
                     cm: $cm::new(),
                     stack: Vec::new(),
-                    services: ecs_macros::structs::ArrayCreator::create(|_| Vec::new()),
+                    services: ecs_macros::shared::array_creator::ArrayCreator::create(|_| Vec::new()),
                     events: $em::new()
                 };
                 s.init();

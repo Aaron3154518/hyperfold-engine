@@ -2,10 +2,9 @@
 
 use bindgen;
 use bindgen::callbacks::{DeriveInfo, ParseCallbacks};
-use ecs_macros::structs::{
-    LabelType, COMPONENTS_PATH, ENTITY_PATH,
-    LABEL_PATH, GlobalMacroArgs, ComponentMacroArgs, SystemMacroArgs, 
-};
+use ecs_macros::shared::label::{LabelType, LABEL_PATH};
+use ecs_macros::shared::macro_args::{ComponentMacroArgs, GlobalMacroArgs, SystemMacroArgs};
+use ecs_macros::shared::paths::{ENTITY_PATH, COMPONENTS_PATH};
 use quote::ToTokens;
 use std::collections::HashSet;
 use std::env;
