@@ -229,6 +229,7 @@ macro_rules! systems {
                     events: $em::new()
                 };
                 s.init();
+                s.post_tick();
                 s.add_systems();
                 s
             }
@@ -245,12 +246,26 @@ macro_rules! systems {
                 $($i_fs(&mut self.cm, &mut self.gm, &mut self.events);)*
             }
 
-            fn init_events(&mut self, ts: u32) -> $em {
+            fn init_events(&self, ts: u32) -> $em {
                 let mut events = $em::new();
                 events.new_event(crate::ecs::event::CoreEvent::Events);
                 events.new_event(crate::ecs::event::CoreEvent::Update(ts));
                 events.new_event(crate::ecs::event::CoreEvent::Render);
                 events
+            }
+
+            fn add_events(&mut self, mut em: $em) {
+                if em.has_events() {
+                    self.events.append(&mut em);
+                    self.stack.push(em.get_events());
+                }
+            }
+
+            fn post_tick(&mut self) {
+                // Remove marked entities
+                self.cm.remove(&mut self.gm.$g_tr);
+                // Add new entities
+                self.cm.append(&mut self.gm.$g_cm);
             }
 
             pub fn tick(&mut self, ts: u32, camera: &Rect, screen: &Dimensions) {
@@ -259,11 +274,7 @@ macro_rules! systems {
                 // Clear the screen
                 self.gm.$g_rs.r.clear();
                 // Add initial events
-                let mut events = self.init_events(ts);
-                if events.has_events() {
-                    self.events.append(&mut events);
-                    self.stack.push(events.get_events());
-                }
+                self.add_events(self.init_events(ts));
                 while !self.stack.is_empty() {
                     // Get element from next queue
                     if let Some((e, i, n)) = self
@@ -299,10 +310,8 @@ macro_rules! systems {
                             self.events.pop(e);
                         }
                         // Add new events
-                        if self.gm.$g_eb.has_events() {
-                            self.events.append(&mut self.gm.$g_eb);
-                            self.stack.push(self.gm.$g_eb.get_events());
-                        }
+                        let events = std::mem::replace(&mut self.gm.$g_eb, $em::new());
+                        self.add_events(events);
                     } else {
                         // We're done with this event
                         self.pop();
@@ -310,10 +319,8 @@ macro_rules! systems {
                 }
                 // Display the screen
                 self.gm.$g_rs.r.present();
-                // Remove marked entities
-                self.cm.remove(&mut self.gm.$g_tr);
-                // Add new entities
-                self.cm.append(&mut self.gm.$g_cm);
+
+                self.post_tick();
             }
 
             fn pop(&mut self) {
