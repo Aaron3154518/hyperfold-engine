@@ -4,6 +4,8 @@ use syn;
 // Hardcoded struct paths
 pub const ENTITY_PATH: [&str; 4] = ["crate", "ecs", "entity", "Entity"];
 pub const COMPONENTS_PATH: [&str; 4] = ["crate", "ecs", "component", "Components"];
+
+// Labels
 pub const LABEL_PATH: [&str; 4] = ["crate", "ecs", "component", "Label"];
 pub const AND_LABELS_PATH: [&str; 4] = ["crate", "ecs", "component", "AndLabels"];
 pub const OR_LABELS_PATH: [&str; 4] = ["crate", "ecs", "component", "OrLabels"];
@@ -59,46 +61,86 @@ impl LabelType {
     }
 }
 
-#[repr(u8)]
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, FromPrimitive)]
-pub enum ComponentTypes {
-    None,
-    Global,
+// Parsing macro args
+enum MacroArgs {
+    Dummy,
+    Label,
 }
 
-#[derive(Debug)]
-pub struct ComponentType {
-    pub ty: ComponentTypes,
+impl MacroArgs {
+    fn from(vals: Vec<String>) -> Vec<Self> {
+        vals.iter()
+            .map(|s| match s.as_str() {
+                "Dummy" => Self::Dummy,
+                "Label" => Self::Label,
+                _ => panic!("Unknown Macro Arg: {}", s),
+            })
+            .collect()
+    }
+}
+
+fn parse<T>(input: syn::parse::ParseStream) -> syn::Result<T>
+where
+    T: From<Vec<String>>,
+{
+    let mut args = Vec::new();
+    while let Ok(i) = input.parse::<syn::Ident>() {
+        args.push(i.to_string());
+        let _ = input.parse::<syn::Token![,]>();
+    }
+    Ok(T::from(args))
+}
+
+// Component args
+#[derive(Debug, Clone)]
+pub struct ComponentMacroArgs {
     pub is_dummy: bool,
     pub is_label: bool,
 }
 
-impl From<Vec<String>> for ComponentType {
-    fn from(value: Vec<String>) -> Self {
+impl From<Vec<String>> for ComponentMacroArgs {
+    fn from(vals: Vec<String>) -> Self {
         let mut c = Self {
-            ty: ComponentTypes::None,
             is_dummy: false,
             is_label: false,
         };
-        for s in value.iter() {
-            match s.as_str() {
-                "Global" => c.ty = ComponentTypes::Global,
-                "Dummy" => c.is_dummy = true,
-                "Label" => c.is_label = true,
-                _ => (),
+        for a in MacroArgs::from(vals) {
+            match a {
+                MacroArgs::Dummy => c.is_dummy = true,
+                MacroArgs::Label => c.is_label = true,
             }
         }
         c
     }
 }
 
-impl syn::parse::Parse for ComponentType {
+impl syn::parse::Parse for ComponentMacroArgs {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let mut args = Vec::new();
-        while let Ok(i) = input.parse::<syn::Ident>() {
-            args.push(i.to_string());
-            let _ = input.parse::<syn::Token![,]>();
+        parse(input)
+    }
+}
+
+// Global args
+#[derive(Debug, Clone)]
+pub struct GlobalMacroArgs {
+    pub is_dummy: bool,
+}
+
+impl From<Vec<String>> for GlobalMacroArgs {
+    fn from(vals: Vec<String>) -> Self {
+        let mut g = Self { is_dummy: false };
+        for a in MacroArgs::from(vals) {
+            match a {
+                MacroArgs::Dummy => g.is_dummy = true,
+                MacroArgs::Label => panic!("Global cannot be a Label"),
+            }
         }
-        Ok(Self::from(args))
+        g
+    }
+}
+
+impl syn::parse::Parse for GlobalMacroArgs {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        parse(input)
     }
 }

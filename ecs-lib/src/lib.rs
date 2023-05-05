@@ -4,7 +4,7 @@
 extern crate proc_macro;
 use std::io::Write;
 
-use ecs_macros::structs::ComponentTypes;
+use ecs_macros::structs::GlobalMacroArgs;
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::{format_ident, quote};
@@ -13,7 +13,7 @@ use syn::{parse_macro_input, parse_quote};
 mod parse;
 use parse::{Component, EventMod, Input, System};
 
-use ecs_macros::structs::ComponentType;
+use ecs_macros::structs::ComponentMacroArgs;
 
 struct Out {
     f: std::fs::File,
@@ -39,10 +39,9 @@ impl Out {
     }
 }
 
-// TODO: Const can't be taken as mut
 #[proc_macro_attribute]
 pub fn component(input: TokenStream, item: TokenStream) -> TokenStream {
-    let args = parse_macro_input!(input as ComponentType);
+    let args = parse_macro_input!(input as ComponentMacroArgs);
     if args.is_dummy {
         return quote!().into();
     }
@@ -67,6 +66,24 @@ pub fn component(input: TokenStream, item: TokenStream) -> TokenStream {
             }
         }
         _ => panic!("Only structs can be components"),
+    }
+    .into()
+}
+
+#[proc_macro_attribute]
+pub fn global(input: TokenStream, item: TokenStream) -> TokenStream {
+    let args = parse_macro_input!(input as GlobalMacroArgs);
+    if args.is_dummy {
+        return quote!().into();
+    }
+
+    let input = parse_macro_input!(item as syn::Item);
+    match input {
+        syn::Item::Struct(mut s) => {
+            s.vis = syn::parse_quote!(pub);
+            quote!(#s)
+        }
+        _ => panic!("Only structs can be globals"),
     }
     .into()
 }
@@ -141,14 +158,8 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
     let mut f = Out::new("out3.txt", false);
 
     // Components
-    let components = Component::parse(
-        std::env::var("COMPONENTS").expect("COMPONENTS"),
-        ComponentTypes::None,
-    );
-    let globals = Component::parse(
-        std::env::var("GLOBALS").expect("GLOBALS"),
-        ComponentTypes::Global,
-    );
+    let components = Component::parse(parse::ComponentParseType::Components);
+    let globals = Component::parse(parse::ComponentParseType::Globals);
 
     // Find specific components
     let [g_eb, g_ev, g_rs, g_cm, g_tr] = [

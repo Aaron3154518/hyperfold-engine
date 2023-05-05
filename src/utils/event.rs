@@ -1,4 +1,4 @@
-use ecs_lib::component;
+use ecs_lib::global;
 use num_traits::FromPrimitive;
 
 use super::rect::*;
@@ -124,7 +124,7 @@ pub enum InputSeek {
     End,
 }
 
-#[component(Global)]
+#[global]
 pub struct Event {
     pub dt: u32,
     pub quit: bool,

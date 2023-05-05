@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use ecs_macros::structs::{ComponentTypes, LabelType, ENTITY_PATH, NUM_LABEL_TYPES};
+use ecs_macros::structs::{LabelType, ENTITY_PATH, NUM_LABEL_TYPES};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote, ToTokens};
 use regex::Regex;
@@ -25,6 +25,12 @@ pub fn string_to_ref_type(ty: String, m: bool) -> syn::Type {
 
 // Component parser
 #[derive(Clone, Debug)]
+pub enum ComponentParseType {
+    Components,
+    Globals,
+}
+
+#[derive(Clone, Debug)]
 pub struct Component {
     pub var: syn::Ident,
     pub ty: syn::Type,
@@ -45,12 +51,14 @@ impl Component {
         })
     }
 
-    pub fn parse(data: String, ty: ComponentTypes) -> Vec<Self> {
-        let ty_char = match ty {
-            ComponentTypes::None => "c",
-            ComponentTypes::Global => "g",
+    pub fn parse(parse_type: ComponentParseType) -> Vec<Self> {
+        let (data_key, ty_char) = match parse_type {
+            ComponentParseType::Components => ("COMPONENTS", "c"),
+            ComponentParseType::Globals => ("GLOBALS", "g"),
         };
-        data.split(" ")
+        std::env::var(data_key)
+            .expect(data_key)
+            .split(" ")
             .enumerate()
             .map(|(i, s)| Component {
                 var: format_ident!("{}{}", ty_char, i),

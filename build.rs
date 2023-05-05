@@ -3,7 +3,7 @@
 use bindgen;
 use bindgen::callbacks::{DeriveInfo, ParseCallbacks};
 use ecs_macros::structs::{
-    ComponentType, ComponentTypes, LabelType, COMPONENTS_PATH, ENTITY_PATH,
+    LabelType, COMPONENTS_PATH, ENTITY_PATH,
     LABEL_PATH, 
 };
 use quote::ToTokens;
@@ -204,12 +204,12 @@ impl Visitor {
         concat(vec!["crate".to_string()], self.path.to_vec())
     }
 
-    pub fn add_component(&mut self, c: Component, ty: ComponentTypes) {
-        match ty {
-            ComponentTypes::None => &mut self.components,
-            ComponentTypes::Global => &mut self.globals,
-        }
-        .push(c);
+    pub fn add_component(&mut self, c: Component) {
+        self.components.push(c);
+    }
+
+    pub fn add_global(&mut self, c: Component) {
+        self.globals.push(c);
     }
 
     pub fn uses_string(&self) -> String {
@@ -261,11 +261,29 @@ impl Visitor {
     }
 }
 
-fn find_attribute<'a>(attrs: &'a Vec<syn::Attribute>, attr: &str) -> Option<&'a syn::Attribute> {
-    // TODO: validate path
+// Parse attributes from engine components
+enum Attribute {
+    Component,
+    Global,
+    System,
+    Event
+}
+
+// TODO: validate path
+fn get_attributes<'a>(attrs: &'a Vec<syn::Attribute>) -> Vec<(Attribute, Vec<String>)> {
     attrs
         .iter()
-        .find(|a| a.path().segments.last().is_some_and(|s| s.ident == attr))
+        .filter_map(|a| a.path().segments.last().and_then(
+            |s| match s.ident.to_string().as_str() {
+                "component" => Some(Attribute::Component),
+                "global" => Some(Attribute::Global),
+                "system" => Some(Attribute::System),
+                "event" => Some(Attribute::Event),
+                _ => None
+            }
+        ).map(
+            |attr| (attr, parse_attr_args(a))
+        )).collect()
 }
 
 fn parse_attr_args(attr: &syn::Attribute) -> Vec<String> {
@@ -300,32 +318,37 @@ impl syn::visit_mut::VisitMut for Visitor {
 
     // Components
     fn visit_item_struct_mut(&mut self, i: &mut syn::ItemStruct) {
-        if let Some(a) = find_attribute(&i.attrs, "component") {
-            self.add_component(
-                Component {
-                    path: concat(self.get_mod_path(), vec![i.ident.to_string()]),
+        get_attributes(&i.attrs).iter().find_map(
+            |(a, _)| {
+            match a {
+                Attribute::Component => {
+                    self.add_component(Component {
+                        path: concat(self.get_mod_path(), vec![i.ident.to_string()]),
+                    });
+                    Some(())
                 },
-                ComponentType::from(parse_attr_args(a)).ty,
-            );
-        }
+                Attribute::Global => {
+                    self.add_global(Component {
+                        path: concat(self.get_mod_path(), vec![i.ident.to_string()]),
+                    });
+                    Some(())
+                },
+                _ => None
+            }
+        });
         syn::visit_mut::visit_item_struct_mut(self, i);
     }
 
-    // fn visit_item_type_mut(&mut self, i: &mut syn::ItemType) {
-    //     if let Some(a) = find_attribute(&i.attrs, "component") {
-    //         self.add_component(
-    //             Component {
-    //                 path: concat(self.get_mod_path(), vec![i.ident.to_string()]),
-    //             },
-    //             ComponentType::from(parse_attr_args(a)).ty,
-    //         );
-    //     }
-    //     syn::visit_mut::visit_item_type_mut(self, i);
-    // }
-
     // Functions
     fn visit_item_fn_mut(&mut self, i: &mut syn::ItemFn) {
-        if let Some(_) = find_attribute(&i.attrs, "system") {
+        if let Some(_) = get_attributes(&i.attrs).iter().find_map(
+            |(a, _)| {
+                match a {
+                    Attribute::System => Some(()),
+                    _ => None
+                }
+            }
+        ) {
             // Parse function path and args
             self.systems.push(Fn {
                 path: concat(self.get_mod_path(), vec![i.sig.ident.to_string()]),
@@ -349,7 +372,14 @@ impl syn::visit_mut::VisitMut for Visitor {
 
     // Enums
     fn visit_item_enum_mut(&mut self, i: &mut syn::ItemEnum) {
-        if let Some(_) = find_attribute(&i.attrs, "event") {
+        if let Some(_) = get_attributes(&i.attrs).iter().find_map(
+            |(a, _)| {
+                match a {
+                    Attribute::Event => Some(()),
+                    _ => None
+                }
+            }
+        )  {
             self.events.push(EventMod {
                 path: concat(self.get_mod_path(), vec![i.ident.to_string()]),
                 events: i.variants.iter().map(|v| v.ident.to_string()).collect(),

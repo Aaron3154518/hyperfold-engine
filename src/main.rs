@@ -28,12 +28,9 @@ mod ecs;
 
 mod framework;
 
-use ecs_lib::{component, component_manager};
+use ecs_lib::{component, component_manager, global};
 
-use crate::{
-    ecs::component::LabelTrait,
-    test::{FBall, Player},
-};
+use crate::test::{FBall, Player};
 
 mod test;
 
@@ -43,10 +40,10 @@ const FRAME_TIME: u32 = 1000 / FPS;
 #[component]
 pub struct MainComponent {}
 
-#[component(Global, Dummy)]
+#[global(Dummy)]
 struct EFoo;
 
-#[component(Global, Dummy)]
+#[global(Dummy)]
 struct CFoo;
 
 component_manager!(SFoo, CFoo, GFoo, EFoo);

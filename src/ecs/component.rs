@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use ecs_lib::{component, event};
+use ecs_lib::{component, event, global};
 
 use super::entity::Entity;
 
@@ -26,7 +26,7 @@ pub struct MyComponent {
     pub msg: String,
 }
 
-#[component(Global)]
+#[global]
 pub struct Resource {
     pub cnt: i32,
 }

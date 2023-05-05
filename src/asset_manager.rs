@@ -28,7 +28,7 @@ impl AssetManager {
     }
 }
 
-#[ecs_lib::component(Global)]
+#[ecs_lib::global]
 pub struct RenderSystem {
     win: Window,
     pub r: Renderer,

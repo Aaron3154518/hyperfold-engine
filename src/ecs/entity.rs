@@ -7,7 +7,7 @@ pub fn new() -> Entity {
     Entity::new_v4()
 }
 
-#[ecs_lib::component(Global)]
+#[ecs_lib::global]
 struct EntityTrash(pub Vec<Entity>);
 
 impl EntityTrash {
