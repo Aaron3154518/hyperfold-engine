@@ -65,7 +65,7 @@ macro_rules! events {
         }
 
         $(
-            impl Mut<$s> for $em {
+            impl ecs_macros::Mut<$s> for $em {
                 fn new_event(&mut self, t: $s) {
                     self.$v.push(t);
                     self.add_event(E::$e);
@@ -123,7 +123,7 @@ macro_rules! c_manager {
         }
 
         $(
-            impl ComponentManager<crate::ecs::entity::Entity, $c_t> for $cm {
+            impl ecs_macros::ComponentManager<crate::ecs::entity::Entity, $c_t> for $cm {
                 fn add_component(&mut self, e: crate::ecs::entity::Entity, t: $c_t) {
                     self.eids.insert(e);
                     self.$c_v.insert(e, t);
@@ -148,10 +148,6 @@ macro_rules! g_manager {
             }
         }
     };
-}
-
-pub trait ComponentSystems<F> {
-    fn add_system(&mut self, f: F);
 }
 
 pub fn intersect<'a, K, V1, V2, F>(
@@ -227,7 +223,7 @@ macro_rules! systems {
                     gm: $gm::new(),
                     cm: $cm::new(),
                     stack: Vec::new(),
-                    services: structs::ArrayCreator::create(|_| Vec::new()),
+                    services: ecs_macros::structs::ArrayCreator::create(|_| Vec::new()),
                     events: $em::new()
                 };
                 s.init();

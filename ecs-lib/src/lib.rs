@@ -255,13 +255,13 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
         .unzip::<_, _, Vec<_>, Vec<_>>();
 
     let code = quote!(
-        use ecs_macros::*;
-        events!(#em, #num_events,
+        use ecs_macros::{Mut, ComponentManager};
+        ecs_macros::events!(#em, #num_events,
             #(#((#e_strcts, #e_varis, #e_vars)),*),*
         );
-        c_manager!(#cm, #(#c_vars, #c_types),*);
-        g_manager!(#gm, #(#g_vars, #g_types),*);
-        systems!(#sm, #cm, #gm, #em,
+        ecs_macros::c_manager!(#cm, #(#c_vars, #c_types),*);
+        ecs_macros::g_manager!(#gm, #(#g_vars, #g_types),*);
+        ecs_macros::systems!(#sm, #cm, #gm, #em,
             #g_eb, #g_ev, #g_rs, #g_cm, #g_tr,
             (#(#init_funcs),*), (#(#s_ev_varis, #funcs),*)
         );

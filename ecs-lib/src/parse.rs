@@ -180,7 +180,7 @@ impl SystemArgTokens {
             let if_stmt = self.quote_labels(quote!(#f(#(#args),*)));
 
             quote!(
-                for eid in intersect_keys(&mut [#(get_keys(&cm.#c_args)),*]).iter() {
+                for eid in ecs_macros::intersect_keys(&mut [#(ecs_macros::get_keys(&cm.#c_args)),*]).iter() {
                     if let (#(Some(#c_args),)*) = (#(cm.#c_args.get_mut(eid),)*) {
                         #if_stmt
                     }
@@ -220,7 +220,7 @@ impl SystemArgTokens {
                     VecArgTokens::Component(_, m) => Some(
                         syn::parse_str::<syn::ExprCall>(
                             format!(
-                                "intersect{}(v, &mut cm.{}, |t| &mut t.{})",
+                                "ecs_macros::intersect{}(v, &mut cm.{}, |t| &mut t.{})",
                                 if *m { "_mut" } else { "" },
                                 a,
                                 i + 1
