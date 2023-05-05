@@ -4,7 +4,7 @@ use bindgen;
 use bindgen::callbacks::{DeriveInfo, ParseCallbacks};
 use ecs_macros::structs::{
     LabelType, COMPONENTS_PATH, ENTITY_PATH,
-    LABEL_PATH, GlobalMacroArgs, ComponentMacroArgs, 
+    LABEL_PATH, GlobalMacroArgs, ComponentMacroArgs, SystemMacroArgs, 
 };
 use quote::ToTokens;
 use std::collections::HashSet;
@@ -124,8 +124,8 @@ fn main() {
 fn get_data<'a, T, F1, F2>(visitors: &'a Vec<Visitor>, get_vec: F1, to_data: F2) -> (Vec<T>, String)
 where
     T: 'a + Clone,
-    F1: core::ops::Fn(&'a Visitor) -> &'a Vec<T>,
-    F2: core::ops::Fn(&T, &'a Visitor) -> String,
+    F1: Fn(&'a Visitor) -> &'a Vec<T>,
+    F2: Fn(&T, &'a Visitor) -> String,
 {
     let mut res = Vec::new();
     let mut data = Vec::new();
@@ -165,7 +165,7 @@ struct Visitor {
     components: Vec<Component>,
     globals: Vec<Global>,
     modules: Vec<String>,
-    systems: Vec<Fn>,
+    systems: Vec<System>,
     events: Vec<EventMod>,
     path: Vec<String>,
     uses: Vec<(Vec<String>, String)>,
@@ -343,32 +343,34 @@ impl syn::visit_mut::VisitMut for Visitor {
 
     // Functions
     fn visit_item_fn_mut(&mut self, i: &mut syn::ItemFn) {
-        if let Some(_) = get_attributes(&i.attrs).iter().find_map(
-            |(a, _)| {
+     get_attributes(&i.attrs).iter().find_map(
+            |(a, args)| {
                 match a {
-                    Attribute::System => Some(()),
+                    Attribute::System => {
+                        // Parse function path and args
+                        self.systems.push(System {
+                            path: concat(self.get_mod_path(), vec![i.sig.ident.to_string()]),
+                            args: i
+                                .sig
+                                .inputs
+                                .iter()
+                                .filter_map(|arg| match arg {
+                                    syn::FnArg::Typed(t) => {
+                                        let mut fn_arg = SystemArg::new();
+                                        fn_arg.parse_arg(&self.get_mod_path(), &t);
+                                        Some(fn_arg)
+                                    }
+                                    syn::FnArg::Receiver(_) => None,
+                                })
+                                .collect(),
+                            macro_args: SystemMacroArgs::from(args.to_vec())
+                        });
+                        Some(())
+                    },
                     _ => None
                 }
             }
-        ) {
-            // Parse function path and args
-            self.systems.push(Fn {
-                path: concat(self.get_mod_path(), vec![i.sig.ident.to_string()]),
-                args: i
-                    .sig
-                    .inputs
-                    .iter()
-                    .filter_map(|arg| match arg {
-                        syn::FnArg::Typed(t) => {
-                            let mut fn_arg = FnArg::new();
-                            fn_arg.parse_arg(&self.get_mod_path(), &t);
-                            Some(fn_arg)
-                        }
-                        syn::FnArg::Receiver(_) => None,
-                    })
-                    .collect(),
-            });
-        }
+        ); 
         syn::visit_mut::visit_item_fn_mut(self, i);
     }
 
@@ -543,7 +545,7 @@ enum VecArgKind {
 
 // Possible function arg types as engine components
 #[derive(Clone, Debug)]
-enum FnArgKind {
+enum SystemArgKind {
     Unknown,
     EntityId,
     Component(usize),
@@ -553,7 +555,7 @@ enum FnArgKind {
     Label(Vec<usize>, LabelType),
 }
 
-impl std::fmt::Display for FnArgKind {
+impl std::fmt::Display for SystemArgKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
             Self::Unknown => "Unknown",
@@ -569,12 +571,13 @@ impl std::fmt::Display for FnArgKind {
 
 // Functions, used to map raw arg types to engine components
 #[derive(Clone, Debug)]
-struct Fn {
+struct System {
     path: Vec<String>,
-    args: Vec<FnArg>,
+    args: Vec<SystemArg>,
+    macro_args: SystemMacroArgs
 }
 
-impl Fn {
+impl System {
     pub fn to_data(
         &self,
         use_paths: &Vec<(Vec<String>, String)>,
@@ -595,16 +598,29 @@ impl Fn {
             .map(|a| {
                 let err_head = format!("In system {}, arg \"{}\"", self.path.join("::"), a.name);
                 let k = a.map_to_objects(use_paths, components, globals, events);
+                if self.macro_args.is_init {
+                    match k {
+                        SystemArgKind::Global(_) => (),
+                        _ => errs.push(
+                            format!(
+                                "{}: Init system may only take global components but \"{}\" is {}",
+                                err_head,
+                                a.name,
+                                a.get_type()
+                            )
+                        )
+                    }
+                }
                 format!(
                     "{}:{}:{}",
                     a.name,
                     if a.mutable { "1" } else { "0" },
                     match k {
-                        FnArgKind::Unknown => {
+                        SystemArgKind::Unknown => {
                             errs.push(format!("{}: Type was not recognized", err_head));
                             String::new()
                         }
-                        FnArgKind::EntityId => {
+                        SystemArgKind::EntityId => {
                             has_eid = true;
                             if a.mutable {
                                 errs.push(format!(
@@ -614,7 +630,7 @@ impl Fn {
                             }
                             format!("id")
                         }
-                        FnArgKind::Component(i) => {
+                        SystemArgKind::Component(i) => {
                             has_comps = true;
                             if !c_set.insert(i) {
                                 errs.push(format!(
@@ -625,7 +641,7 @@ impl Fn {
                             }
                             format!("c{}", i)
                         }
-                        FnArgKind::Global(i) => {
+                        SystemArgKind::Global(i) => {
                             if !g_set.insert(i) {
                                 errs.push(format!(
                                     "{}: Duplicate component type, \"{}\"",
@@ -635,7 +651,7 @@ impl Fn {
                             }
                             format!("g{}", i)
                         }
-                        FnArgKind::Event(ei, vi) => {
+                        SystemArgKind::Event(ei, vi) => {
                             if has_event {
                                 errs.push(format!(
                                     "{}: Found event, \"{}\", but an event has already been found",
@@ -646,7 +662,7 @@ impl Fn {
                             has_event = true;
                             format!("e{}:{}", ei, vi)
                         }
-                        FnArgKind::Container(v) => {
+                        SystemArgKind::Container(v) => {
                             if v.is_empty() {
                                 errs.push(format!(
                                     "{}: Container \"{}\" has no components",
@@ -674,7 +690,7 @@ impl Fn {
                                     .join(":")
                             )
                         }
-                        FnArgKind::Label(v, l) => {
+                        SystemArgKind::Label(v, l) => {
                             if v.is_empty() {
                                 errs.push(format!(
                                     "{}: Container \"{}\" has no components",
@@ -696,7 +712,7 @@ impl Fn {
             })
             .collect::<Vec<_>>()
             .join(",");
-        let data = format!("{}({})", self.path.join("::"), args);
+        let data = format!("{}({}){}", self.path.join("::"), args, if self.macro_args.is_init { "i" } else { "" });
         let err_head = format!("In system {}", self.path.join("::"));
         if has_eid && !has_comps {
             errs.push(format!(
@@ -727,7 +743,7 @@ impl Fn {
     }
 }
 
-impl std::fmt::Display for Fn {
+impl std::fmt::Display for System {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.to_string().as_str())
     }
@@ -735,17 +751,17 @@ impl std::fmt::Display for Fn {
 
 // Possible function arg types: either a type or a Vec<(ty1, ty2, ...)>
 #[derive(Clone, Debug)]
-enum FnArgType {
+enum SystemArgType {
     Path(Vec<String>),
-    SContainer(Vec<String>, Box<FnArg>),
-    Container(Vec<String>, Vec<FnArg>),
+    SContainer(Vec<String>, Box<SystemArg>),
+    Container(Vec<String>, Vec<SystemArg>),
 }
 
-impl std::fmt::Display for FnArgType {
+impl std::fmt::Display for SystemArgType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            FnArgType::Path(p) => f.write_str(p.join("::").as_str()),
-            FnArgType::Container(p, v) => f.write_str(
+            SystemArgType::Path(p) => f.write_str(p.join("::").as_str()),
+            SystemArgType::Container(p, v) => f.write_str(
                 format!(
                     "{}<({})>",
                     p.join("::"),
@@ -756,7 +772,7 @@ impl std::fmt::Display for FnArgType {
                 )
                 .as_str(),
             ),
-            FnArgType::SContainer(p, a) => f.write_str(
+            SystemArgType::SContainer(p, a) => f.write_str(
                 format!(
                     "{}<({})>",
                     p.join("::"),
@@ -770,16 +786,16 @@ impl std::fmt::Display for FnArgType {
 
 // Stores a single parsed arg, either a type or a Vec<(ty1, ty2, ...)>
 #[derive(Clone, Debug)]
-struct FnArg {
-    ty: FnArgType,
+struct SystemArg {
+    ty: SystemArgType,
     name: String,
     mutable: bool,
 }
 
-impl FnArg {
+impl SystemArg {
     pub fn new() -> Self {
         Self {
-            ty: FnArgType::Path(Vec::new()),
+            ty: SystemArgType::Path(Vec::new()),
             name: String::new(),
             mutable: false,
         }
@@ -795,25 +811,25 @@ impl FnArg {
         components: &Vec<Component>,
         globals: &Vec<Global>,
         events: &Vec<EventMod>,
-    ) -> FnArgKind {
+    ) -> SystemArgKind {
         match &self.ty {
-            FnArgType::Path(p) => {
+            SystemArgType::Path(p) => {
                 let poss_paths = get_possible_use_paths(&p, use_paths);
                 poss_paths
                     .iter()
                     .find_map(|path| {
                         // Check is EntityID
                         if *path == ENTITY_PATH {
-                            Some(FnArgKind::EntityId)
+                            Some(SystemArgKind::EntityId)
                         // Component
                         } else if let Some(i) = components.iter().position(|c| c.path == *path) {
-                            Some(FnArgKind::Component(i))
+                            Some(SystemArgKind::Component(i))
                         // Global
                         } else if let Some((i, g)) = globals.iter().enumerate().find_map(|(i, g)| if g.path == *path { Some((i, g))} else {None}) {
                             if g.args.is_const && self.mutable {
                                 panic!("In argument \"{}\": global type \"{}\" is marked const but is taken mutably", self.name, self.get_type())
                             }
-                            Some(FnArgKind::Global(i))
+                            Some(SystemArgKind::Global(i))
                         } else if let Some((e_i, v_i)) =
                             events.iter().enumerate().find_map(|(i, e)| {
                                 // Find matching enum
@@ -829,27 +845,27 @@ impl FnArg {
                                 None
                             })
                         {
-                            Some(FnArgKind::Event(e_i, v_i))
+                            Some(SystemArgKind::Event(e_i, v_i))
                         } else {
                             None
                         }
                     })
-                    .map_or(FnArgKind::Unknown, |k| k)
+                    .map_or(SystemArgKind::Unknown, |k| k)
             }
-            FnArgType::Container(p, v) => {
+            SystemArgType::Container(p, v) => {
                 let poss_paths = get_possible_use_paths(&p, use_paths);
                 // Check against container paths
                 poss_paths
                     .iter()
                     .find_map(|path| {
                         if *path == COMPONENTS_PATH {
-                            Some(FnArgKind::Container(
+                            Some(SystemArgKind::Container(
                                 v.iter()
                                 .map(|a| {
                                     let k = a.map_to_objects(use_paths, components, globals, events);
                                     match k {
-                                        FnArgKind::Component(i) => VecArgKind::Component(i, a.mutable),
-                                        FnArgKind::EntityId => {
+                                        SystemArgKind::Component(i) => VecArgKind::Component(i, a.mutable),
+                                        SystemArgKind::EntityId => {
                                             if a.mutable {
                                                 panic!("In argument \"{}\": Entity ID cannot be taken mutably", self.name);
                                             }
@@ -866,12 +882,12 @@ impl FnArg {
                                 .collect()
                             ))
                         } else if let Some(l) = LabelType::from(path) {
-                            Some(FnArgKind::Label(
+                            Some(SystemArgKind::Label(
                                 v.iter()
                                 .map(|a| {
                                     let k = a.map_to_objects(use_paths, components, globals, events);
                                     match k {
-                                        FnArgKind::Component(i) => i,
+                                        SystemArgKind::Component(i) => i,
                                         _ => panic!(
                                             "In argument {}: Label arguments can only include Components, but {} is {}",
                                             self.name,
@@ -889,7 +905,7 @@ impl FnArg {
                     })
                     .expect(format!("Unknown container type: \"{}\"", p.join("::")).as_str())
             }
-            FnArgType::SContainer(p, a) => {
+            SystemArgType::SContainer(p, a) => {
                 let poss_paths = get_possible_use_paths(&p, use_paths);
                 // Check against container paths
                 poss_paths
@@ -897,9 +913,9 @@ impl FnArg {
                  .find_map(|path| {
                      if *path == LABEL_PATH {
                         let k = a.map_to_objects(use_paths, components, globals, events);                        
-                        Some(FnArgKind::Label(
+                        Some(SystemArgKind::Label(
                             match k {
-                                FnArgKind::Component(i) => vec![i],
+                                SystemArgKind::Component(i) => vec![i],
                                 _ => panic!(
                                     "In argument {}: Label arguments can only include Components, but {} is {}",
                                     self.name,
@@ -938,11 +954,11 @@ impl FnArg {
                                 syn::Type::Tuple(tup) => {
                                     let mut v = Vec::new();
                                     for tup_ty in tup.elems.iter() {
-                                        let mut arg = FnArg::new();
+                                        let mut arg = SystemArg::new();
                                         arg.parse_type(super_path, &tup_ty);
                                         v.push(arg);
                                     }
-                                    FnArgType::Container(
+                                    SystemArgType::Container(
                                         p.path
                                             .segments
                                             .iter()
@@ -952,9 +968,9 @@ impl FnArg {
                                     )
                                 }
                                 syn::Type::Path(_) => {
-                                    let mut arg = FnArg::new();
+                                    let mut arg = SystemArg::new();
                                     arg.parse_type(super_path, t);
-                                    FnArgType::SContainer(
+                                    SystemArgType::SContainer(
                                         p.path
                                             .segments
                                             .iter()
@@ -982,7 +998,7 @@ impl FnArg {
                             v.push(s.ident.to_string());
                         }
                     }
-                    self.ty = FnArgType::Path(v);
+                    self.ty = SystemArgType::Path(v);
                 }
             }
             syn::Type::Reference(r) => {
@@ -994,7 +1010,7 @@ impl FnArg {
     }
 }
 
-impl std::fmt::Display for FnArg {
+impl std::fmt::Display for SystemArg {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(
             format!(

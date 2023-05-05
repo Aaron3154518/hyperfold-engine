@@ -30,8 +30,6 @@ mod framework;
 
 use ecs_lib::{component, component_manager, global};
 
-use crate::test::{FBall, Player};
-
 mod test;
 
 const FPS: u32 = 60;
@@ -65,7 +63,6 @@ fn main() {
 
     let w = 960;
     let h = 720;
-    let img_w = 100;
 
     let screen = Dimensions { w, h };
     let camera = Rect {
@@ -76,62 +73,6 @@ fn main() {
     };
 
     let mut f = SFoo::new();
-
-    let e1 = ecs::entity::new();
-    f.cm.add_component(
-        e1,
-        ecs::component::Component {
-            name: "Aaron",
-            loc: "Boise, Idaho",
-        },
-    );
-    f.cm.add_component(
-        e1,
-        ecs::component::MyComponent {
-            msg: "You should stop coding".to_string(),
-        },
-    );
-    f.cm.add_component(e1, ecs::test::tmp::Component { i: 666 });
-    f.cm.add_component(e1, MainComponent {});
-    f.cm.add_component(e1, Elevation(1));
-    f.cm.add_component(
-        e1,
-        framework::physics::Position(Rect {
-            x: (w - img_w) as f32 / 2.0,
-            y: (h - img_w) as f32 / 2.0,
-            w: img_w as f32,
-            h: img_w as f32,
-        }),
-    );
-    f.cm.add_component(
-        e1,
-        framework::physics::PhysicsData {
-            v: PointF::new(),
-            a: PointF::new(),
-            boundary: camera.clone(),
-        },
-    );
-    let tex = f.get_rs().get_image("res/bra_vector.png");
-    f.cm.add_component(e1, Image(tex));
-    f.cm.add_component(e1, test::FBallTimer(1));
-    f.cm.add_labels(e1, vec![&Player, &FBall]);
-    // f.cm.add_component(e1, Player);
-
-    let e2 = ecs::entity::new();
-    f.cm.add_component(
-        e2,
-        ecs::component::Component {
-            name: "Ur Mom",
-            loc: "Stoopidville",
-        },
-    );
-    f.cm.add_component(
-        e2,
-        ecs::component::MyComponent {
-            msg: "Lmao git gud".to_string(),
-        },
-    );
-    f.cm.add_component(e2, ecs::test::tmp::Component { i: 69 });
 
     let mut t = unsafe { sdl2::SDL_GetTicks() };
     let mut dt;

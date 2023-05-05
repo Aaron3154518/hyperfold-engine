@@ -1,5 +1,6 @@
 #![feature(proc_macro_span)]
 #![feature(slice_group_by)]
+#![feature(drain_filter)]
 
 extern crate proc_macro;
 use std::io::Write;
@@ -157,6 +158,9 @@ pub fn event(_attr: TokenStream, item: TokenStream) -> TokenStream {
 pub fn component_manager(input: TokenStream) -> TokenStream {
     let mut f = Out::new("out3.txt", false);
 
+    // Parse args
+    let (sm, cm, gm, em) = parse_macro_input!(input as Input).get();
+
     // Components
     let components = Component::parse(parse::ComponentParseType::Components);
     let globals = Component::parse(parse::ComponentParseType::Globals);
@@ -202,9 +206,12 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
     );
 
     // Systems
-    let systems = System::parse(std::env::var("SYSTEMS").expect("SYSTEMS"));
+    let mut systems = System::parse(std::env::var("SYSTEMS").expect("SYSTEMS"));
 
-    // Get system events
+    // Filter out init systems
+    let init_systems = systems.drain_filter(|s| s.is_init).collect::<Vec<_>>();
+
+    // Get system events and filter out systems with no events
     let (systems, s_ev_varis) = systems
         .into_iter()
         .filter_map(|s| {
@@ -220,11 +227,21 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
         })
         .unzip::<_, _, Vec<_>, Vec<_>>();
 
-    // Get system names and signatures
-    let (s_names, s_args) = systems
+    // Get system func bodies
+    let funcs = systems
         .iter()
-        .map(|s| (s.get_path(), s.get_args(&components, &globals)))
-        .unzip::<_, _, Vec<_>, Vec<_>>();
+        .map(|s| {
+            s.get_args(&components, &globals)
+                .to_quote(&s.get_path(), &cm, &gm, &em)
+        })
+        .collect::<Vec<_>>();
+    let init_funcs = init_systems
+        .iter()
+        .map(|s| {
+            s.get_args(&components, &globals)
+                .to_quote(&s.get_path(), &cm, &gm, &em)
+        })
+        .collect::<Vec<_>>();
 
     // Partition components into types
     let (c_vars, c_types) = components
@@ -236,14 +253,6 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
         .map(|g| (g.var, g.ty))
         .unzip::<_, _, Vec<_>, Vec<_>>();
 
-    let (sm, cm, gm, em) = parse_macro_input!(input as Input).get();
-
-    let funcs = s_names
-        .iter()
-        .zip(s_args.iter())
-        .map(|(f, args)| args.to_quote(f, &cm, &gm, &em))
-        .collect::<Vec<_>>();
-
     let code = quote!(
         use ecs_macros::*;
         events!(#em,
@@ -253,7 +262,7 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
         g_manager!(#gm, #(#g_vars, #g_types),*);
         systems!(#sm, #cm, #gm, #em,
             #g_eb, #g_ev, #g_rs, #g_cm, #g_tr,
-            #(#s_ev_varis, #funcs),*
+            (#(#init_funcs),*), (#(#s_ev_varis, #funcs),*)
         );
     );
 

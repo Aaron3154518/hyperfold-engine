@@ -1,4 +1,3 @@
-use num_derive::FromPrimitive;
 use syn;
 
 // Hardcoded struct paths
@@ -36,8 +35,8 @@ impl LabelType {
         }
     }
 
-    pub fn from_data(s: &str) -> Option<Self> {
-        match s {
+    pub fn from_data(v: &str) -> Option<Self> {
+        match v {
             "&" => Some(Self::And),
             "|" => Some(Self::Or),
             "!&" => Some(Self::Nand),
@@ -62,25 +61,6 @@ impl LabelType {
 }
 
 // Parsing macro args
-enum MacroArgs {
-    Dummy,
-    Label,
-    Const,
-}
-
-impl MacroArgs {
-    fn from(vals: Vec<String>) -> Vec<Self> {
-        vals.iter()
-            .map(|s| match s.as_str() {
-                "Dummy" => Self::Dummy,
-                "Label" => Self::Label,
-                "Const" => Self::Const,
-                _ => panic!("Unknown Macro Arg: {}", s),
-            })
-            .collect()
-    }
-}
-
 fn parse<T>(input: syn::parse::ParseStream) -> syn::Result<T>
 where
     T: From<Vec<String>>,
@@ -106,17 +86,15 @@ impl From<Vec<String>> for ComponentMacroArgs {
             is_dummy: false,
             is_label: false,
         };
-        for a in MacroArgs::from(vals) {
-            match a {
-                MacroArgs::Dummy => c.is_dummy = true,
-                MacroArgs::Label => c.is_label = true,
-                MacroArgs::Const => {
-                    panic!(
-                        "{}\n{}",
-                        "Component cannot be Const",
-                        "Perhaps you meant to declare this as \"global\"?"
-                    )
-                }
+        for v in vals {
+            match v.as_str() {
+                "Dummy" => c.is_dummy = true,
+                "Label" => c.is_label = true,
+                "Const" => panic!(
+                    "{}\n{}",
+                    "Component cannot be Const", "Perhaps you meant to declare this as \"global\"?"
+                ),
+                _ => panic!("Unknown macro argument for component: {}", v),
             }
         }
         c
@@ -142,11 +120,11 @@ impl From<Vec<String>> for GlobalMacroArgs {
             is_dummy: false,
             is_const: false,
         };
-        for a in MacroArgs::from(vals) {
-            match a {
-                MacroArgs::Dummy => g.is_dummy = true,
-                MacroArgs::Const => g.is_const = true,
-                MacroArgs::Label => panic!("Global cannot be a Label"),
+        for v in vals {
+            match v.as_str() {
+                "Dummy" => g.is_dummy = true,
+                "Const" => g.is_const = true,
+                _ => panic!("Unknown macro argument for global: {}", v),
             }
         }
         g
@@ -154,6 +132,31 @@ impl From<Vec<String>> for GlobalMacroArgs {
 }
 
 impl syn::parse::Parse for GlobalMacroArgs {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        parse(input)
+    }
+}
+
+// System args
+#[derive(Debug, Clone)]
+pub struct SystemMacroArgs {
+    pub is_init: bool,
+}
+
+impl From<Vec<String>> for SystemMacroArgs {
+    fn from(vals: Vec<String>) -> Self {
+        let mut s = Self { is_init: false };
+        for v in vals {
+            match v.as_str() {
+                "Init" => s.is_init = true,
+                _ => panic!("Unknown macro argument for system: {}", v),
+            }
+        }
+        s
+    }
+}
+
+impl syn::parse::Parse for SystemMacroArgs {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         parse(input)
     }

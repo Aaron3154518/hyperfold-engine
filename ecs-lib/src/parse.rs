@@ -114,6 +114,7 @@ pub struct SystemArgTokens {
     v_types: Vec<VecArgTokens>,
     g_args: Vec<syn::Ident>,
     is_vec: bool,
+    has_event: bool,
 }
 
 impl SystemArgTokens {
@@ -125,6 +126,7 @@ impl SystemArgTokens {
             v_types: Vec::new(),
             g_args: Vec::new(),
             is_vec: false,
+            has_event: false,
         }
     }
 
@@ -273,18 +275,27 @@ impl SystemArgTokens {
                 #f(#(#args),*);
             )
         };
-        quote!((
-            |cm: &mut #cm, gm: &mut #gm, em: &mut #em| {
-                if let Some(e) = em.get_event() {
+        if self.has_event {
+            quote!((
+                |cm: &mut #cm, gm: &mut #gm, em: &mut #em| {
+                    if let Some(e) = em.get_event() {
+                        #body
+                    }
+                }
+            ))
+        } else {
+            quote!((
+                |cm: &mut #cm, gm: &mut #gm, em: &mut #em| {
                     #body
                 }
-            }
-        ))
+            ))
+        }
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct System {
+    pub is_init: bool,
     pub path: Vec<String>,
     pub args: Vec<SystemArg>,
     pub event: Option<EventData>,
@@ -294,6 +305,7 @@ pub struct System {
 impl System {
     pub fn new() -> Self {
         Self {
+            is_init: false,
             path: Vec::new(),
             args: Vec::new(),
             event: None,
@@ -327,6 +339,8 @@ impl System {
 
     pub fn get_args(&self, comps: &Vec<Component>, globals: &Vec<Component>) -> SystemArgTokens {
         let mut tokens = SystemArgTokens::new();
+        tokens.has_event = self.event.is_some();
+
         let mut c_idxs = HashSet::new();
         for a in self.args.iter() {
             match &a.data {
@@ -480,7 +494,7 @@ impl SystemParser {
         Self {
             full_r: Regex::new(
                 format!(
-                    r"(?P<path>\w+(::\w+)*)\((?P<args>{}(,{})*)?\)",
+                    r"(?P<path>\w+(::\w+)*)\((?P<args>{}(,{})*)?\)(?P<init>i?)",
                     arg_r, arg_r
                 )
                 .as_str(),
@@ -509,6 +523,17 @@ impl SystemParser {
             .full_r
             .captures(data)
             .expect(format!("Could not parse system: {}", data).as_str());
+
+        // Parse is init
+        s.is_init = match c
+            .name("init")
+            .expect(format!("Could not parse optional init flag from system: {}", data).as_str())
+            .as_str()
+        {
+            "i" => true,
+            _ => false,
+        };
+
         // Parse system path
         s.path = self
             .path_r

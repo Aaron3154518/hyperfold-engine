@@ -208,7 +208,7 @@ pub fn get_keys<'a, K: Eq + Hash + Clone, V>(map: &'a HashMap<K, V>) -> HashSet<
 macro_rules! systems {
     ($sm: ident, $cm: ident, $gm: ident, $em: ident,
         $g_eb: ident, $g_ev: ident, $g_rs: ident, $g_cm: ident, $g_tr: ident,
-        $($e_v: ident, $fs: tt),*
+        ($($i_fs: tt),*), ($($e_v: ident, $fs: tt),*)
     ) => {
         struct $sm {
             pub gm: $gm,
@@ -228,6 +228,7 @@ macro_rules! systems {
                     services: std::collections::HashMap::new(),
                     events: $em::new()
                 };
+                s.init();
                 s.add_systems();
                 s
             }
@@ -240,7 +241,11 @@ macro_rules! systems {
                 &mut self.gm.$g_rs
             }
 
-            fn init(&mut self, ts: u32) -> $em {
+            fn init(&mut self) {
+                $($i_fs(&mut self.cm, &mut self.gm, &mut self.events);)*
+            }
+
+            fn init_events(&mut self, ts: u32) -> $em {
                 let mut events = $em::new();
                 events.new_event(crate::ecs::event::CoreEvent::Events);
                 events.new_event(crate::ecs::event::CoreEvent::Update(ts));
@@ -254,7 +259,7 @@ macro_rules! systems {
                 // Clear the screen
                 self.gm.$g_rs.r.clear();
                 // Add initial events
-                let mut events = self.init(ts);
+                let mut events = self.init_events(ts);
                 if events.has_events() {
                     self.events.append(&mut events);
                     self.stack.push(events.get_events());
