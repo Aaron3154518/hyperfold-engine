@@ -15,8 +15,9 @@ use parse::{
     component::{Component, ComponentParseType},
     event::EventMod,
     input::Input,
+    paths::*,
     system::System,
-    util::Out,
+    util::{arr_to_path, arr_to_type, Out},
 };
 
 #[proc_macro_attribute]
@@ -144,15 +145,20 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
     let components = Component::parse(ComponentParseType::Components);
     let globals = Component::parse(ComponentParseType::Globals);
 
-    // Find specific components
-    let [g_eb, g_ev, g_rs, g_cm, g_tr] = [
-        "crate::EFoo",
-        "crate::utils::event::Event",
-        "crate::asset_manager::RenderSystem",
-        "crate::CFoo",
-        "crate::ecs::entity::EntityTrash",
+    // Find specific globals
+    let [g_event_manager, g_event, g_render_system, g_component_manager, g_entity_trash] = [
+        &crate_(em.to_string().as_str())[..],
+        &EVENT[..],
+        &RENDER_SYSTEM[..],
+        &crate_(cm.to_string().as_str())[..],
+        &ENTITY_TRASH[..],
     ]
-    .map(|s| Component::find(&globals, s).expect(s).var.to_owned());
+    .map(|s| {
+        Component::find(&globals, s)
+            .expect(format!("Could not find global: {}", s.join("::")).as_str())
+            .var
+            .to_owned()
+    });
 
     // Events
     let events = EventMod::parse(std::env::var("EVENTS").expect("EVENTS"));
@@ -233,17 +239,28 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
         .map(|g| (g.var, g.ty))
         .unzip::<_, _, Vec<_>, Vec<_>>();
 
+    // Get types needed by systems!
+    let [mod_core_event] = [CORE_EVENT].map(|ty| arr_to_path(ty));
+    let [ty_rect, ty_dimensions] = [RECT, DIMENSIONS].map(|ty| arr_to_type(ty, false, false));
+
     let code = quote!(
-        pub use ecs_macros::shared::traits::*;
-        ecs_macros::events!(#em, #num_events,
-            #(#((#e_strcts, #e_varis, #e_vars)),*),*
-        );
-        ecs_macros::c_manager!(#cm, #(#c_vars, #c_types),*);
-        ecs_macros::g_manager!(#gm, #(#g_vars, #g_types),*);
-        ecs_macros::systems!(#sm, #cm, #gm, #em,
-            #g_eb, #g_ev, #g_rs, #g_cm, #g_tr,
-            (#(#init_funcs),*), (#(#s_ev_varis, #funcs),*)
-        );
+        mod hyperfold_engine {
+            pub use ecs_macros::shared::traits::*;
+            ecs_macros::events!(#em, #num_events,
+                #(#((#e_strcts, #e_varis, #e_vars)),*),*
+            );
+            ecs_macros::c_manager!(#cm, #(#c_vars, #c_types),*);
+            ecs_macros::g_manager!(#gm, #(#g_vars, #g_types),*);
+            ecs_macros::systems!(#sm, #cm, #gm, #em,
+                (
+                    #g_event_manager, #g_event, #g_render_system,
+                    #g_component_manager, #g_entity_trash
+                ),
+                (#mod_core_event, #ty_rect, #ty_dimensions),
+                (#(#init_funcs),*), (#(#s_ev_varis, #funcs),*)
+            );
+        }
+        use hyperfold_engine::{#sm, #cm, #gm, #em};
     );
 
     // Open out.txt to print stuff

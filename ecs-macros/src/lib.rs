@@ -15,14 +15,14 @@ macro_rules! events {
         #[derive(Debug)]
         pub struct $em {
             $($v: Vec<$s>),*,
-            events: VecDeque<(E, usize)>
+            events: std::collections::VecDeque<(E, usize)>
         }
 
         impl $em {
             pub fn new() -> Self {
                 Self {
                     $($v: Vec::new()),*,
-                    events: VecDeque::new()
+                    events: std::collections::VecDeque::new()
                 }
             }
 
@@ -34,8 +34,8 @@ macro_rules! events {
                 self.events.push_back((e, 0));
             }
 
-            pub fn get_events(&mut self) -> VecDeque<(E, usize)> {
-                std::mem::replace(&mut self.events, VecDeque::new())
+            pub fn get_events(&mut self) -> std::collections::VecDeque<(E, usize)> {
+                std::mem::replace(&mut self.events, std::collections::VecDeque::new())
             }
 
             pub fn append(&mut self, other: &mut Self) {
@@ -138,10 +138,14 @@ macro_rules! g_manager {
 #[macro_export]
 macro_rules! systems {
     ($sm: ident, $cm: ident, $gm: ident, $em: ident,
-        $g_eb: ident, $g_ev: ident, $g_rs: ident, $g_cm: ident, $g_tr: ident,
+        (
+            $event_manager: ident, $event: ident, $render_system: ident,
+            $component_manager: ident, $entity_trash: ident
+        ),
+        ($core_event: path, $Rect: ty, $Dimensions: ty),
         ($($i_fs: tt),*), ($($e_v: ident, $fs: tt),*)
     ) => {
-        struct $sm {
+        pub struct $sm {
             pub gm: $gm,
             pub cm: $cm,
             stack: Vec<std::collections::VecDeque<(E, usize)>>,
@@ -166,11 +170,11 @@ macro_rules! systems {
             }
 
             pub fn quit(&self) -> bool {
-                self.gm.$g_ev.quit
+                self.gm.$event.quit
             }
 
             pub fn get_rs<'a>(&'a mut self) -> &'a mut crate::asset_manager::RenderSystem {
-                &mut self.gm.$g_rs
+                &mut self.gm.$render_system
             }
 
             fn init(&mut self) {
@@ -179,9 +183,10 @@ macro_rules! systems {
 
             fn init_events(&self, ts: u32) -> $em {
                 let mut events = $em::new();
-                events.new_event(crate::ecs::event::CoreEvent::Events);
-                events.new_event(crate::ecs::event::CoreEvent::Update(ts));
-                events.new_event(crate::ecs::event::CoreEvent::Render);
+                use $core_event::{Events, Update, Render};
+                events.new_event(Events);
+                events.new_event(Update(ts));
+                events.new_event(Render);
                 events
             }
 
@@ -194,16 +199,16 @@ macro_rules! systems {
 
             fn post_tick(&mut self) {
                 // Remove marked entities
-                self.cm.remove(&mut self.gm.$g_tr);
+                self.cm.remove(&mut self.gm.$entity_trash);
                 // Add new entities
-                self.cm.append(&mut self.gm.$g_cm);
+                self.cm.append(&mut self.gm.$component_manager);
             }
 
-            pub fn tick(&mut self, ts: u32, camera: &Rect, screen: &Dimensions) {
+            pub fn tick(&mut self, ts: u32, camera: &$Rect, screen: &$Dimensions) {
                 // Update events
-                self.gm.$g_ev.update(ts, camera, screen);
+                self.gm.$event.update(ts, camera, screen);
                 // Clear the screen
-                self.gm.$g_rs.r.clear();
+                self.gm.$render_system.r.clear();
                 // Add initial events
                 self.add_events(self.init_events(ts));
                 while !self.stack.is_empty() {
@@ -230,7 +235,7 @@ macro_rules! systems {
                             self.pop();
                         }
                         // Add a new queue for new events
-                        self.gm.$g_eb = $em::new();
+                        self.gm.$event_manager = $em::new();
                         // Run the system
                         if let Some(s) = self.services[e as usize].get(i) {
                             (s)(&mut self.cm, &mut self.gm, &mut self.events);
@@ -240,7 +245,7 @@ macro_rules! systems {
                             self.events.pop(e);
                         }
                         // Add new events
-                        let events = std::mem::replace(&mut self.gm.$g_eb, $em::new());
+                        let events = std::mem::replace(&mut self.gm.$event_manager, $em::new());
                         self.add_events(events);
                     } else {
                         // We're done with this event
@@ -248,7 +253,7 @@ macro_rules! systems {
                     }
                 }
                 // Display the screen
-                self.gm.$g_rs.r.present();
+                self.gm.$render_system.r.present();
 
                 self.post_tick();
             }

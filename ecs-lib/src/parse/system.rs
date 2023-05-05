@@ -119,8 +119,9 @@ impl System {
                         .iter()
                         .map(|a| match a {
                             VecArgData::EntityId => (
-                                VecArgTokens::EntityId(string_to_ref_type(
+                                VecArgTokens::EntityId(string_to_type(
                                     ENTITY_PATH.join("::"),
+                                    true,
                                     false,
                                 )),
                                 format_ident!("eids"),
@@ -129,7 +130,7 @@ impl System {
                                 c_idxs.insert(*i);
                                 let c = comps.get(*i).expect("Invalid component index");
                                 (
-                                    VecArgTokens::Component(type_to_ref_type(&c.ty, *m), *m),
+                                    VecArgTokens::Component(type_to_type(&c.ty, true, *m), *m),
                                     c.var.to_owned(),
                                 )
                             }
@@ -564,7 +565,7 @@ impl SystemArgTokens {
                 let mut v = cm.#arg
                     .#iter()
                     .map(#tuple_init)
-                    .collect::<HashMap<_, (#(Option<#v_types>,)*)>>();
+                    .collect::<std::collections::HashMap<_, (#(Option<#v_types>,)*)>>();
                 #(v = #intersect_stmts;)*
                 let v = v
                     .into_iter()

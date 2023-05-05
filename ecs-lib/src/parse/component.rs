@@ -14,8 +14,7 @@ pub struct Component {
 }
 
 impl Component {
-    pub fn find<'a>(components: &'a Vec<Component>, path: &str) -> Option<&'a Component> {
-        let path_vec = path.split("::").collect::<Vec<_>>();
+    pub fn find<'a>(components: &'a Vec<Component>, path: &[&str]) -> Option<&'a Component> {
         components.iter().find(|s| {
             let mut tts = Vec::new();
             for tt in s.ty.to_token_stream() {
@@ -24,8 +23,16 @@ impl Component {
                     _ => (),
                 }
             }
-            tts == path_vec
+            tts == path
         })
+    }
+
+    pub fn parse_one(ty: &str, ty_char: &str, i: usize) -> Self {
+        Self {
+            var: format_ident!("{}{}", ty_char, i),
+            ty: syn::parse_str::<syn::Type>(ty)
+                .expect(format!("Could not parse Component type: {:#?}", ty).as_str()),
+        }
     }
 
     pub fn parse(parse_type: ComponentParseType) -> Vec<Self> {
@@ -37,11 +44,7 @@ impl Component {
             .expect(data_key)
             .split(" ")
             .enumerate()
-            .map(|(i, s)| Component {
-                var: format_ident!("{}{}", ty_char, i),
-                ty: syn::parse_str::<syn::Type>(s)
-                    .expect(format!("Could not parse Component type: {:#?}", s).as_str()),
-            })
+            .map(|(i, s)| Self::parse_one(s, ty_char, i))
             .collect()
     }
 }

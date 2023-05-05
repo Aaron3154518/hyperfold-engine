@@ -8,17 +8,35 @@ pub const OR: usize = LabelType::Or as usize;
 pub const NAND: usize = LabelType::Nand as usize;
 pub const NOR: usize = LabelType::Nor as usize;
 
-pub fn type_to_ref_type(ty: &syn::Type, m: bool) -> syn::Type {
-    string_to_ref_type(ty.to_token_stream().to_string(), m)
+// To type
+pub fn type_to_type(ty: &syn::Type, r: bool, m: bool) -> syn::Type {
+    string_to_type(ty.to_token_stream().to_string(), r, m)
 }
 
-pub fn path_to_ref_type(path: Vec<String>, m: bool) -> syn::Type {
-    string_to_ref_type(path.join("::"), m)
+pub fn arr_to_type<const N: usize>(path: [&str; N], r: bool, m: bool) -> syn::Type {
+    string_to_type(path.join("::"), r, m)
 }
 
-pub fn string_to_ref_type(ty: String, m: bool) -> syn::Type {
-    syn::parse_str::<syn::Type>(format!("&{}{}", if m { "mut " } else { "" }, ty).as_str())
-        .expect("Could not parse type")
+pub fn string_to_type(ty: String, r: bool, m: bool) -> syn::Type {
+    syn::parse_str::<syn::Type>(
+        format!(
+            "{}{}{}",
+            if r { "&" } else { "" },
+            if m { "mut " } else { "" },
+            ty
+        )
+        .as_str(),
+    )
+    .expect("Could not parse type")
+}
+
+// To path
+pub fn arr_to_path<const N: usize>(path: [&str; N]) -> syn::Path {
+    string_to_path(path.join("::"))
+}
+
+pub fn string_to_path(path: String) -> syn::Path {
+    syn::parse_str(&path).expect(format!("Could not parse path: {}", path).as_str())
 }
 
 // For writing to files
