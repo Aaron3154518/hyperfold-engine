@@ -12,7 +12,12 @@ use quote::{format_ident, quote};
 use syn::{parse_macro_input, parse_quote};
 
 mod parse;
-use parse::{Component, EventMod, Input, System};
+use parse::{
+    component::{Component, ComponentParseType},
+    event::EventMod,
+    input::Input,
+    system::System,
+};
 
 use ecs_macros::structs::ComponentMacroArgs;
 
@@ -162,8 +167,8 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
     let (sm, cm, gm, em) = parse_macro_input!(input as Input).get();
 
     // Components
-    let components = Component::parse(parse::ComponentParseType::Components);
-    let globals = Component::parse(parse::ComponentParseType::Globals);
+    let components = Component::parse(ComponentParseType::Components);
+    let globals = Component::parse(ComponentParseType::Globals);
 
     // Find specific components
     let [g_eb, g_ev, g_rs, g_cm, g_tr] = [

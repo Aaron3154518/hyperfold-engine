@@ -2,72 +2,10 @@ use std::collections::HashSet;
 
 use ecs_macros::structs::{LabelType, ENTITY_PATH, NUM_LABEL_TYPES};
 use proc_macro2::TokenStream;
-use quote::{format_ident, quote, ToTokens};
+use quote::{format_ident, quote};
 use regex::Regex;
 
-const AND: usize = LabelType::And as usize;
-const OR: usize = LabelType::Or as usize;
-const NAND: usize = LabelType::Nand as usize;
-const NOR: usize = LabelType::Nor as usize;
-
-pub fn type_to_ref_type(ty: &syn::Type, m: bool) -> syn::Type {
-    string_to_ref_type(ty.to_token_stream().to_string(), m)
-}
-
-pub fn path_to_ref_type(path: Vec<String>, m: bool) -> syn::Type {
-    string_to_ref_type(path.join("::"), m)
-}
-
-pub fn string_to_ref_type(ty: String, m: bool) -> syn::Type {
-    syn::parse_str::<syn::Type>(format!("&{}{}", if m { "mut " } else { "" }, ty).as_str())
-        .expect("Could not parse type")
-}
-
-// Component parser
-#[derive(Clone, Debug)]
-pub enum ComponentParseType {
-    Components,
-    Globals,
-}
-
-#[derive(Clone, Debug)]
-pub struct Component {
-    pub var: syn::Ident,
-    pub ty: syn::Type,
-}
-
-impl Component {
-    pub fn find<'a>(components: &'a Vec<Component>, path: &str) -> Option<&'a Component> {
-        let path_vec = path.split("::").collect::<Vec<_>>();
-        components.iter().find(|s| {
-            let mut tts = Vec::new();
-            for tt in s.ty.to_token_stream() {
-                match tt {
-                    proc_macro2::TokenTree::Ident(i) => tts.push(i.to_string()),
-                    _ => (),
-                }
-            }
-            tts == path_vec
-        })
-    }
-
-    pub fn parse(parse_type: ComponentParseType) -> Vec<Self> {
-        let (data_key, ty_char) = match parse_type {
-            ComponentParseType::Components => ("COMPONENTS", "c"),
-            ComponentParseType::Globals => ("GLOBALS", "g"),
-        };
-        std::env::var(data_key)
-            .expect(data_key)
-            .split(" ")
-            .enumerate()
-            .map(|(i, s)| Component {
-                var: format_ident!("{}{}", ty_char, i),
-                ty: syn::parse_str::<syn::Type>(s)
-                    .expect(format!("Could not parse Component type: {:#?}", s).as_str()),
-            })
-            .collect()
-    }
-}
+use super::{component::Component, util::*};
 
 // Systems parser
 #[derive(Clone, Debug)]
@@ -650,78 +588,5 @@ impl SystemParser {
             }
         }
         s
-    }
-}
-
-// Event parser
-#[derive(Clone, Debug)]
-pub struct EventMod {
-    pub path: Vec<String>,
-    pub events: Vec<String>,
-}
-
-impl EventMod {
-    pub fn parse(data: String) -> Vec<Self> {
-        let r = Regex::new(r"(?P<path>\w+(::\w+)*)\((?P<events>\w+(,\w+)*)\)")
-            .expect("Could not parse regex");
-        data.split(" ")
-            .filter_map(|s| {
-                if let Some(c) = r.captures(s) {
-                    if let (Some(p), Some(e)) = (c.name("path"), c.name("events")) {
-                        return Some(EventMod {
-                            path: p.as_str().split("::").map(|s| s.to_string()).collect(),
-                            events: e.as_str().split(",").map(|s| s.to_string()).collect(),
-                        });
-                    }
-                }
-                None
-            })
-            .collect()
-    }
-
-    pub fn get_path(&self) -> syn::Path {
-        syn::Path {
-            leading_colon: None,
-            segments: self
-                .path
-                .iter()
-                .map(|p| syn::PathSegment {
-                    ident: format_ident!("{}", p.as_str()),
-                    arguments: syn::PathArguments::None,
-                })
-                .collect(),
-        }
-    }
-}
-
-// Input
-#[derive(Debug)]
-pub struct Input {
-    sm: syn::Ident,
-    _1: syn::Token![,],
-    cm: syn::Ident,
-    _2: syn::Token![,],
-    gm: syn::Ident,
-    _3: syn::Token![,],
-    em: syn::Ident,
-}
-
-impl Input {
-    pub fn get(self) -> (syn::Ident, syn::Ident, syn::Ident, syn::Ident) {
-        (self.sm, self.cm, self.gm, self.em)
-    }
-}
-
-impl syn::parse::Parse for Input {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        Ok(Self {
-            sm: input.parse()?,
-            _1: input.parse()?,
-            cm: input.parse()?,
-            _2: input.parse()?,
-            gm: input.parse()?,
-            _3: input.parse()?,
-            em: input.parse()?,
-        })
     }
 }
