@@ -124,7 +124,7 @@ pub enum InputSeek {
     End,
 }
 
-#[global]
+#[global(Const)]
 pub struct Event {
     pub dt: u32,
     pub quit: bool,

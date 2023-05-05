@@ -11,7 +11,7 @@ enum Events {
 }
 
 #[ecs_lib::system]
-pub fn on_event(_ev: &CoreEvent::Events, e: &mut event::Event, events: &mut crate::EFoo) {
+pub fn on_event(_ev: &CoreEvent::Events, e: &event::Event, events: &mut crate::EFoo) {
     for m in [
         event::Mouse::Left,
         event::Mouse::Right,

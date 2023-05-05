@@ -4,7 +4,7 @@ use bindgen;
 use bindgen::callbacks::{DeriveInfo, ParseCallbacks};
 use ecs_macros::structs::{
     LabelType, COMPONENTS_PATH, ENTITY_PATH,
-    LABEL_PATH, 
+    LABEL_PATH, GlobalMacroArgs, ComponentMacroArgs, 
 };
 use quote::ToTokens;
 use std::collections::HashSet;
@@ -163,7 +163,7 @@ fn end<T>(v: &Vec<T>) -> usize {
 // Visitor
 struct Visitor {
     components: Vec<Component>,
-    globals: Vec<Component>,
+    globals: Vec<Global>,
     modules: Vec<String>,
     systems: Vec<Fn>,
     events: Vec<EventMod>,
@@ -208,8 +208,8 @@ impl Visitor {
         self.components.push(c);
     }
 
-    pub fn add_global(&mut self, c: Component) {
-        self.globals.push(c);
+    pub fn add_global(&mut self, g: Global) {
+        self.globals.push(g);
     }
 
     pub fn uses_string(&self) -> String {
@@ -318,18 +318,20 @@ impl syn::visit_mut::VisitMut for Visitor {
 
     // Components
     fn visit_item_struct_mut(&mut self, i: &mut syn::ItemStruct) {
-        get_attributes(&i.attrs).iter().find_map(
-            |(a, _)| {
+        get_attributes(&i.attrs).into_iter().find_map(
+            |(a, args)| {
             match a {
                 Attribute::Component => {
                     self.add_component(Component {
                         path: concat(self.get_mod_path(), vec![i.ident.to_string()]),
+                        args: ComponentMacroArgs::from(args)
                     });
                     Some(())
                 },
                 Attribute::Global => {
-                    self.add_global(Component {
+                    self.add_global(Global {
                         path: concat(self.get_mod_path(), vec![i.ident.to_string()]),
+                        args: GlobalMacroArgs::from(args)
                     });
                     Some(())
                 },
@@ -472,15 +474,34 @@ trait HasPath {
 #[derive(Clone, Debug)]
 struct Component {
     path: Vec<String>,
+    args: ComponentMacroArgs
 }
 
 impl Component {
     pub fn to_data(&self) -> String {
-        format!("{}", self.path.join("::"))
+        self.get_path_str()
     }
 }
 
 impl HasPath for Component {
+    fn get_path_str(&self) -> String {
+        self.path.join("::")
+    }
+}
+
+#[derive(Clone, Debug)]
+struct Global {
+    path: Vec<String>,
+    args: GlobalMacroArgs
+}
+
+impl Global {
+    pub fn to_data(&self) -> String {
+        self.get_path_str()
+    }
+}
+
+impl HasPath for Global {
     fn get_path_str(&self) -> String {
         self.path.join("::")
     }
@@ -558,7 +579,7 @@ impl Fn {
         &self,
         use_paths: &Vec<(Vec<String>, String)>,
         components: &Vec<Component>,
-        globals: &Vec<Component>,
+        globals: &Vec<Global>,
         events: &Vec<EventMod>,
     ) -> String {
         let mut c_set = HashSet::new();
@@ -772,7 +793,7 @@ impl FnArg {
         &self,
         use_paths: &Vec<(Vec<String>, String)>,
         components: &Vec<Component>,
-        globals: &Vec<Component>,
+        globals: &Vec<Global>,
         events: &Vec<EventMod>,
     ) -> FnArgKind {
         match &self.ty {
@@ -788,7 +809,10 @@ impl FnArg {
                         } else if let Some(i) = components.iter().position(|c| c.path == *path) {
                             Some(FnArgKind::Component(i))
                         // Global
-                        } else if let Some(i) = globals.iter().position(|g| g.path == *path) {
+                        } else if let Some((i, g)) = globals.iter().enumerate().find_map(|(i, g)| if g.path == *path { Some((i, g))} else {None}) {
+                            if g.args.is_const && self.mutable {
+                                panic!("In argument \"{}\": global type \"{}\" is marked const but is taken mutably", self.name, self.get_type())
+                            }
                             Some(FnArgKind::Global(i))
                         } else if let Some((e_i, v_i)) =
                             events.iter().enumerate().find_map(|(i, e)| {
@@ -827,12 +851,12 @@ impl FnArg {
                                         FnArgKind::Component(i) => VecArgKind::Component(i, a.mutable),
                                         FnArgKind::EntityId => {
                                             if a.mutable {
-                                                panic!("In argument {}: Entity ID cannot be taken mutably", self.name);
+                                                panic!("In argument \"{}\": Entity ID cannot be taken mutably", self.name);
                                             }
                                             VecArgKind::EntityId
                                         },
                                         _ => panic!(
-                                            "In argument {}: Container arguments can only include Components or EntityId, but {} is {}",
+                                            "In argument \"{}\": Container arguments can only include Components or EntityId, but \"{}\" is {}",
                                             self.name,
                                             a.get_type(),
                                             k

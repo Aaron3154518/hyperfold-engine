@@ -65,6 +65,7 @@ impl LabelType {
 enum MacroArgs {
     Dummy,
     Label,
+    Const,
 }
 
 impl MacroArgs {
@@ -73,6 +74,7 @@ impl MacroArgs {
             .map(|s| match s.as_str() {
                 "Dummy" => Self::Dummy,
                 "Label" => Self::Label,
+                "Const" => Self::Const,
                 _ => panic!("Unknown Macro Arg: {}", s),
             })
             .collect()
@@ -108,6 +110,13 @@ impl From<Vec<String>> for ComponentMacroArgs {
             match a {
                 MacroArgs::Dummy => c.is_dummy = true,
                 MacroArgs::Label => c.is_label = true,
+                MacroArgs::Const => {
+                    panic!(
+                        "{}\n{}",
+                        "Component cannot be Const",
+                        "Perhaps you meant to declare this as \"global\"?"
+                    )
+                }
             }
         }
         c
@@ -124,14 +133,19 @@ impl syn::parse::Parse for ComponentMacroArgs {
 #[derive(Debug, Clone)]
 pub struct GlobalMacroArgs {
     pub is_dummy: bool,
+    pub is_const: bool,
 }
 
 impl From<Vec<String>> for GlobalMacroArgs {
     fn from(vals: Vec<String>) -> Self {
-        let mut g = Self { is_dummy: false };
+        let mut g = Self {
+            is_dummy: false,
+            is_const: false,
+        };
         for a in MacroArgs::from(vals) {
             match a {
                 MacroArgs::Dummy => g.is_dummy = true,
+                MacroArgs::Const => g.is_const = true,
                 MacroArgs::Label => panic!("Global cannot be a Label"),
             }
         }
