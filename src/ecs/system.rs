@@ -1,15 +1,15 @@
+use crate::ecs;
 use crate::includes::*;
-use ecs_lib::system;
 
 use super::component::Component as Comp2;
 use super::event::MyEvent;
 
-#[system]
+#[ecs::system]
 pub fn empty(res: &super::component::Resource) {
     println!("I am empty! {}", res.cnt);
 }
 
-#[system]
+#[ecs::system]
 pub fn greet(
     ev2: &MyEvent::E2,
     _comp: &mut super::super::MainComponent,
@@ -25,7 +25,7 @@ pub fn greet(
     );
 }
 
-#[system]
+#[ecs::system]
 pub fn super_mut(
     _comp: &mut super::super::MainComponent,
     res: &mut super::component::Resource,
@@ -37,7 +37,7 @@ pub fn super_mut(
     em.new_event(MyEvent::E2(2, 34));
 }
 
-#[system]
+#[ecs::system]
 pub fn super_immut(
     // _e: &super::event::CoreEvent::Events,
     _comp: &super::super::MainComponent,
@@ -45,7 +45,7 @@ pub fn super_immut(
     println!("Super Duper Immutable on Render")
 }
 
-#[system]
+#[ecs::system]
 pub fn super_duped(_comp: &super::super::MainComponent) {
     println!("Super Duped")
 }

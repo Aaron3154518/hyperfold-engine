@@ -1,20 +1,20 @@
-use ecs_lib::event;
+use crate::ecs;
 
-#[event]
+#[ecs::event]
 enum CoreEvent {
     Update(u32),
     Events,
     Render,
 }
 
-#[event]
+#[ecs::event]
 enum MyEvent {
     E1,
     E2(i32, i32),
     E3 { name: String },
 }
 
-#[event]
+#[ecs::event]
 enum OtherEvent {
     O1,
     O2(String, i32),

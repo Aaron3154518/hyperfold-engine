@@ -1,16 +1,16 @@
+use crate::ecs;
 use crate::includes::*;
-use ecs_lib;
 
 use crate::ecs::event::CoreEvent;
 use crate::utils::event;
 
-#[ecs_lib::event]
+#[ecs::event]
 enum Events {
     Mouse(event::MouseButton),
     Key(event::KeyButton),
 }
 
-#[ecs_lib::system]
+#[ecs::system]
 pub fn on_event(_ev: &CoreEvent::Events, e: &event::Event, events: &mut crate::EFoo) {
     for m in [
         event::Mouse::Left,

@@ -1035,6 +1035,7 @@ fn find_structs(path: Vec<String>) -> Vec<Visitor> {
     let mut res = Vec::new();
 
     let dir_name = format!("src/{}", path.join("/"));
+    eprintln!("Dir: {}", dir_name);
     let dir_p = Path::new(&dir_name);
     // If it is a folder, visit mod.rs
     let (file_name, neighbor) = if dir_p.exists() {

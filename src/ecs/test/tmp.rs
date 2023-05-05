@@ -1,6 +1,6 @@
-use ecs_lib::component;
+use crate::ecs;
 
-#[component]
+#[ecs::component]
 struct Component {
     pub i: u32,
 }

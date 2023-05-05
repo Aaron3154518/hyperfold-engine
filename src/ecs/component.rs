@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use ecs_lib::{component, event, global};
+use crate::ecs;
 
 use super::entity::Entity;
 
@@ -15,18 +15,18 @@ pub trait LabelTrait {
     fn add_label(&self, cm: &mut crate::CFoo, eid: Entity);
 }
 
-#[component]
+#[ecs::component]
 pub struct Component {
     pub name: &'static str,
     pub loc: &'static str,
 }
 
-#[component]
+#[ecs::component]
 pub struct MyComponent {
     pub msg: String,
 }
 
-#[global]
+#[ecs::global]
 pub struct Resource {
     pub cnt: i32,
 }
@@ -37,7 +37,7 @@ impl Resource {
     }
 }
 
-#[event]
+#[ecs::event]
 pub enum OtherEvent {
     O1,
     O2(String, i32),

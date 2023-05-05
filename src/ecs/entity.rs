@@ -1,4 +1,4 @@
-use ecs_lib;
+use crate::ecs;
 use uuid::Uuid;
 
 pub type Entity = Uuid;
@@ -7,7 +7,7 @@ pub fn new() -> Entity {
     Entity::new_v4()
 }
 
-#[ecs_lib::global]
+#[ecs::global]
 struct EntityTrash(pub Vec<Entity>);
 
 impl EntityTrash {

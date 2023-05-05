@@ -4,6 +4,7 @@
 #![feature(hash_raw_entry)]
 
 mod sdl2_bindings;
+use ecs_lib::component_manager;
 use sdl2_bindings::sdl2_ as sdl2;
 
 mod sdl2_image_bindings;
@@ -21,20 +22,18 @@ mod ecs;
 
 mod framework;
 
-use ecs_lib::{component, component_manager, global};
-
 mod test;
 
 const FPS: u32 = 60;
 const FRAME_TIME: u32 = 1000 / FPS;
 
-#[component]
+#[ecs::component]
 pub struct MainComponent {}
 
-#[global(Dummy)]
+#[ecs::global(Dummy)]
 struct EFoo;
 
-#[global(Dummy)]
+#[ecs::global(Dummy)]
 struct CFoo;
 
 component_manager!(SFoo, CFoo, GFoo, EFoo);

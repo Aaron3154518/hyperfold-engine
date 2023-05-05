@@ -2,19 +2,19 @@ use std::cmp::Ordering;
 
 use super::physics;
 use crate::asset_manager::RenderSystem;
+use crate::ecs;
 use crate::ecs::component::Components;
 use crate::ecs::entity::Entity;
 use crate::ecs::event;
 use crate::utils::pointers;
-use ecs_lib;
 
-#[ecs_lib::component]
+#[ecs::component]
 struct Elevation(pub u8);
 
-#[ecs_lib::component]
+#[ecs::component]
 struct Image(pub Option<pointers::TextureAccess>);
 
-#[ecs_lib::system]
+#[ecs::system]
 fn render(
     _e: &event::CoreEvent::Render,
     mut comps: Components<(&Entity, &mut Elevation, &Entity, &physics::Position, &Image)>,

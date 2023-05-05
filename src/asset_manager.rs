@@ -1,9 +1,7 @@
-use crate::sdl2;
 use crate::utils::pointers::*;
+use crate::{ecs, sdl2};
 
 use std::collections::HashMap;
-
-use ecs_lib;
 
 pub struct AssetManager {
     file_imgs: HashMap<&'static str, Texture>,
@@ -28,7 +26,7 @@ impl AssetManager {
     }
 }
 
-#[ecs_lib::global]
+#[ecs::global]
 pub struct RenderSystem {
     win: Window,
     pub r: Renderer,
