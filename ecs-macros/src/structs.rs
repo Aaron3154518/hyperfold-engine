@@ -70,6 +70,7 @@ pub enum ComponentTypes {
 pub struct ComponentType {
     pub ty: ComponentTypes,
     pub is_dummy: bool,
+    pub is_label: bool,
 }
 
 impl From<Vec<String>> for ComponentType {
@@ -77,11 +78,13 @@ impl From<Vec<String>> for ComponentType {
         let mut c = Self {
             ty: ComponentTypes::None,
             is_dummy: false,
+            is_label: false,
         };
         for s in value.iter() {
             match s.as_str() {
                 "Global" => c.ty = ComponentTypes::Global,
                 "Dummy" => c.is_dummy = true,
+                "Label" => c.is_label = true,
                 _ => (),
             }
         }

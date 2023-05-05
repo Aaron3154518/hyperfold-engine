@@ -51,7 +51,20 @@ pub fn component(input: TokenStream, item: TokenStream) -> TokenStream {
     match input {
         syn::Item::Struct(mut s) => {
             s.vis = syn::parse_quote!(pub);
-            quote!(#s)
+            let name = &s.ident;
+            if args.is_label {
+                quote!(
+                    #s
+
+                    impl crate::ecs::component::LabelTrait for #name {
+                        fn add_label(&self, cm: &mut crate::CFoo, eid: crate::ecs::entity::Entity) {
+                            cm.add_component(eid, Self)
+                        }
+                    }
+                )
+            } else {
+                quote!(#s)
+            }
         }
         _ => panic!("Only structs can be components"),
     }

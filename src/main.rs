@@ -30,7 +30,10 @@ mod framework;
 
 use ecs_lib::{component, component_manager};
 
-use crate::test::Player;
+use crate::{
+    ecs::component::LabelTrait,
+    test::{FBall, Player},
+};
 
 mod test;
 
@@ -114,7 +117,8 @@ fn main() {
     let tex = f.get_rs().get_image("res/bra_vector.png");
     f.cm.add_component(e1, Image(tex));
     f.cm.add_component(e1, test::FBallTimer(1));
-    f.cm.add_component(e1, Player(PhantomData));
+    f.cm.add_labels(e1, vec![&Player, &FBall]);
+    // f.cm.add_component(e1, Player);
 
     let e2 = ecs::entity::new();
     f.cm.add_component(

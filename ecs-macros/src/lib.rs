@@ -108,6 +108,16 @@ macro_rules! c_manager {
                     $(self.$c_v.remove(&eid);)*
                 }
             }
+
+            pub fn add_labels(&mut self, e: crate::ecs::entity::Entity, ls: Vec<&dyn crate::ecs::component::LabelTrait>) {
+                for l in ls {
+                    l.add_label(self, e);
+                }
+            }
+
+            pub fn add_label(&mut self, e: crate::ecs::entity::Entity, l: impl crate::ecs::component::LabelTrait) {
+                l.add_label(self, e);
+            }
         }
 
         $(
