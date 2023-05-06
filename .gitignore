@@ -4,3 +4,4 @@ sdl
 .vscode
 out*.txt
 test.*
+!src/test.rs
