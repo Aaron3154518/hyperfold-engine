@@ -66,20 +66,29 @@ fn main() {
         .expect("Error writing SDL2_Image bindings to file");
 
     // Link to the SDL2 library
-    println!("cargo:rustc-link-search={}/lib/x64", sdl2_path);
+    println!(
+        "cargo:rustc-link-search=hyperfold-engine/{}/lib/x64",
+        sdl2_path
+    );
     println!("cargo:rustc-link-lib=SDL2");
     println!("cargo:rustc-link-lib=SDL2main");
-    println!("cargo:rerun-if-changed={}/includes/SDL.h", sdl2_path);
+    println!(
+        "cargo:rerun-if-changed=hyperfold-engine/{}/includes/SDL.h",
+        sdl2_path
+    );
 
     // Link to the SDL2_image library
-    println!("cargo:rustc-link-search={}/lib/x64", sdl2_image_path);
+    println!(
+        "cargo:rustc-link-search=hyperfold-engine/{}/lib/x64",
+        sdl2_image_path
+    );
     println!("cargo:rustc-link-lib=SDL2_image");
     println!(
-        "cargo:rerun-if-changed={}/includes/SDL_Image.h",
+        "cargo:rerun-if-changed=hyperfold-engine/{}/includes/SDL_Image.h",
         sdl2_image_path
     );
 
-    let parser = AstParser::parse("src/main.rs");
+    let parser = AstParser::parse("src/lib.rs");
     eprintln!("{}", parser);
 
     let data = AstData::from(&parser);

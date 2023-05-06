@@ -59,9 +59,16 @@ impl AstParser {
             match syn::parse_file(&src) {
                 Ok(mut ast) => {
                     let mut vis = AstVisitor::new();
-                    if !path.first().is_some_and(|p| p == "main") {
-                        vis.path = path.to_vec();
-                        // Add implicit use paths derived from using "super::"
+                    vis.path = path.to_vec();
+                    if self.files.is_empty() {
+                        vis.is_entry = true;
+                        // Add implicit use paths for anything in "crate::"
+                        vis.uses.push((
+                            concatenate(vec!["crate".to_string()], vec!["*".to_string()]),
+                            String::new(),
+                        ));
+                    } else {
+                        // Add implicit use paths derived from using "(super::)+"
                         vis.uses.append(
                             &mut path
                                 .iter()
@@ -77,6 +84,7 @@ impl AstParser {
                                 })
                                 .collect(),
                         );
+                        // Add implicit use paths for anything in "crate::path::to::module::"
                         vis.uses.push((
                             concatenate(
                                 concatenate(vec!["crate".to_string()], path.to_vec()),

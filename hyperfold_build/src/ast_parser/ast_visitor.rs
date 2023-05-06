@@ -15,6 +15,7 @@ pub struct AstVisitor {
     pub systems: Vec<System>,
     pub events: Vec<EventMod>,
     pub path: Vec<String>,
+    pub is_entry: bool,
     pub uses: Vec<(Vec<String>, String)>,
     pub build_use: Vec<String>,
 }
@@ -27,8 +28,8 @@ impl AstVisitor {
             modules: Vec::new(),
             systems: Vec::new(),
             events: Vec::new(),
-            // This is empty for main.rs
             path: Vec::new(),
+            is_entry: false,
             // Add use paths from using "crate::"
             uses: vec![(vec!["crate".to_string()], String::new())],
             build_use: Vec::new(),
@@ -36,19 +37,15 @@ impl AstVisitor {
     }
 
     pub fn to_file(&self) -> String {
-        format!(
-            "src/{}.rs",
-            if self.path.is_empty() {
-                // Add main
-                "main".to_string()
-            } else {
-                self.path.join("/")
-            }
-        )
+        format!("{}.rs", self.path.join("/"))
     }
 
     pub fn get_mod_path(&self) -> Vec<String> {
-        concatenate(vec!["crate".to_string()], self.path.to_vec())
+        if self.is_entry {
+            vec!["crate".to_string()]
+        } else {
+            concatenate(vec!["crate".to_string()], self.path.to_vec())
+        }
     }
 
     pub fn add_component(&mut self, c: Component) {

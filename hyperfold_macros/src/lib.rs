@@ -263,7 +263,7 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
                 (#(#init_funcs),*), (#(#s_ev_varis, #funcs),*)
             );
         }
-        use hyperfold_engine::{#sm, #cm, #gm, #em};
+        pub use hyperfold_engine::{#sm, #cm, #gm, #em};
     );
 
     // Open out.txt to print stuff

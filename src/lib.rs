@@ -57,7 +57,7 @@ fn quit_sdl(f: SFoo) {
     }
 }
 
-fn main() {
+pub fn main() {
     let mut f = init_sdl();
 
     f.run();
