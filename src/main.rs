@@ -10,8 +10,6 @@ use sdl2_bindings::sdl2_ as sdl2;
 mod sdl2_image_bindings;
 use sdl2_image_bindings::sdl2_image_ as sdl2_image;
 
-mod asset_manager;
-
 mod includes;
 
 mod utils;
@@ -24,12 +22,6 @@ mod framework;
 
 mod test;
 
-const FPS: u32 = 60;
-const FRAME_TIME: u32 = 1000 / FPS;
-
-#[ecs::component]
-pub struct MainComponent {}
-
 #[ecs::global(Dummy)]
 struct EFoo;
 
@@ -38,7 +30,7 @@ struct CFoo;
 
 component_manager!(SFoo, CFoo, GFoo, EFoo);
 
-fn main() {
+fn init_sdl() -> SFoo {
     // Initialize SDL2
     if unsafe { sdl2::SDL_Init(sdl2::SDL_INIT_EVERYTHING) } == 0 {
         println!("SDL Initialized");
@@ -53,46 +45,22 @@ fn main() {
         eprintln!("SDL_Image Failed to Initialize");
     }
 
-    let w = 960;
-    let h = 720;
+    SFoo::new()
+}
 
-    let screen = Dimensions { w, h };
-    let camera = Rect {
-        x: 0.0,
-        y: 0.0,
-        w: w as f32,
-        h: h as f32,
-    };
-
-    let mut f = SFoo::new();
-
-    let mut t = unsafe { sdl2::SDL_GetTicks() };
-    let mut dt;
-    let mut tsum: u64 = 0;
-    let mut tcnt: u64 = 0;
-    while !f.quit() {
-        dt = unsafe { sdl2::SDL_GetTicks() } - t;
-        t += dt;
-
-        f.tick(dt, &camera, &screen);
-
-        dt = unsafe { sdl2::SDL_GetTicks() } - t;
-        tsum += dt as u64;
-        tcnt += 1;
-        if dt < FRAME_TIME {
-            unsafe { sdl2::SDL_Delay(FRAME_TIME - dt) };
-        }
-    }
-
-    println!("Average Frame Time: {}ms", tsum as f64 / tcnt as f64);
-
-    // Destroy RenderSystem
-    // drop(rs);
+fn quit_sdl(f: SFoo) {
     drop(f);
 
-    // Destroy the window and quit SDL2
     unsafe {
         sdl2_image::IMG_Quit();
         sdl2::SDL_Quit();
     }
+}
+
+fn main() {
+    let mut f = init_sdl();
+
+    f.run();
+
+    quit_sdl(f);
 }

@@ -17,7 +17,7 @@ use parse::{
     input::Input,
     paths::*,
     system::System,
-    util::{arr_to_path, arr_to_type, Out},
+    util::{arr_to_path, Out},
 };
 
 #[proc_macro_attribute]
@@ -146,19 +146,22 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
     let globals = Component::parse(ComponentParseType::Globals);
 
     // Find specific globals
-    let [g_event_manager, g_event, g_render_system, g_component_manager, g_entity_trash] = [
-        &crate_(em.to_string().as_str())[..],
-        &EVENT[..],
-        &RENDER_SYSTEM[..],
-        &crate_(cm.to_string().as_str())[..],
-        &ENTITY_TRASH[..],
-    ]
-    .map(|s| {
-        Component::find(&globals, s)
-            .expect(format!("Could not find global: {}", s.join("::")).as_str())
-            .var
-            .to_owned()
-    });
+    let [g_event_manager, g_event, g_render_system, g_component_manager, g_entity_trash, g_screen, g_camera] =
+        [
+            &crate_(em.to_string().as_str())[..],
+            &EVENT[..],
+            &RENDER_SYSTEM[..],
+            &crate_(cm.to_string().as_str())[..],
+            &ENTITY_TRASH[..],
+            &SCREEN[..],
+            &CAMERA[..],
+        ]
+        .map(|s| {
+            Component::find(&globals, s)
+                .expect(format!("Could not find global: {}", s.join("::")).as_str())
+                .var
+                .to_owned()
+        });
 
     // Events
     let events = EventMod::parse(std::env::var("EVENTS").expect("EVENTS"));
@@ -241,7 +244,6 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
 
     // Get types needed by systems!
     let [mod_core_event] = [CORE_EVENT].map(|ty| arr_to_path(ty));
-    let [ty_rect, ty_dimensions] = [RECT, DIMENSIONS].map(|ty| arr_to_type(ty, false, false));
 
     let code = quote!(
         mod hyperfold_engine {
@@ -254,9 +256,10 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
             ecs_macros::systems!(#sm, #cm, #gm, #em,
                 (
                     #g_event_manager, #g_event, #g_render_system,
-                    #g_component_manager, #g_entity_trash
+                    #g_component_manager, #g_entity_trash,
+                    #g_screen, #g_camera
                 ),
-                (#mod_core_event, #ty_rect, #ty_dimensions),
+                (#mod_core_event),
                 (#(#init_funcs),*), (#(#s_ev_varis, #funcs),*)
             );
         }

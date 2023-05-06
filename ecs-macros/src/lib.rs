@@ -140,9 +140,10 @@ macro_rules! systems {
     ($sm: ident, $cm: ident, $gm: ident, $em: ident,
         (
             $event_manager: ident, $event: ident, $render_system: ident,
-            $component_manager: ident, $entity_trash: ident
+            $component_manager: ident, $entity_trash: ident,
+            $screen: ident, $camera: ident
         ),
-        ($core_event: path, $Rect: ty, $Dimensions: ty),
+        ($core_event: path),
         ($($i_fs: tt),*), ($($e_v: ident, $fs: tt),*)
     ) => {
         pub struct $sm {
@@ -164,49 +165,56 @@ macro_rules! systems {
                     events: $em::new()
                 };
                 s.init();
-                s.post_tick();
-                s.add_systems();
                 s
             }
 
-            pub fn quit(&self) -> bool {
-                self.gm.$event.quit
-            }
-
-            pub fn get_rs<'a>(&'a mut self) -> &'a mut crate::asset_manager::RenderSystem {
-                &mut self.gm.$render_system
-            }
-
+            // Init
             fn init(&mut self) {
                 $($i_fs(&mut self.cm, &mut self.gm, &mut self.events);)*
+                self.post_tick();
+                self.add_systems();
             }
 
-            fn init_events(&self, ts: u32) -> $em {
-                let mut events = $em::new();
-                use $core_event::{Events, Update, Render};
-                events.new_event(Events);
-                events.new_event(Update(ts));
-                events.new_event(Render);
-                events
+            fn add_system(&mut self, e: E, f: Box<dyn Fn(&mut $cm, &mut $gm, &mut $em)>) {
+                self.services[e as usize].push(f);
             }
 
-            fn add_events(&mut self, mut em: $em) {
-                if em.has_events() {
-                    self.events.append(&mut em);
-                    self.stack.push(em.get_events());
+            fn add_systems(&mut self) {
+                $(
+                    let (f) = $fs;
+                    self.add_system(E::$e_v, Box::new(f));
+                )*
+            }
+
+            // Tick
+            pub fn run(&mut self) {
+                static FPS: u32 = 60;
+                static FRAME_TIME: u32 = 1000 / FPS;
+
+                let mut t = unsafe { crate::sdl2::SDL_GetTicks() };
+                let mut dt;
+                let mut tsum: u64 = 0;
+                let mut tcnt: u64 = 0;
+                while !self.gm.$event.quit {
+                    dt = unsafe { crate::sdl2::SDL_GetTicks() } - t;
+                    t += dt;
+
+                    self.tick(dt);
+
+                    dt = unsafe { crate::sdl2::SDL_GetTicks() } - t;
+                    tsum += dt as u64;
+                    tcnt += 1;
+                    if dt < FRAME_TIME {
+                        unsafe { crate::sdl2::SDL_Delay(FRAME_TIME - dt) };
+                    }
                 }
+
+                println!("Average Frame Time: {}ms", tsum as f64 / tcnt as f64);
             }
 
-            fn post_tick(&mut self) {
-                // Remove marked entities
-                self.cm.remove(&mut self.gm.$entity_trash);
-                // Add new entities
-                self.cm.append(&mut self.gm.$component_manager);
-            }
-
-            pub fn tick(&mut self, ts: u32, camera: &$Rect, screen: &$Dimensions) {
+            fn tick(&mut self, ts: u32) {
                 // Update events
-                self.gm.$event.update(ts, camera, screen);
+                self.gm.$event.update(ts, &self.gm.$camera.0, &self.gm.$screen.0);
                 // Clear the screen
                 self.gm.$render_system.r.clear();
                 // Add initial events
@@ -258,6 +266,29 @@ macro_rules! systems {
                 self.post_tick();
             }
 
+            fn post_tick(&mut self) {
+                // Remove marked entities
+                self.cm.remove(&mut self.gm.$entity_trash);
+                // Add new entities
+                self.cm.append(&mut self.gm.$component_manager);
+            }
+
+            fn init_events(&self, ts: u32) -> $em {
+                let mut events = $em::new();
+                use $core_event::{Events, Update, Render};
+                events.new_event(Events);
+                events.new_event(Update(ts));
+                events.new_event(Render);
+                events
+            }
+
+            fn add_events(&mut self, mut em: $em) {
+                if em.has_events() {
+                    self.events.append(&mut em);
+                    self.stack.push(em.get_events());
+                }
+            }
+
             fn pop(&mut self) {
                 // Remove top element and empty queue
                 if self.stack.last_mut().is_some_and(|queue| {
@@ -266,17 +297,6 @@ macro_rules! systems {
                 }) {
                     self.stack.pop();
                 }
-            }
-
-            fn add_system(&mut self, e: E, f: Box<dyn Fn(&mut $cm, &mut $gm, &mut $em)>) {
-                self.services[e as usize].push(f);
-            }
-
-            fn add_systems(&mut self) {
-                $(
-                    let (f) = $fs;
-                    self.add_system(E::$e_v, Box::new(f));
-                )*
             }
         }
     };

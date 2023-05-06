@@ -129,8 +129,8 @@ pub struct Event {
     pub dt: u32,
     pub quit: bool,
     pub resized: bool,
-    pub old_dim: Dimensions,
-    pub new_dim: Dimensions,
+    pub old_dim: Dimensions<u32>,
+    pub new_dim: Dimensions<u32>,
     pub mouse: Point,
     pub abs_mouse: Point,
     pub mouse_delta: Point,
@@ -170,7 +170,7 @@ impl Event {
         }
     }
 
-    pub fn update(&mut self, ts: u32, camera: &Rect, screen: &Dimensions) {
+    pub fn update(&mut self, ts: u32, camera: &Rect, screen: &Dimensions<u32>) {
         self.dt = ts;
         // Reset event flags
         self.quit = false;
@@ -222,26 +222,34 @@ impl Event {
             Some(sdl2::SDL_EventType::SDL_QUIT) => {
                 self.quit = true;
             }
-            Some(sdl2::SDL_EventType::SDL_WINDOWEVENT) => match FromPrimitive::from_u8(unsafe {
-                event.window.event
-            }) {
-                Some(sdl2::SDL_WindowEventID::SDL_WINDOWEVENT_SHOWN) => {
-                    unsafe {
-                        let window = sdl2::SDL_GetWindowFromID(event.window.windowID);
-                        sdl2::SDL_GetWindowSize(window, &mut self.old_dim.w, &mut self.old_dim.h);
+            Some(sdl2::SDL_EventType::SDL_WINDOWEVENT) => {
+                match FromPrimitive::from_u8(unsafe { event.window.event }) {
+                    Some(sdl2::SDL_WindowEventID::SDL_WINDOWEVENT_SHOWN) => {
+                        let (mut w, mut h) = (0, 0);
+                        unsafe {
+                            sdl2::SDL_GetWindowSize(
+                                sdl2::SDL_GetWindowFromID(event.window.windowID),
+                                &mut w,
+                                &mut h,
+                            );
+                        }
+                        self.old_dim = Dimensions {
+                            w: w as u32,
+                            h: h as u32,
+                        };
+                        self.new_dim = self.old_dim;
                     }
-                    self.new_dim = self.old_dim;
+                    Some(sdl2::SDL_WindowEventID::SDL_WINDOWEVENT_RESIZED) => {
+                        self.resized = true;
+                        self.old_dim = self.new_dim;
+                        self.new_dim = Dimensions {
+                            w: unsafe { event.window.data1 } as u32,
+                            h: unsafe { event.window.data2 } as u32,
+                        };
+                    }
+                    _ => {}
                 }
-                Some(sdl2::SDL_WindowEventID::SDL_WINDOWEVENT_RESIZED) => {
-                    self.resized = true;
-                    self.old_dim = self.new_dim;
-                    self.new_dim = Dimensions {
-                        w: unsafe { event.window.data1 },
-                        h: unsafe { event.window.data2 },
-                    };
-                }
-                _ => {}
-            },
+            }
             Some(sdl2::SDL_EventType::SDL_MOUSEBUTTONDOWN) => {
                 match Mouse::from_u8(unsafe { event.button.button }) {
                     Some(b) => {

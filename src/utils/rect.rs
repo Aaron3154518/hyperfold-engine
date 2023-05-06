@@ -1,15 +1,12 @@
 use crate::sdl2;
 
 #[derive(Clone, Copy, Debug)]
-pub struct Dimensions {
-    pub w: i32,
-    pub h: i32,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub struct DimensionsF {
-    pub w: f32,
-    pub h: f32,
+pub struct Dimensions<T>
+where
+    T: Clone + Copy,
+{
+    pub w: T,
+    pub h: T,
 }
 
 pub type Point = sdl2::SDL_Point;
@@ -156,8 +153,8 @@ impl Rect {
         self.h
     }
 
-    pub fn dim(&self) -> DimensionsF {
-        DimensionsF {
+    pub fn dim(&self) -> Dimensions<f32> {
+        Dimensions {
             w: self.w,
             h: self.h,
         }
@@ -218,7 +215,7 @@ impl Rect {
         self.h().round() as i32
     }
 
-    pub fn dim_i32(&self) -> Dimensions {
+    pub fn dim_i32(&self) -> Dimensions<i32> {
         Dimensions {
             w: self.w_i32(),
             h: self.h_i32(),

@@ -34,9 +34,9 @@ impl Window {
         self
     }
 
-    pub fn dimensions(self, width: i32, height: i32) -> Self {
+    pub fn dimensions(self, width: u32, height: u32) -> Self {
         unsafe {
-            sdl2::SDL_SetWindowSize(self.w.as_ptr(), width, height);
+            sdl2::SDL_SetWindowSize(self.w.as_ptr(), width as i32, height as i32);
         }
         self
     }
