@@ -1,3 +1,4 @@
+use hyperfold_build::ast_parser::EVENTS;
 use quote::format_ident;
 use regex::Regex;
 
@@ -9,10 +10,12 @@ pub struct EventMod {
 }
 
 impl EventMod {
-    pub fn parse(data: String) -> Vec<Self> {
+    pub fn parse() -> Vec<Self> {
         let r = Regex::new(r"(?P<path>\w+(::\w+)*)\((?P<events>\w+(,\w+)*)\)")
             .expect("Could not parse regex");
-        data.split(" ")
+        std::env::var(EVENTS)
+            .expect(EVENTS)
+            .split(" ")
             .filter_map(|s| {
                 if let Some(c) = r.captures(s) {
                     if let (Some(p), Some(e)) = (c.name("path"), c.name("events")) {

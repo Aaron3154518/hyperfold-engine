@@ -4,6 +4,7 @@ use ecs_macros::shared::{
     label::{LabelType, NUM_LABEL_TYPES},
     paths::ENTITY_PATH,
 };
+use hyperfold_build::ast_parser::SYSTEMS;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use regex::Regex;
@@ -66,9 +67,13 @@ impl System {
         }
     }
 
-    pub fn parse(data: String) -> Vec<Self> {
+    pub fn parse() -> Vec<Self> {
         let parser = SystemParser::new();
-        data.split(" ").map(|s| parser.parse(s)).collect()
+        std::env::var(SYSTEMS)
+            .expect(SYSTEMS)
+            .split(" ")
+            .map(|s| parser.parse(s))
+            .collect()
     }
 
     pub fn get_path(&self) -> syn::Path {

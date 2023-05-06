@@ -1,3 +1,4 @@
+use hyperfold_build::ast_parser::{COMPONENTS, GLOBALS};
 use quote::{format_ident, ToTokens};
 
 // Component parser
@@ -37,8 +38,8 @@ impl Component {
 
     pub fn parse(parse_type: ComponentParseType) -> Vec<Self> {
         let (data_key, ty_char) = match parse_type {
-            ComponentParseType::Components => ("COMPONENTS", "c"),
-            ComponentParseType::Globals => ("GLOBALS", "g"),
+            ComponentParseType::Components => (COMPONENTS, "c"),
+            ComponentParseType::Globals => (GLOBALS, "g"),
         };
         std::env::var(data_key)
             .expect(data_key)

@@ -164,7 +164,7 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
         });
 
     // Events
-    let events = EventMod::parse(std::env::var("EVENTS").expect("EVENTS"));
+    let events = EventMod::parse();
 
     let mut cnt = 0usize;
     let (e_strcts, e_varis, e_vars) = events.iter().enumerate().fold(
@@ -195,7 +195,7 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
     let num_events = syn::LitInt::new(cnt.to_string().as_str(), Span::call_site());
 
     // Systems
-    let mut systems = System::parse(std::env::var("SYSTEMS").expect("SYSTEMS"));
+    let mut systems = System::parse();
 
     // Filter out init systems
     let init_systems = systems.drain_filter(|s| s.is_init).collect::<Vec<_>>();
