@@ -12,7 +12,7 @@ struct Position(pub Rect);
 struct PhysicsData {
     pub v: PointF,
     pub a: PointF,
-    pub boundary: Rect,
+    pub boundary: Option<Rect>,
 }
 
 impl PhysicsData {
@@ -20,7 +20,7 @@ impl PhysicsData {
         Self {
             v: PointF::new(),
             a: PointF::new(),
-            boundary: Rect::new(),
+            boundary: None,
         }
     }
 }
@@ -33,7 +33,7 @@ fn update_physics(up: &CoreEvent::Update, pos: &mut Position, pd: &mut PhysicsDa
         .move_by(pd.v.x * s + pd.a.x * a_f, pd.v.y * s + pd.a.y * a_f);
     pd.v.x += pd.a.x * s;
     pd.v.y += pd.a.y * s;
-    if !pd.boundary.empty() {
-        pos.0.fit_within(&pd.boundary);
+    if let Some(b) = pd.boundary {
+        pos.0.fit_within(&b);
     }
 }
