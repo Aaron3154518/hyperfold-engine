@@ -1,26 +1,18 @@
-#![feature(specialization)]
 #![feature(const_type_id)]
 #![feature(map_many_mut)]
 #![feature(hash_raw_entry)]
 
+pub mod ecs;
+pub mod framework;
+pub mod includes;
 mod sdl2_bindings;
-use hyperfold_macros::component_manager;
-use sdl2_bindings::sdl2_ as sdl2;
-
 mod sdl2_image_bindings;
-use sdl2_image_bindings::sdl2_image_ as sdl2_image;
+pub mod test;
+pub mod utils;
 
-mod includes;
-
-mod utils;
-
-use utils::rect::{Dimensions, Rect};
-
-mod ecs;
-
-mod framework;
-
-mod test;
+use hyperfold_macros::component_manager;
+pub use sdl2_bindings::sdl2_ as sdl2;
+pub use sdl2_image_bindings::sdl2_image_ as sdl2_image;
 
 #[ecs::global(Dummy)]
 struct EFoo;
@@ -57,7 +49,7 @@ fn quit_sdl(f: SFoo) {
     }
 }
 
-pub fn main() {
+pub fn run() {
     let mut f = init_sdl();
 
     f.run();
