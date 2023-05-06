@@ -6,6 +6,10 @@ version = "0.1.0"
 edition = "2021"
 build = "build.rs"
 
+[features]
+test = []
+default = []
+
 [dependencies]
 num-derive = "0.3.3"
 num-traits = "0.2.15"
@@ -30,6 +34,7 @@ package = "hyperfold_shared"
 
 [build-dependencies]
 bindgen = "0.65.1"
+cargo_metadata = "0.15.4"
 
 [build-dependencies.hyperfold_build]
 version = "0.1.0"

@@ -7,6 +7,7 @@ pub mod framework;
 pub mod includes;
 mod sdl2_bindings;
 mod sdl2_image_bindings;
+#[cfg(feature = "test")]
 pub mod test;
 pub mod utils;
 

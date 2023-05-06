@@ -1,14 +1,16 @@
+use crate::util::{eval_cfg_args, get_attributes_if_active, EcsAttribute};
+
 use super::{
     component::{Component, Global},
     event::EventMod,
     system::{System, SystemArg},
-    util::{end, get_attributes, join_paths, Attribute},
+    util::{concatenate, end, get_attributes, join_paths, Attribute},
 };
-use crate::ast_parser::util::concatenate;
 use hyperfold_shared::macro_args::{ComponentMacroArgs, GlobalMacroArgs, SystemMacroArgs};
 
 // AstVisitor
 pub struct AstVisitor {
+    pub features: Vec<String>,
     pub components: Vec<Component>,
     pub globals: Vec<Global>,
     pub modules: Vec<String>,
@@ -21,8 +23,9 @@ pub struct AstVisitor {
 }
 
 impl AstVisitor {
-    pub fn new() -> Self {
+    pub fn new(features: Vec<String>) -> Self {
         Self {
+            features,
             components: Vec::new(),
             globals: Vec::new(),
             modules: Vec::new(),
@@ -107,23 +110,31 @@ impl AstVisitor {
 
 impl syn::visit_mut::VisitMut for AstVisitor {
     fn visit_item_mod_mut(&mut self, i: &mut syn::ItemMod) {
-        self.modules.push(i.ident.to_string());
-        syn::visit_mut::visit_item_mod_mut(self, i);
+        if get_attributes(&i.attrs)
+            .iter()
+            .find(|a| match a {
+                Attribute::Ecs(_, _) => false,
+                Attribute::Cfg(cfg) => eval_cfg_args(cfg, &self.features).is_some_and(|b| !b),
+            })
+            .is_none()
+        {
+            self.modules.push(i.ident.to_string());
+            syn::visit_mut::visit_item_mod_mut(self, i);
+        }
     }
 
     // Components
     fn visit_item_struct_mut(&mut self, i: &mut syn::ItemStruct) {
-        get_attributes(&i.attrs)
-            .into_iter()
-            .find_map(|(a, args)| match a {
-                Attribute::Component => {
+        if let Some(attrs) = get_attributes_if_active(&i.attrs, &self.features) {
+            attrs.into_iter().find_map(|(ty, args)| match ty {
+                EcsAttribute::Component => {
                     self.add_component(Component {
                         path: concatenate(self.get_mod_path(), vec![i.ident.to_string()]),
                         args: ComponentMacroArgs::from(args),
                     });
                     Some(())
                 }
-                Attribute::Global => {
+                EcsAttribute::Global => {
                     self.add_global(Global {
                         path: concatenate(self.get_mod_path(), vec![i.ident.to_string()]),
                         args: GlobalMacroArgs::from(args),
@@ -132,14 +143,15 @@ impl syn::visit_mut::VisitMut for AstVisitor {
                 }
                 _ => None,
             });
-        syn::visit_mut::visit_item_struct_mut(self, i);
+            syn::visit_mut::visit_item_struct_mut(self, i);
+        }
     }
 
     // Functions
     fn visit_item_fn_mut(&mut self, i: &mut syn::ItemFn) {
-        get_attributes(&i.attrs).iter().find_map(|(a, args)| {
-            match a {
-                Attribute::System => {
+        if let Some(attrs) = get_attributes_if_active(&i.attrs, &self.features) {
+            attrs.into_iter().find_map(|(ty, args)| match ty {
+                EcsAttribute::System => {
                     // Parse function path and args
                     self.systems.push(System {
                         path: concatenate(self.get_mod_path(), vec![i.sig.ident.to_string()]),
@@ -161,29 +173,34 @@ impl syn::visit_mut::VisitMut for AstVisitor {
                     Some(())
                 }
                 _ => None,
-            }
-        });
-        syn::visit_mut::visit_item_fn_mut(self, i);
+            });
+            syn::visit_mut::visit_item_fn_mut(self, i);
+        }
     }
 
     // Enums
     fn visit_item_enum_mut(&mut self, i: &mut syn::ItemEnum) {
-        if let Some(_) = get_attributes(&i.attrs).iter().find_map(|(a, _)| match a {
-            Attribute::Event => Some(()),
-            _ => None,
-        }) {
-            self.events.push(EventMod {
-                path: concatenate(self.get_mod_path(), vec![i.ident.to_string()]),
-                events: i.variants.iter().map(|v| v.ident.to_string()).collect(),
+        if let Some(attrs) = get_attributes_if_active(&i.attrs, &self.features) {
+            attrs.into_iter().find_map(|(ty, _)| match ty {
+                EcsAttribute::Event => {
+                    self.events.push(EventMod {
+                        path: concatenate(self.get_mod_path(), vec![i.ident.to_string()]),
+                        events: i.variants.iter().map(|v| v.ident.to_string()).collect(),
+                    });
+                    Some(())
+                }
+                _ => None,
             });
+            syn::visit_mut::visit_item_enum_mut(self, i);
         }
-        syn::visit_mut::visit_item_enum_mut(self, i);
     }
 
     // Use Statements
     fn visit_item_use_mut(&mut self, i: &mut syn::ItemUse) {
-        self.build_use = Vec::new();
-        syn::visit_mut::visit_item_use_mut(self, i);
+        if let Some(_) = get_attributes_if_active(&i.attrs, &self.features) {
+            self.build_use = Vec::new();
+            syn::visit_mut::visit_item_use_mut(self, i);
+        }
     }
 
     fn visit_use_path_mut(&mut self, i: &mut syn::UsePath) {

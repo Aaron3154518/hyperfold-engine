@@ -1,24 +1,19 @@
-pub mod ast_visitor;
-pub mod component;
-pub mod event;
-pub mod system;
-pub mod util;
-
-use ast_visitor::AstVisitor;
-use component::{Component, Global};
-use event::EventMod;
+use crate::ast_visitor::AstVisitor;
+use crate::component::{Component, Global};
+use crate::event::EventMod;
+use crate::system::System;
+use crate::util::concatenate;
 use std::{fs::File, io::Read, path::Path};
-use system::System;
-use util::concatenate;
 
 // Parsing file
 pub struct AstParser {
     dir: String,
+    features: Vec<String>,
     files: Vec<AstVisitor>,
 }
 
 impl AstParser {
-    pub fn parse(entry_file: &str) -> Self {
+    pub fn parse(entry_file: &str, features: Vec<String>) -> Self {
         let p = Path::new(&entry_file);
         if !p.exists() {
             panic!("Could not open entry file for parsing: {}", entry_file);
@@ -30,6 +25,7 @@ impl AstParser {
                 .to_str()
                 .expect(format!("Could not parse directory of entry file: {}", entry_file).as_str())
                 .to_string(),
+            features,
             files: Vec::new(),
         };
         parser.parse_file(vec![p
@@ -58,7 +54,7 @@ impl AstParser {
             file.read_to_string(&mut src).expect("Unable to read file");
             match syn::parse_file(&src) {
                 Ok(mut ast) => {
-                    let mut vis = AstVisitor::new();
+                    let mut vis = AstVisitor::new(self.features.to_vec());
                     vis.path = path.to_vec();
                     if self.files.is_empty() {
                         vis.is_entry = true;

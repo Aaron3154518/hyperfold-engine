@@ -2,6 +2,7 @@
 
 use bindgen;
 use bindgen::callbacks::{DeriveInfo, ParseCallbacks};
+use cargo_metadata::MetadataCommand;
 use hyperfold_build::ast_parser::{AstData, AstParser, COMPONENTS, EVENTS, GLOBALS, SYSTEMS};
 use std::env;
 use std::path::PathBuf;
@@ -20,7 +21,7 @@ impl ParseCallbacks for MyCallbacks {
     }
 }
 fn main() {
-    let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+    let out_dir = PathBuf::from(env::var("OUT_DIR").expect("Missing OUT_DIR environment variable"));
 
     let sdl2_path = "sdl/SDL2-devel-2.26.5-VC/SDL2-2.26.5";
     let sdl2_image_path = "sdl/SDL2_image-devel-2.6.3-VC/SDL2_image-2.6.3";
@@ -88,7 +89,23 @@ fn main() {
         sdl2_image_path
     );
 
-    let parser = AstParser::parse("src/lib.rs");
+    let features = MetadataCommand::new()
+        .no_deps()
+        .exec()
+        .expect("Failed to get metadata")
+        .packages[0]
+        .features
+        .keys()
+        .filter_map(|k| {
+            match env::var(format!("CARGO_FEATURE_{}", k.replace("-", "_").to_uppercase()).as_str())
+            {
+                Ok(_) => Some(k.to_owned()),
+                Err(_) => None,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let parser = AstParser::parse("src/lib.rs", features);
     eprintln!("{}", parser);
 
     let data = AstData::from(&parser);
