@@ -4,7 +4,7 @@
 #![feature(hash_raw_entry)]
 
 mod sdl2_bindings;
-use ecs_lib::component_manager;
+use hyperfold_macros::component_manager;
 use sdl2_bindings::sdl2_ as sdl2;
 
 mod sdl2_image_bindings;

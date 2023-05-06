@@ -9,10 +9,10 @@ edition = "2021"
 proc-macro2 = "1.0.56"
 quote = "1.0.26"
 
-[dependencies.ecs_macros]
+[dependencies.hyperfold_shared]
 version = "0.1.0"
-path = "../ecs_macros/"
-package = "ecs_macros"
+path = "../hyperfold_shared/"
+package = "hyperfold_shared"
 
 [dependencies.syn]
 version = "2.0.15"

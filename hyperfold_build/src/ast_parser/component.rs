@@ -1,4 +1,4 @@
-use ecs_macros::shared::macro_args::{ComponentMacroArgs, GlobalMacroArgs};
+use hyperfold_shared::macro_args::{ComponentMacroArgs, GlobalMacroArgs};
 
 use super::util::HasPath;
 

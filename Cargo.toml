@@ -18,15 +18,15 @@ features = [
     "macro-diagnostics", # Enable better diagnostics for compile-time UUIDs
 ]
 
-[dependencies.ecs_lib]
+[dependencies.hyperfold_macros]
 version = "0.1.0"
-path = "./ecs_lib/"
-package = "ecs_lib"
+path = "./hyperfold_macros/"
+package = "hyperfold_macros"
 
-[dependencies.ecs_macros]
+[dependencies.hyperfold_shared]
 version = "0.1.0"
-path = "./ecs_macros/"
-package = "ecs_macros"
+path = "./hyperfold_shared/"
+package = "hyperfold_shared"
 
 [build-dependencies]
 bindgen = "0.65.1"

@@ -1,7 +1,3 @@
-#![feature(hash_drain_filter)]
-
-pub mod shared;
-
 #[macro_export]
 macro_rules! events {
     ($em: ident, $n: literal, $(($s: path, $e: ident, $v: ident)),*) => {
@@ -54,7 +50,7 @@ macro_rules! events {
         }
 
         $(
-            impl ecs_macros::shared::traits::Mut<$s> for $em {
+            impl hyperfold_shared::traits::Mut<$s> for $em {
                 fn new_event(&mut self, t: $s) {
                     self.$v.push(t);
                     self.add_event(E::$e);
@@ -108,7 +104,7 @@ macro_rules! c_manager {
         }
 
         $(
-            impl ecs_macros::shared::traits::ComponentManager<crate::ecs::entity::Entity, $c_t> for $cm {
+            impl hyperfold_shared::traits::ComponentManager<crate::ecs::entity::Entity, $c_t> for $cm {
                 fn add_component(&mut self, e: crate::ecs::entity::Entity, t: $c_t) {
                     self.eids.insert(e);
                     self.$c_v.insert(e, t);
@@ -161,7 +157,7 @@ macro_rules! systems {
                     gm: $gm::new(),
                     cm: $cm::new(),
                     stack: Vec::new(),
-                    services: ecs_macros::shared::array_creator::ArrayCreator::create(|_| Vec::new()),
+                    services: hyperfold_shared::array_creator::ArrayCreator::create(|_| Vec::new()),
                     events: $em::new()
                 };
                 s.init();

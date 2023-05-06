@@ -1,10 +1,10 @@
 use std::collections::HashSet;
 
-use ecs_macros::shared::{
+use hyperfold_build::ast_parser::SYSTEMS;
+use hyperfold_shared::{
     label::{LabelType, NUM_LABEL_TYPES},
     paths::ENTITY_PATH,
 };
-use hyperfold_build::ast_parser::SYSTEMS;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use regex::Regex;
@@ -489,7 +489,7 @@ impl SystemArgTokens {
             let if_stmt = self.quote_labels(quote!(#f(#(#args),*)));
 
             quote!(
-                for eid in ecs_macros::shared::intersect::intersect_keys(&mut [#(ecs_macros::shared::intersect::get_keys(&cm.#c_args)),*]).iter() {
+                for eid in hyperfold_shared::intersect::intersect_keys(&mut [#(hyperfold_shared::intersect::get_keys(&cm.#c_args)),*]).iter() {
                     if let (#(Some(#c_args),)*) = (#(cm.#c_args.get_mut(eid),)*) {
                         #if_stmt
                     }
@@ -529,7 +529,7 @@ impl SystemArgTokens {
                     VecArgTokens::Component(_, m) => Some(
                         syn::parse_str::<syn::ExprCall>(
                             format!(
-                                "ecs_macros::shared::intersect::intersect{}(v, &mut cm.{}, |t| &mut t.{})",
+                                "hyperfold_shared::intersect::intersect{}(v, &mut cm.{}, |t| &mut t.{})",
                                 if *m { "_mut" } else { "" },
                                 a,
                                 i + 1

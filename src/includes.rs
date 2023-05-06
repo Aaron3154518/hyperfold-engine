@@ -1,1 +1,1 @@
-pub use ecs_macros::shared::traits::*;
+pub use hyperfold_shared::traits::*;

@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use ecs_macros::shared::{paths::{ENTITY_PATH, COMPONENTS_PATH}, label::{LabelType, LABEL_PATH}, macro_args::SystemMacroArgs};
+use hyperfold_shared::{paths::{ENTITY_PATH, COMPONENTS_PATH}, label::{LabelType, LABEL_PATH}, macro_args::SystemMacroArgs};
 
 use super::{component::{Component, Global}, event::EventMod, util::{get_possible_use_paths, end}};
 

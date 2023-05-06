@@ -4,7 +4,7 @@
 
 extern crate proc_macro;
 
-use ecs_macros::shared::macro_args::{ComponentMacroArgs, GlobalMacroArgs};
+use hyperfold_shared::macro_args::{ComponentMacroArgs, GlobalMacroArgs};
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::{format_ident, quote};
@@ -247,13 +247,13 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
 
     let code = quote!(
         mod hyperfold_engine {
-            pub use ecs_macros::shared::traits::*;
-            ecs_macros::events!(#em, #num_events,
+            pub use hyperfold_shared::traits::*;
+            hyperfold_shared::events!(#em, #num_events,
                 #(#((#e_strcts, #e_varis, #e_vars)),*),*
             );
-            ecs_macros::c_manager!(#cm, #(#c_vars, #c_types),*);
-            ecs_macros::g_manager!(#gm, #(#g_vars, #g_types),*);
-            ecs_macros::systems!(#sm, #cm, #gm, #em,
+            hyperfold_shared::c_manager!(#cm, #(#c_vars, #c_types),*);
+            hyperfold_shared::g_manager!(#gm, #(#g_vars, #g_types),*);
+            hyperfold_shared::systems!(#sm, #cm, #gm, #em,
                 (
                     #g_event_manager, #g_event, #g_render_system,
                     #g_component_manager, #g_entity_trash,

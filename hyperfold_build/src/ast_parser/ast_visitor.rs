@@ -5,7 +5,7 @@ use super::{
     util::{end, get_attributes, join_paths, Attribute},
 };
 use crate::ast_parser::util::concatenate;
-use ecs_macros::shared::macro_args::{ComponentMacroArgs, GlobalMacroArgs, SystemMacroArgs};
+use hyperfold_shared::macro_args::{ComponentMacroArgs, GlobalMacroArgs, SystemMacroArgs};
 
 // AstVisitor
 pub struct AstVisitor {

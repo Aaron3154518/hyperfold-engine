@@ -1,7 +1,7 @@
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [package]
-name = "ecs_lib"
+name = "hyperfold_macros"
 version = "0.1.0"
 edition = "2021"
 
@@ -20,10 +20,10 @@ regex = "1.7.3"
 version = "2.0.15"
 features = ["full"]
 
-[dependencies.ecs_macros]
+[dependencies.hyperfold_shared]
 version = "0.1.0"
-path = "../ecs_macros/"
-package = "ecs_macros"
+path = "../hyperfold_shared/"
+package = "hyperfold_shared"
 
 [dependencies.hyperfold_build]
 version = "0.1.0"
