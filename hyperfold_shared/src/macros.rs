@@ -1,6 +1,17 @@
 #[macro_export]
+macro_rules! sum_traits {
+    ($name: ident, $body: tt) => {
+        pub trait $name $body
+    };
+
+    ($name: ident, ($tr_0: path $(,$tr: path)*), $body: tt) => {
+        pub trait $name : $tr_0 $(+$tr)* $body
+    };
+}
+
+#[macro_export]
 macro_rules! events {
-    ($em: ident, $n: literal, $(($s: path, $e: ident, $v: ident)),*) => {
+    ($em: ident, $em_tr: ident, ($($deps: ident),*), $n: literal, $(($s: path, $e: ident, $v: ident)),*) => {
         #[derive(Hash, Clone, Copy, Eq, PartialEq, Debug)]
         pub enum E {
             $($e),*
@@ -50,7 +61,7 @@ macro_rules! events {
         }
 
         $(
-            impl hyperfold_shared::traits::Mut<$s> for $em {
+            impl Mut<$s> for $em {
                 fn new_event(&mut self, t: $s) {
                     self.$v.push(t);
                     self.add_event(E::$e);
@@ -61,15 +72,27 @@ macro_rules! events {
                 }
             }
         )*
+
+        events_trait!($em_tr, $($s),*);
+
+        impl $em_tr for $em {}
+        $(impl $deps::$em_tr for $em {})*
     }
 }
 
 #[macro_export]
+macro_rules! events_trait {
+    ($em_tr: ident, $s0: path $(,$s: path)*) => {
+        sum_traits!($em_tr, ($(Mut<$s>),*), {});
+    };
+}
+
+#[macro_export]
 macro_rules! c_manager {
-    ($cm: ident, $($c_v: ident, $c_t: ty),*) => {
+    ($cm: ident, $cm_tr: ident, ($($deps: ident),*), $($c_v: ident, $c_t: ty),*) => {
         pub struct $cm {
-            eids: std::collections::HashSet<crate::ecs::entity::Entity>,
-            $($c_v: std::collections::HashMap<crate::ecs::entity::Entity, $c_t>,)*
+            eids: std::collections::HashSet<Entity>,
+            $($c_v: std::collections::HashMap<Entity, $c_t>,)*
         }
 
         impl $cm {
@@ -85,32 +108,64 @@ macro_rules! c_manager {
                 $(self.$c_v.extend(cm.$c_v.drain());)*
             }
 
-            pub fn remove(&mut self, tr: &mut crate::ecs::entity::EntityTrash) {
+            pub fn remove(&mut self, tr: &mut EntityTrash) {
                 for eid in tr.0.drain(..) {
                     self.eids.remove(&eid);
                     $(self.$c_v.remove(&eid);)*
                 }
             }
-
-            pub fn add_labels(&mut self, e: crate::ecs::entity::Entity, ls: Vec<&dyn crate::ecs::component::LabelTrait>) {
-                for l in ls {
-                    l.add_label(self, e);
-                }
-            }
-
-            pub fn add_label(&mut self, e: crate::ecs::entity::Entity, l: impl crate::ecs::component::LabelTrait) {
-                l.add_label(self, e);
-            }
         }
 
         $(
-            impl hyperfold_shared::traits::ComponentManager<crate::ecs::entity::Entity, $c_t> for $cm {
-                fn add_component(&mut self, e: crate::ecs::entity::Entity, t: $c_t) {
+            impl ComponentManager<Entity, $c_t> for $cm {
+                fn add_component(&mut self, e: Entity, t: $c_t) {
                     self.eids.insert(e);
                     self.$c_v.insert(e, t);
                 }
             }
         )*
+
+        c_manager_trait!($cm_tr, $($c_t),*);
+
+        impl $cm_tr for $cm {
+            fn add_labels(&mut self, e: Entity, ls: Vec<&dyn LabelTrait>) {
+                for l in ls {
+                    l.add_label(self, e);
+                }
+            }
+
+            fn add_label(&mut self, e: Entity, l: &dyn LabelTrait) {
+                l.add_label(self, e);
+            }
+        }
+        $(
+            impl $deps::$cm_tr for $cm {
+                fn add_labels(&mut self, e: Entity, ls: Vec<&dyn $deps::LabelTrait>) {
+                    for l in ls {
+                        l.add_label(self, e);
+                    }
+                }
+
+                fn add_label(&mut self, e: Entity, l: &dyn $deps::LabelTrait) {
+                    l.add_label(self, e);
+                }
+            }
+        )*
+    };
+}
+
+#[macro_export]
+macro_rules! c_manager_trait {
+    ($cm_tr: ident, $($c_t: ty),*) => {
+        pub trait LabelTrait {
+            fn add_label(&self, cm: &mut dyn $cm_tr, eid: Entity);
+        }
+
+        sum_traits!($cm_tr, ($(ComponentManager<Entity, $c_t>),*), {
+            fn add_labels(&mut self, e: Entity, ls: Vec<&dyn LabelTrait>);
+
+            fn add_label(&mut self, e: Entity, l: &dyn LabelTrait);
+        });
     };
 }
 
@@ -139,16 +194,15 @@ macro_rules! systems {
             $component_manager: ident, $entity_trash: ident,
             $screen: ident, $camera: ident
         ),
-        ($core_event: path),
         ($($i_fs: tt),*), ($($e_v: ident, $fs: tt),*)
     ) => {
         pub struct $sm {
             pub gm: $gm,
             pub cm: $cm,
-            stack: Vec<std::collections::VecDeque<(E, usize)>>,
-            services: [Vec<Box<dyn Fn(&mut $cm, &mut $gm, &mut $em)>>; E_LEN],
             // Stores events in the order that they should be handled
             events: $em,
+            stack: Vec<std::collections::VecDeque<(E, usize)>>,
+            services: [Vec<Box<dyn Fn(&mut $cm, &mut $gm, &mut $em)>>; E_LEN]
         }
 
         impl $sm {
@@ -156,9 +210,9 @@ macro_rules! systems {
                 let mut s = Self {
                     gm: $gm::new(),
                     cm: $cm::new(),
+                    events: $em::new(),
                     stack: Vec::new(),
-                    services: hyperfold_shared::array_creator::ArrayCreator::create(|_| Vec::new()),
-                    events: $em::new()
+                    services: crate::ecs::shared::array_creator::ArrayCreator::create(|_| Vec::new())
                 };
                 s.init();
                 s
@@ -271,10 +325,9 @@ macro_rules! systems {
 
             fn init_events(&self, ts: u32) -> $em {
                 let mut events = $em::new();
-                use $core_event::{Events, Update, Render};
-                events.new_event(Events);
-                events.new_event(Update(ts));
-                events.new_event(Render);
+                events.new_event(CoreEvent::Events);
+                events.new_event(CoreEvent::Update(ts));
+                events.new_event(CoreEvent::Render);
                 events
             }
 

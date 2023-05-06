@@ -1,7 +1,7 @@
 use crate::ecs;
 use crate::includes::*;
 
-use crate::ecs::event::CoreEvent;
+use crate::ecs::events::CoreEvent;
 use crate::utils::event;
 
 #[ecs::event]
@@ -11,7 +11,7 @@ enum Events {
 }
 
 #[ecs::system]
-pub fn on_event(_ev: &CoreEvent::Events, e: &event::Event, events: &mut crate::EFoo) {
+pub fn on_event(_ev: &CoreEvent::Events, e: &event::Event, events: &mut dyn crate::EFooT) {
     for m in [
         event::Mouse::Left,
         event::Mouse::Right,

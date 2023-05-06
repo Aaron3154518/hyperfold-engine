@@ -3,9 +3,9 @@ use std::collections::HashMap;
 
 use super::physics;
 use crate::ecs;
-use crate::ecs::component::Components;
-use crate::ecs::entity::Entity;
-use crate::ecs::event;
+use crate::ecs::components::Components;
+use crate::ecs::entities::Entity;
+use crate::ecs::events;
 use crate::sdl2;
 use crate::utils::pointers::{self, Renderer, Texture, TextureAccess, TextureTrait, Window};
 use crate::utils::rect::{Align, Dimensions, Rect};
@@ -138,7 +138,7 @@ struct Image(pub Option<pointers::TextureAccess>);
 
 #[ecs::system]
 fn render(
-    _e: &event::CoreEvent::Render,
+    _e: &events::CoreEvent::Render,
     mut comps: Components<(&Entity, &mut Elevation, &Entity, &physics::Position, &Image)>,
     rs: &RenderSystem,
     screen: &Screen,

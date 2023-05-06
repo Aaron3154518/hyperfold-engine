@@ -6,6 +6,14 @@ pub trait HasPath {
     fn get_path_str(&self) -> String;
 }
 
+pub trait AddModPath {
+    fn add_mod_path(&mut self, path: Vec<String>);
+}
+
+pub trait AddPrefix {
+    fn add_prefix(&mut self, prefix: String);
+}
+
 // Comma-delimited list of paths
 pub fn join_paths<T>(v: &Vec<T>) -> String
 where
@@ -184,4 +192,28 @@ pub fn get_possible_use_paths(
         })
         .filter(|path| !path.is_empty())
         .collect::<Vec<_>>()
+}
+
+pub fn parse_path(super_path: &Vec<String>, path: &syn::Path) -> Vec<String> {
+    let mut v = Vec::new();
+    for s in path.segments.iter() {
+        if s.ident == "super" {
+            if v.is_empty() {
+                v.append(&mut super_path[..end(super_path, 0)].to_vec());
+            } else {
+                v.pop();
+            }
+        } else {
+            v.push(s.ident.to_string());
+        }
+    }
+    v
+}
+
+// To data
+pub fn to_data<T, F>(v: &Vec<T>, to_data: F) -> String
+where
+    F: Fn(&T) -> String,
+{
+    v.iter().map(|t| to_data(t)).collect::<Vec<_>>().join(" ")
 }

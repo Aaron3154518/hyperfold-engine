@@ -1,5 +1,10 @@
-use std::io::Write;
+use std::{
+    env,
+    fs::File,
+    io::{BufRead, BufReader, Write},
+};
 
+use hyperfold_build::env::{BuildData, DATA_FILE};
 use hyperfold_shared::label::LabelType;
 use quote::ToTokens;
 
@@ -39,13 +44,31 @@ pub fn string_to_path(path: String) -> syn::Path {
     syn::parse_str(&path).expect(format!("Could not parse path: {}", path).as_str())
 }
 
+// Read from data file
+pub fn read_data(data_ty: BuildData) -> String {
+    let mut f = BufReader::new(
+        File::open(env::temp_dir().join(DATA_FILE)).expect("Could not open data file for reading"),
+    );
+    let mut str = String::new();
+    for _ in 0..(data_ty as usize + 1) {
+        str.clear();
+        match f.read_line(&mut str) {
+            Ok(0) => panic!("Ran out of lines when trying to parse {:#?}", data_ty),
+            Err(e) => panic!("Error while trying to parse {:#?}: {}", data_ty, e),
+            _ => (),
+        }
+    }
+    // Trim newlines
+    str.trim().to_string()
+}
+
 // For writing to files
 pub struct Out {
     f: std::fs::File,
 }
 
 impl Out {
-    pub fn new(f: &'static str, app: bool) -> Self {
+    pub fn new(f: &str, app: bool) -> Self {
         Self {
             f: std::fs::OpenOptions::new()
                 .create(true)

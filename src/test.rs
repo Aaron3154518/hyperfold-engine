@@ -1,7 +1,6 @@
 use crate::ecs;
 use crate::ecs::component;
-use crate::ecs::component::Label;
-use crate::ecs::entity;
+use crate::ecs::components::Label;
 use crate::framework::render_system::{Camera, Elevation, Image, RenderSystem, Screen};
 use crate::framework::{event_system, physics};
 use crate::includes::*;
@@ -18,8 +17,8 @@ struct FBall;
 struct Player;
 
 #[ecs::system(Init)]
-fn init_player(entities: &mut crate::CFoo, rs: &mut RenderSystem, screen: &Screen) {
-    let e = entity::new();
+fn init_player(entities: &mut dyn crate::CFooT, rs: &mut RenderSystem, screen: &Screen) {
+    let e = ecs::entities::new();
     entities.add_component(e, Elevation(1));
     let img_w = screen.0.w.min(screen.0.h) / 8;
     entities.add_component(
@@ -89,7 +88,7 @@ fn spawn_fb(
     ev: &ecs::event::CoreEvent::Update,
     pos: &mut physics::Position,
     t: &mut FBallTimer,
-    entities: &mut crate::CFoo,
+    entities: &mut dyn crate::CFooT,
     rs: &mut RenderSystem,
     _l: Label<Player>,
 ) {

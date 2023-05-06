@@ -4,7 +4,13 @@
 
 extern crate proc_macro;
 
-use hyperfold_shared::macro_args::{ComponentMacroArgs, GlobalMacroArgs};
+use hyperfold_shared::{
+    macro_args::{ComponentMacroArgs, GlobalMacroArgs},
+    paths::{
+        COMPONENTS_MANAGER, COMPONENTS_TRAIT, EVENTS_MANAGER, EVENTS_TRAIT, GLOBALS_MANAGER,
+        SYSTEMS_MANAGER,
+    },
+};
 use proc_macro::TokenStream;
 use proc_macro2::Span;
 use quote::{format_ident, quote};
@@ -12,13 +18,15 @@ use syn::{parse_macro_input, parse_quote};
 
 mod parse;
 use parse::{
-    component::{Component, ComponentParseType},
+    component::Component,
+    dependencies::Dependencies,
     event::EventMod,
-    input::Input,
     paths::*,
     system::System,
     util::{arr_to_path, Out},
 };
+
+use crate::parse::component::Global;
 
 #[proc_macro_attribute]
 pub fn component(input: TokenStream, item: TokenStream) -> TokenStream {
@@ -27,6 +35,7 @@ pub fn component(input: TokenStream, item: TokenStream) -> TokenStream {
         return quote!().into();
     }
 
+    let cm_tr = format_ident!("{}", COMPONENTS_TRAIT);
     let input = parse_macro_input!(item as syn::Item);
     match input {
         syn::Item::Struct(mut s) => {
@@ -36,8 +45,8 @@ pub fn component(input: TokenStream, item: TokenStream) -> TokenStream {
                 quote!(
                     #s
 
-                    impl crate::ecs::component::LabelTrait for #name {
-                        fn add_label(&self, cm: &mut crate::CFoo, eid: crate::ecs::entity::Entity) {
+                    impl crate::LabelTrait for #name {
+                        fn add_label(&self, cm: &mut dyn crate::#cm_tr, eid: crate::ecs::entities::Entity) {
                             cm.add_component(eid, Self)
                         }
                     }
@@ -79,8 +88,6 @@ pub fn system(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
 #[proc_macro_attribute]
 pub fn event(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    let mut out = Out::new("out_en.txt", true);
-
     let en = parse_macro_input!(item as syn::ItemEnum);
 
     let name = en.ident;
@@ -120,7 +127,7 @@ pub fn event(_attr: TokenStream, item: TokenStream) -> TokenStream {
         })
         .collect::<Vec<_>>();
 
-    let code = quote!(
+    quote!(
         pub mod #name {
             use super::*;
             #(
@@ -128,43 +135,23 @@ pub fn event(_attr: TokenStream, item: TokenStream) -> TokenStream {
                 #strcts
             )*
         }
-    );
-    out.write(format!("{:#?}\n", code.to_string()));
-
-    code.into()
+    )
+    .into()
 }
 
-#[proc_macro]
-pub fn component_manager(input: TokenStream) -> TokenStream {
-    let mut f = Out::new("out3.txt", false);
-
-    // Parse args
-    let (sm, cm, gm, em) = parse_macro_input!(input as Input).get();
-
-    // Components
-    let components = Component::parse(ComponentParseType::Components);
-    let globals = Component::parse(ComponentParseType::Globals);
-
-    // Find specific globals
-    let [g_event_manager, g_event, g_render_system, g_component_manager, g_entity_trash, g_screen, g_camera] =
-        [
-            &crate_(em.to_string().as_str())[..],
-            &EVENT[..],
-            &RENDER_SYSTEM[..],
-            &crate_(cm.to_string().as_str())[..],
-            &ENTITY_TRASH[..],
-            &SCREEN[..],
-            &CAMERA[..],
-        ]
-        .map(|s| {
-            Component::find(&globals, s)
-                .expect(format!("Could not find global: {}", s.join("::")).as_str())
-                .var
-                .to_owned()
-        });
+fn main_component_manager(dir: String) -> proc_macro2::TokenStream {
+    // Key structs/traits
+    let (sm, cm, gm, em, cm_tr, em_tr) = (
+        format_ident!("{}", SYSTEMS_MANAGER),
+        format_ident!("{}", COMPONENTS_MANAGER),
+        format_ident!("{}", GLOBALS_MANAGER),
+        format_ident!("{}", EVENTS_MANAGER),
+        format_ident!("{}", COMPONENTS_TRAIT),
+        format_ident!("{}", EVENTS_TRAIT),
+    );
 
     // Events
-    let events = EventMod::parse();
+    let events = EventMod::parse(dir.to_string());
 
     let mut cnt = 0usize;
     let (e_strcts, e_varis, e_vars) = events.iter().enumerate().fold(
@@ -193,6 +180,11 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
         },
     );
     let num_events = syn::LitInt::new(cnt.to_string().as_str(), Span::call_site());
+
+    // Components
+    let components = Component::parse(dir);
+    // Globals
+    let globals = Global::parse();
 
     // Systems
     let mut systems = System::parse();
@@ -232,6 +224,24 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
         })
         .collect::<Vec<_>>();
 
+    // Find specific globals
+    let [g_event_manager, g_event, g_render_system, g_component_manager, g_entity_trash, g_screen, g_camera] =
+        [
+            &crate_(em.to_string().as_str())[..],
+            &EVENT[..],
+            &RENDER_SYSTEM[..],
+            &crate_(cm.to_string().as_str())[..],
+            &ENTITY_TRASH[..],
+            &SCREEN[..],
+            &CAMERA[..],
+        ]
+        .map(|s| {
+            Global::find(&globals, s)
+                .expect(format!("Could not find global: {}", s.join("::")).as_str())
+                .var
+                .to_owned()
+        });
+
     // Partition components into types
     let (c_vars, c_types) = components
         .into_iter()
@@ -242,29 +252,109 @@ pub fn component_manager(input: TokenStream) -> TokenStream {
         .map(|g| (g.var, g.ty))
         .unzip::<_, _, Vec<_>, Vec<_>>();
 
-    // Get types needed by systems!
-    let [mod_core_event] = [CORE_EVENT].map(|ty| arr_to_path(ty));
+    // Dependencies
+    let deps = Dependencies::parse()
+        .into_iter()
+        .map(|d| format_ident!("{}", d.name))
+        .collect::<Vec<_>>();
 
-    let code = quote!(
-        mod hyperfold_engine {
-            pub use hyperfold_shared::traits::*;
-            hyperfold_shared::events!(#em, #num_events,
+    quote!(
+        mod _engine {
+            use crate::ecs::shared::*;
+            use crate::ecs::entities::{Entity, EntityTrash};
+            use crate::ecs::events::CoreEvent;
+            events!(#em, #em_tr, (#(#deps),*), #num_events,
                 #(#((#e_strcts, #e_varis, #e_vars)),*),*
             );
-            hyperfold_shared::c_manager!(#cm, #(#c_vars, #c_types),*);
-            hyperfold_shared::g_manager!(#gm, #(#g_vars, #g_types),*);
-            hyperfold_shared::systems!(#sm, #cm, #gm, #em,
+            c_manager!(#cm, #cm_tr, (#(#deps),*), #(#c_vars, #c_types),*);
+            g_manager!(#gm, #(#g_vars, #g_types),*);
+            systems!(#sm, #cm, #gm, #em,
                 (
                     #g_event_manager, #g_event, #g_render_system,
                     #g_component_manager, #g_entity_trash,
                     #g_screen, #g_camera
                 ),
-                (#mod_core_event),
                 (#(#init_funcs),*), (#(#s_ev_varis, #funcs),*)
             );
         }
-        pub use hyperfold_engine::{#sm, #cm, #gm, #em};
+        use _engine::{#sm, #cm, #gm, #em, #cm_tr, #em_tr, LabelTrait};
+    )
+}
+
+fn sub_component_manager(dir: String) -> proc_macro2::TokenStream {
+    let deps = Dependencies::parse()
+        .into_iter()
+        .find(|d| d.name == dir)
+        .expect(format!("Could not find dependencies for: {}", dir.to_string()).as_str());
+
+    // Events
+    let e_strcts = EventMod::parse(dir.to_string())
+        .into_iter()
+        .filter(|e| deps.contains(&e.dep))
+        .map(|e| {
+            let path = e.get_path();
+            e.events
+                .into_iter()
+                .map(|v| {
+                    let mut p = path.to_owned();
+                    p.segments.push(syn::PathSegment {
+                        ident: format_ident!("{}", v),
+                        arguments: syn::PathArguments::None,
+                    });
+                    p
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+
+    // Components
+    let c_types = Component::parse(dir)
+        .into_iter()
+        .filter(|c| deps.contains(&c.dep))
+        .map(|c| c.ty)
+        .collect::<Vec<_>>();
+
+    let (cm_tr, em_tr) = (
+        format_ident!("{}", COMPONENTS_TRAIT),
+        format_ident!("{}", EVENTS_TRAIT),
     );
+
+    quote!(
+        mod _engine {
+            use crate::ecs::shared::*;
+            use crate::ecs::entities::Entity;
+            events_trait!(#em_tr, #(#(#e_strcts),*),*);
+            c_manager_trait!(#cm_tr, #(#c_types),*);
+        }
+        pub use _engine::{#cm_tr, #em_tr, LabelTrait};
+    )
+}
+
+#[proc_macro]
+pub fn component_manager(_input: TokenStream) -> TokenStream {
+    // Get dependencies
+    let dir = Span::call_site().unwrap().source_file().path();
+    let is_main = dir
+        .file_stem()
+        .expect(format!("Could not get file stem for: {:#?}", dir).as_str())
+        .to_string_lossy()
+        == "main";
+    let dir = dir
+        .ancestors()
+        .nth(dir.ancestors().count().max(2) - 2)
+        .expect(format!("Could not get topmost directory from path: {:#?}", dir).as_str())
+        .to_string_lossy()
+        .replace("-", "_")
+        .to_string();
+
+    let mut f = Out::new(if is_main { "out3.txt" } else { "out4.txt" }, false);
+    f.write("Hi".to_string());
+
+    let code = if is_main {
+        main_component_manager(dir)
+    } else {
+        sub_component_manager(dir)
+    };
 
     // Open out.txt to print stuff
     f.write(format!("Code:\n{}\n", code));

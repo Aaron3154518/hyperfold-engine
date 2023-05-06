@@ -1,7 +1,7 @@
 use crate::ecs;
 
 use crate::{
-    ecs::event::CoreEvent,
+    ecs::events::CoreEvent,
     utils::rect::{PointF, Rect},
 };
 

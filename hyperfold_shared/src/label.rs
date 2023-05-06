@@ -1,9 +1,4 @@
-// Label paths
-pub const LABEL_PATH: [&str; 4] = ["crate", "ecs", "component", "Label"];
-pub const AND_LABELS_PATH: [&str; 4] = ["crate", "ecs", "component", "AndLabels"];
-pub const OR_LABELS_PATH: [&str; 4] = ["crate", "ecs", "component", "OrLabels"];
-pub const NAND_LABELS_PATH: [&str; 4] = ["crate", "ecs", "component", "NandLabels"];
-pub const NOR_LABELS_PATH: [&str; 4] = ["crate", "ecs", "component", "NorLabels"];
+use crate::paths::{AND_LABELS_PATH, NAND_LABELS_PATH, NOR_LABELS_PATH, OR_LABELS_PATH};
 
 #[derive(Clone, Debug)]
 pub enum LabelType {

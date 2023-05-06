@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use hyperfold_build::ast_parser::SYSTEMS;
+use hyperfold_build::env::BuildData;
 use hyperfold_shared::{
     label::{LabelType, NUM_LABEL_TYPES},
     paths::ENTITY_PATH,
@@ -9,7 +9,10 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use regex::Regex;
 
-use super::{component::Component, util::*};
+use super::{
+    component::{Component, Global},
+    util::*,
+};
 
 // Systems parser
 #[derive(Clone, Debug)]
@@ -68,9 +71,8 @@ impl System {
     }
 
     pub fn parse() -> Vec<Self> {
-        let parser = SystemParser::new();
-        std::env::var(SYSTEMS)
-            .expect(SYSTEMS)
+        let parser: SystemParser = SystemParser::new();
+        read_data(BuildData::Systems)
             .split(" ")
             .map(|s| parser.parse(s))
             .collect()
@@ -90,7 +92,7 @@ impl System {
         }
     }
 
-    pub fn get_args(&self, comps: &Vec<Component>, globals: &Vec<Component>) -> SystemArgTokens {
+    pub fn get_args(&self, comps: &Vec<Component>, globals: &Vec<Global>) -> SystemArgTokens {
         let mut tokens = SystemArgTokens::new();
         tokens.has_event = self.event.is_some();
 
@@ -489,7 +491,7 @@ impl SystemArgTokens {
             let if_stmt = self.quote_labels(quote!(#f(#(#args),*)));
 
             quote!(
-                for eid in hyperfold_shared::intersect::intersect_keys(&mut [#(hyperfold_shared::intersect::get_keys(&cm.#c_args)),*]).iter() {
+                for eid in crate::ecs::shared::intersect::intersect_keys(&mut [#(crate::ecs::shared::intersect::get_keys(&cm.#c_args)),*]).iter() {
                     if let (#(Some(#c_args),)*) = (#(cm.#c_args.get_mut(eid),)*) {
                         #if_stmt
                     }
@@ -529,7 +531,7 @@ impl SystemArgTokens {
                     VecArgTokens::Component(_, m) => Some(
                         syn::parse_str::<syn::ExprCall>(
                             format!(
-                                "hyperfold_shared::intersect::intersect{}(v, &mut cm.{}, |t| &mut t.{})",
+                                "crate::ecs::shared::intersect::intersect{}(v, &mut cm.{}, |t| &mut t.{})",
                                 if *m { "_mut" } else { "" },
                                 a,
                                 i + 1

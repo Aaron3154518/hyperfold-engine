@@ -1,10 +1,10 @@
-use crate::util::{eval_cfg_args, get_attributes_if_active, EcsAttribute};
+use crate::util::{eval_cfg_args, get_attributes_if_active, AddModPath, AddPrefix, EcsAttribute};
 
 use super::{
     component::{Component, Global},
     event::EventMod,
     system::{System, SystemArg},
-    util::{concatenate, end, get_attributes, join_paths, Attribute},
+    util::{end, get_attributes, join_paths, Attribute},
 };
 use hyperfold_shared::macro_args::{ComponentMacroArgs, GlobalMacroArgs, SystemMacroArgs};
 
@@ -39,15 +39,51 @@ impl AstVisitor {
         }
     }
 
+    pub fn add_prefix(&mut self, prefix: String) {
+        if prefix.is_empty() {
+            self.path.insert(0, "crate".to_string())
+        } else {
+            // Update path
+            self.path.insert(0, prefix.to_string());
+            // Update use paths
+            for u in self.uses.iter_mut() {
+                if let Some(s) = u.0.first_mut() {
+                    if s == "crate" {
+                        *s = prefix.to_string()
+                    }
+                }
+            }
+            // Update system args
+            for s in self.systems.iter_mut() {
+                s.add_prefix(prefix.to_string())
+            }
+        }
+        // Update everything else
+        let mod_path = self.get_mod_path();
+        for c in self.components.iter_mut() {
+            c.add_mod_path(mod_path.to_vec())
+        }
+        for g in self.globals.iter_mut() {
+            g.add_mod_path(mod_path.to_vec())
+        }
+        for e in self.events.iter_mut() {
+            e.add_mod_path(mod_path.to_vec())
+        }
+        for s in self.systems.iter_mut() {
+            s.add_mod_path(mod_path.to_vec());
+        }
+    }
+
     pub fn to_file(&self) -> String {
         format!("{}.rs", self.path.join("/"))
     }
 
     pub fn get_mod_path(&self) -> Vec<String> {
         if self.is_entry {
-            vec!["crate".to_string()]
+            // Pop file name
+            self.path[..end(&self.path, 0)].to_vec()
         } else {
-            concatenate(vec!["crate".to_string()], self.path.to_vec())
+            self.path.to_vec()
         }
     }
 
@@ -129,14 +165,14 @@ impl syn::visit_mut::VisitMut for AstVisitor {
             attrs.into_iter().find_map(|(ty, args)| match ty {
                 EcsAttribute::Component => {
                     self.add_component(Component {
-                        path: concatenate(self.get_mod_path(), vec![i.ident.to_string()]),
+                        path: vec![i.ident.to_string()],
                         args: ComponentMacroArgs::from(args),
                     });
                     Some(())
                 }
                 EcsAttribute::Global => {
                     self.add_global(Global {
-                        path: concatenate(self.get_mod_path(), vec![i.ident.to_string()]),
+                        path: vec![i.ident.to_string()],
                         args: GlobalMacroArgs::from(args),
                     });
                     Some(())
@@ -154,7 +190,7 @@ impl syn::visit_mut::VisitMut for AstVisitor {
                 EcsAttribute::System => {
                     // Parse function path and args
                     self.systems.push(System {
-                        path: concatenate(self.get_mod_path(), vec![i.sig.ident.to_string()]),
+                        path: vec![i.sig.ident.to_string()],
                         args: i
                             .sig
                             .inputs
@@ -184,7 +220,7 @@ impl syn::visit_mut::VisitMut for AstVisitor {
             attrs.into_iter().find_map(|(ty, _)| match ty {
                 EcsAttribute::Event => {
                     self.events.push(EventMod {
-                        path: concatenate(self.get_mod_path(), vec![i.ident.to_string()]),
+                        path: vec![i.ident.to_string()],
                         events: i.variants.iter().map(|v| v.ident.to_string()).collect(),
                     });
                     Some(())

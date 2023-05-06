@@ -3,8 +3,11 @@
 use bindgen;
 use bindgen::callbacks::{DeriveInfo, ParseCallbacks};
 use cargo_metadata::MetadataCommand;
-use hyperfold_build::ast_parser::{AstData, AstParser, COMPONENTS, EVENTS, GLOBALS, SYSTEMS};
+use hyperfold_build::ast_parser::AstParser;
+use hyperfold_build::env::*;
 use std::env;
+use std::fs::File;
+use std::io::Write;
 use std::path::PathBuf;
 
 #[derive(Default, Debug)]
@@ -105,14 +108,24 @@ fn main() {
         })
         .collect::<Vec<_>>();
 
-    let parser = AstParser::parse("src/lib.rs", features);
+    let mut parser = AstParser::new();
+    parser.parse("hyperfold_engine", Vec::new(), "src/lib.rs", features);
+    // parser.parse("", vec!["hyperfold_engine"], "../src/main.rs", Vec::new());
     eprintln!("{}", parser);
 
-    let data = AstData::from(&parser);
+    let data = parser.get_data();
     eprintln!("{}", data);
 
-    println!("cargo:rustc-env={}={}", COMPONENTS, data.components_data);
-    println!("cargo:rustc-env={}={}", GLOBALS, data.globals_data);
-    println!("cargo:rustc-env={}={}", EVENTS, data.events_data);
-    println!("cargo:rustc-env={}={}", SYSTEMS, data.systems_data);
+    let path = std::env::temp_dir().join(DATA_FILE);
+    eprintln!("Writing data to: {:#?}", path);
+    let mut f = File::create(&path).expect("Could not open data file");
+    f.write_fmt(format_args!(
+        "{}\n{}\n{}\n{}\n{}\n",
+        data.components_data,
+        data.globals_data,
+        data.events_data,
+        data.systems_data,
+        "hyperfold_engine()"
+    ))
+    .expect("Could not write to data file");
 }
