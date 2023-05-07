@@ -110,7 +110,12 @@ fn main() {
 
     let mut parser = AstParser::new();
     parser.parse("hyperfold_engine", Vec::new(), "src/lib.rs", features);
-    // parser.parse("", vec!["hyperfold_engine"], "../src/main.rs", Vec::new());
+    parser.parse(
+        "crate",
+        vec!["hyperfold_engine"],
+        "../src/main.rs",
+        Vec::new(),
+    );
     eprintln!("{}", parser);
 
     let data = parser.get_data();

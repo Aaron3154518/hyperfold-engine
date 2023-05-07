@@ -143,24 +143,33 @@ impl AstParser {
                 (cs, gs, es)
             },
         );
-        let traits = self.prefixes.iter().fold(Vec::new(), |mut v, pre| {
-            for (tr, gl) in [
-                (COMPONENTS_TRAIT, COMPONENTS_MANAGER),
-                (EVENTS_TRAIT, EVENTS_MANAGER),
-            ] {
-                v.push(Trait {
-                    g_trait: Global {
-                        path: vec![pre.to_string(), tr.to_string()],
-                        args: GlobalMacroArgs::from(Vec::new()),
-                    },
-                    global: Global {
-                        path: vec![pre.to_string(), gl.to_string()],
-                        args: GlobalMacroArgs::from(Vec::new()),
-                    },
+
+        // Hardcode traits and globals
+        let (traits, mut trait_globals) = [
+            (COMPONENTS_TRAIT, COMPONENTS_MANAGER),
+            (EVENTS_TRAIT, EVENTS_MANAGER),
+        ]
+        .into_iter()
+        .enumerate()
+        .fold(
+            (Vec::new(), Vec::new()),
+            |(mut trs, mut gls), (i, (tr, gl))| {
+                for pre in self.prefixes.iter() {
+                    trs.push(Trait {
+                        g_trait: Global {
+                            path: vec![pre.to_string(), tr.to_string()],
+                            args: GlobalMacroArgs::from(Vec::new()),
+                        },
+                        g_idx: globals.len() + i,
+                    });
+                }
+                gls.push(Global {
+                    path: vec!["crate".to_string(), gl.to_string()],
+                    args: GlobalMacroArgs::from(Vec::new()),
                 });
-            }
-            v
-        });
+                (trs, gls)
+            },
+        );
 
         // Get systems and map args to components
         let (systems, systems_data) =
@@ -178,7 +187,7 @@ impl AstParser {
         let systems_data = systems_data.join(" ");
 
         // Add traits
-        globals.append(&mut traits.into_iter().map(|t| t.global).collect());
+        globals.append(&mut trait_globals);
 
         // Get components/event data
         let components_data = to_data(&components, |c| c.to_data());

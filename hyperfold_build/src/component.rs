@@ -58,5 +58,5 @@ impl HasPath for Global {
 #[derive(Clone, Debug)]
 pub struct Trait {
     pub g_trait: Global,
-    pub global: Global,
+    pub g_idx: usize,
 }

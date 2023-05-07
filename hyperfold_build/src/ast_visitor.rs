@@ -40,23 +40,19 @@ impl AstVisitor {
     }
 
     pub fn add_prefix(&mut self, prefix: String) {
-        if prefix.is_empty() {
-            self.path.insert(0, "crate".to_string())
-        } else {
-            // Update path
-            self.path.insert(0, prefix.to_string());
-            // Update use paths
-            for u in self.uses.iter_mut() {
-                if let Some(s) = u.0.first_mut() {
-                    if s == "crate" {
-                        *s = prefix.to_string()
-                    }
+        // Update path
+        self.path.insert(0, prefix.to_string());
+        // Update use paths
+        for u in self.uses.iter_mut() {
+            if let Some(s) = u.0.first_mut() {
+                if s == "crate" {
+                    *s = prefix.to_string()
                 }
             }
-            // Update system args
-            for s in self.systems.iter_mut() {
-                s.add_prefix(prefix.to_string())
-            }
+        }
+        // Update system args
+        for s in self.systems.iter_mut() {
+            s.add_prefix(prefix.to_string())
         }
         // Update everything else
         let mod_path = self.get_mod_path();

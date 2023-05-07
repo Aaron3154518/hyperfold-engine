@@ -2,7 +2,7 @@ use hyperfold_shared::paths::PREFIX;
 
 // Hardcoded global components
 pub fn crate_<'a>(n: &'a str) -> [&'a str; 2] {
-    return [PREFIX, n];
+    return ["crate", n];
 }
 pub const EVENT: [&str; 4] = [PREFIX, "utils", "event", "Event"];
 pub const RENDER_SYSTEM: [&str; 4] = [PREFIX, "framework", "render_system", "RenderSystem"];

@@ -58,7 +58,7 @@ impl System {
         traits: &Vec<Trait>,
         events: &Vec<EventMod>,
     ) -> String {
-        let (mut c_set, mut g_set, mut t_set) = (HashSet::new(), HashSet::new(), HashSet::new());
+        let (mut c_set, mut g_set) = (HashSet::new(), HashSet::new());
         let [mut has_event, mut has_eid, mut has_comps, mut has_vec] = [false; 4];
         let mut errs = Vec::new();
         let args = self
@@ -69,7 +69,7 @@ impl System {
                 let k = a.map_to_objects(use_paths, components, globals, traits, events);
                 if self.macro_args.is_init {
                     match k {
-                        SystemArgKind::Global(_) => (),
+                        SystemArgKind::Global(_) | SystemArgKind::Trait(_) => (),
                         _ => errs.push(
                             format!(
                                 "{}: Init system may only take globals but \"{}\" is {}",
@@ -110,7 +110,7 @@ impl System {
                             }
                             format!("c{}", i)
                         }
-                        SystemArgKind::Global(i) => {
+                        SystemArgKind::Global(i) | SystemArgKind::Trait(i) => {
                             if !g_set.insert(i) {
                                 errs.push(format!(
                                     "{}: Duplicate component type, \"{}\"",
@@ -119,16 +119,6 @@ impl System {
                                 ));
                             }
                             format!("g{}", i)
-                        }
-                        SystemArgKind::Trait(i) => {
-                            if !t_set.insert(i) {
-                                errs.push(format!(
-                                    "{}: Duplicate component type, \"{}\"",
-                                    err_head,
-                                    a.get_type()
-                                ));
-                            }
-                            format!("g{}", i + globals.len())
                         }
                         SystemArgKind::Event(ei, vi) => {
                             if has_event {
@@ -377,15 +367,7 @@ impl SystemArg {
                 poss_paths
                     .iter()
                     .find_map(|path| {
-                        // Global
-                        if let Some((i, g)) = traits.iter().enumerate().find_map(|(i, tr)| if tr.g_trait.path == *path { Some((i, &tr.global)) } else {None}) {
-                            if g.args.is_const && self.mutable {
-                                panic!("In argument \"{}\": global type \"{}\" is marked const but is taken mutably", self.name, self.get_type())
-                            }
-                            Some(SystemArgKind::Trait(i))
-                        } else {
-                            None
-                        }
+                        traits.iter().find(|tr| tr.g_trait.path == *path).map(|tr| SystemArgKind::Trait(tr.g_idx))
                     })
                     .map_or(SystemArgKind::Unknown, |k| k)
             }
