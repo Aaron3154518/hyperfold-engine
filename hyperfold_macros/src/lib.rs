@@ -18,12 +18,8 @@ use syn::{parse_macro_input, parse_quote};
 
 mod parse;
 use parse::{
-    component::Component,
-    dependencies::Dependencies,
-    event::EventMod,
-    paths::*,
-    system::System,
-    util::{arr_to_path, Out},
+    component::Component, dependencies::Dependencies, event::EventMod, paths::*, system::System,
+    util::Out,
 };
 
 use crate::parse::component::Global;
@@ -35,25 +31,11 @@ pub fn component(input: TokenStream, item: TokenStream) -> TokenStream {
         return quote!().into();
     }
 
-    let cm_tr = format_ident!("{}", COMPONENTS_TRAIT);
     let input = parse_macro_input!(item as syn::Item);
     match input {
         syn::Item::Struct(mut s) => {
             s.vis = syn::parse_quote!(pub);
-            let name = &s.ident;
-            if args.is_label {
-                quote!(
-                    #s
-
-                    impl crate::LabelTrait for #name {
-                        fn add_label(&self, cm: &mut dyn crate::#cm_tr, eid: crate::ecs::entities::Entity) {
-                            cm.add_component(eid, Self)
-                        }
-                    }
-                )
-            } else {
-                quote!(#s)
-            }
+            quote!(#s)
         }
         _ => panic!("Only structs can be components"),
     }
@@ -277,7 +259,7 @@ fn main_component_manager(dir: String) -> proc_macro2::TokenStream {
                 (#(#init_funcs),*), (#(#s_ev_varis, #funcs),*)
             );
         }
-        use _engine::{#sm, #cm, #gm, #em, #cm_tr, #em_tr, LabelTrait};
+        use _engine::{#sm, #cm, #gm, #em, #cm_tr, #em_tr};
     )
 }
 
@@ -326,7 +308,7 @@ fn sub_component_manager(dir: String) -> proc_macro2::TokenStream {
             events_trait!(#em_tr, #(#(#e_strcts),*),*);
             c_manager_trait!(#cm_tr, #(#c_types),*);
         }
-        pub use _engine::{#cm_tr, #em_tr, LabelTrait};
+        pub use _engine::{#cm_tr, #em_tr};
     )
 }
 

@@ -127,29 +127,9 @@ macro_rules! c_manager {
 
         c_manager_trait!($cm_tr, $($c_t),*);
 
-        impl $cm_tr for $cm {
-            fn add_labels(&mut self, e: Entity, ls: Vec<&dyn LabelTrait>) {
-                for l in ls {
-                    l.add_label(self, e);
-                }
-            }
-
-            fn add_label(&mut self, e: Entity, l: &dyn LabelTrait) {
-                l.add_label(self, e);
-            }
-        }
+        impl $cm_tr for $cm {}
         $(
-            impl $deps::$cm_tr for $cm {
-                fn add_labels(&mut self, e: Entity, ls: Vec<&dyn $deps::LabelTrait>) {
-                    for l in ls {
-                        l.add_label(self, e);
-                    }
-                }
-
-                fn add_label(&mut self, e: Entity, l: &dyn $deps::LabelTrait) {
-                    l.add_label(self, e);
-                }
-            }
+            impl $deps::$cm_tr for $cm {}
         )*
     };
 }
@@ -157,15 +137,7 @@ macro_rules! c_manager {
 #[macro_export]
 macro_rules! c_manager_trait {
     ($cm_tr: ident, $($c_t: ty),*) => {
-        pub trait LabelTrait {
-            fn add_label(&self, cm: &mut dyn $cm_tr, eid: Entity);
-        }
-
-        sum_traits!($cm_tr, ($(ComponentManager<Entity, $c_t>),*), {
-            fn add_labels(&mut self, e: Entity, ls: Vec<&dyn LabelTrait>);
-
-            fn add_label(&mut self, e: Entity, l: &dyn LabelTrait);
-        });
+        sum_traits!($cm_tr, ($(ComponentManager<Entity, $c_t>),*), {});
     };
 }
 

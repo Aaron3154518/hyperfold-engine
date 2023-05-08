@@ -15,19 +15,14 @@ where
 #[derive(Debug, Clone)]
 pub struct ComponentMacroArgs {
     pub is_dummy: bool,
-    pub is_label: bool,
 }
 
 impl From<Vec<String>> for ComponentMacroArgs {
     fn from(vals: Vec<String>) -> Self {
-        let mut c = Self {
-            is_dummy: false,
-            is_label: false,
-        };
+        let mut c = Self { is_dummy: false };
         for v in vals {
             match v.as_str() {
                 "Dummy" => c.is_dummy = true,
-                "Label" => c.is_label = true,
                 "Const" => panic!(
                     "{}\n{}",
                     "Component cannot be Const", "Perhaps you meant to declare this as \"global\"?"
