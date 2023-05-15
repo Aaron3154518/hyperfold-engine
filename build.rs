@@ -1,14 +1,10 @@
-#![feature(result_option_inspect)]
-
-use bindgen;
 use bindgen::callbacks::{DeriveInfo, ParseCallbacks};
-use cargo_metadata::MetadataCommand;
-use hyperfold_build::ast_parser::AstParser;
-use hyperfold_build::env::*;
-use std::env;
-use std::fs::File;
-use std::io::Write;
-use std::path::PathBuf;
+use std::{env, path::PathBuf};
+
+use parser::{
+    parse::ast_crate::Crate, resolve::ast_items::ItemsCrate, util::end,
+    validate::ast_validate::ItemData,
+};
 
 #[derive(Default, Debug)]
 struct MyCallbacks;
@@ -23,15 +19,17 @@ impl ParseCallbacks for MyCallbacks {
         }
     }
 }
-fn main() {
-    let out_dir = PathBuf::from(env::var("OUT_DIR").expect("Missing OUT_DIR environment variable"));
 
-    let sdl2_path = "sdl/SDL2-devel-2.26.5-VC/SDL2-2.26.5";
-    let sdl2_image_path = "sdl/SDL2_image-devel-2.6.3-VC/SDL2_image-2.6.3";
+const ENGINE_CRATE: &str = "hyperfold-engine";
+const SDL2_PATH: &str = "sdl/SDL2-devel-2.26.5-VC/SDL2-2.26.5";
+const SDL2_IMAGE_PATH: &str = "sdl/SDL2_image-devel-2.6.3-VC/SDL2_image-2.6.3";
+
+fn build_sdl() {
+    let out_dir = PathBuf::from(env::var("OUT_DIR").expect("Missing OUT_DIR environment variable"));
 
     // Generate bindings for SDL.h
     let bindings = bindgen::Builder::default()
-        .header(format!("{}/include/SDL.h", sdl2_path))
+        .header(format!("{SDL2_PATH}/include/SDL.h"))
         .generate_comments(false)
         .default_enum_style(bindgen::EnumVariation::Rust {
             non_exhaustive: false,
@@ -46,10 +44,20 @@ fn main() {
         .write_to_file(out_dir.join("sdl2_bindings.rs"))
         .expect("Error writing SDL2 bindings to file");
 
+    // Link to the SDL2 library
+    println!("cargo:rustc-link-search={ENGINE_CRATE}/{SDL2_PATH}/lib/x64");
+    println!("cargo:rustc-link-lib=SDL2");
+    println!("cargo:rustc-link-lib=SDL2main");
+    println!("cargo:rerun-if-changed={ENGINE_CRATE}/{SDL2_PATH}/includes/SDL.h");
+}
+
+fn build_sdl_image() {
+    let out_dir = PathBuf::from(env::var("OUT_DIR").expect("Missing OUT_DIR environment variable"));
+
     // Generate bindings for SDL_Image.h
     let bindings = bindgen::Builder::default()
-        .header(format!("{}/include/SDL_image.h", sdl2_image_path))
-        .clang_arg(format!("-I{}/include", sdl2_path))
+        .header(format!("{SDL2_IMAGE_PATH}/include/SDL_image.h"))
+        .clang_arg(format!("-I{SDL2_PATH}/include"))
         .clang_arg("-Wno-everything")
         .generate_comments(false)
         .default_enum_style(bindgen::EnumVariation::Rust {
@@ -69,68 +77,56 @@ fn main() {
         .write_to_file(out_dir.join("sdl2_image_bindings.rs"))
         .expect("Error writing SDL2_Image bindings to file");
 
-    // Link to the SDL2 library
-    println!(
-        "cargo:rustc-link-search=hyperfold-engine/{}/lib/x64",
-        sdl2_path
-    );
-    println!("cargo:rustc-link-lib=SDL2");
-    println!("cargo:rustc-link-lib=SDL2main");
-    println!(
-        "cargo:rerun-if-changed=hyperfold-engine/{}/includes/SDL.h",
-        sdl2_path
-    );
-
     // Link to the SDL2_image library
-    println!(
-        "cargo:rustc-link-search=hyperfold-engine/{}/lib/x64",
-        sdl2_image_path
-    );
+    println!("cargo:rustc-link-search={ENGINE_CRATE}/{SDL2_IMAGE_PATH}/lib/x64");
     println!("cargo:rustc-link-lib=SDL2_image");
-    println!(
-        "cargo:rerun-if-changed=hyperfold-engine/{}/includes/SDL_Image.h",
-        sdl2_image_path
-    );
+    println!("cargo:rerun-if-changed={ENGINE_CRATE}/{SDL2_IMAGE_PATH}/includes/SDL_Image.h");
+}
 
-    let features = MetadataCommand::new()
-        .no_deps()
-        .exec()
-        .expect("Failed to get metadata")
-        .packages[0]
-        .features
-        .keys()
-        .filter_map(|k| {
-            match env::var(format!("CARGO_FEATURE_{}", k.replace("-", "_").to_uppercase()).as_str())
+pub fn main() {
+    build_sdl();
+    build_sdl_image();
+
+    // TODO: cfg features
+    // let features = MetadataCommand::new()
+    //     .no_deps()
+    //     .exec()
+    //     .expect("Failed to get metadata")
+    //     .packages[0]
+    //     .features
+    //     .keys()
+    //     .filter_map(|k| {
+    //         match env::var(format!("CARGO_FEATURE_{}", k.replace("-", "_").to_uppercase()).as_str())
+    //         {
+    //             Ok(_) => Some(k.to_owned()),
+    //             Err(_) => None,
+    //         }
+    //     })
+    //     .collect::<Vec<_>>();
+
+    // TODO: hardcoded
+    let (crates, paths) = Crate::parse(PathBuf::from("../"));
+
+    let mut items = crates[..end(&crates, 1)]
+        .iter()
+        .map(|cr| {
+            let mut ic = ItemsCrate::new();
+            ic.parse_crate(cr, &paths, &crates);
+            // Remove macros crate as crate dependency
+            if let Some(i) = ic
+                .dependencies
+                .iter()
+                .position(|d| d.cr_idx == crates.len() - 1)
             {
-                Ok(_) => Some(k.to_owned()),
-                Err(_) => None,
+                ic.dependencies.swap_remove(i);
             }
+            ic
         })
         .collect::<Vec<_>>();
 
-    let mut parser = AstParser::new();
-    parser.parse("hyperfold_engine", Vec::new(), "src/lib.rs", features);
-    parser.parse(
-        "crate",
-        vec!["hyperfold_engine"],
-        "../src/main.rs",
-        Vec::new(),
-    );
-    eprintln!("{}", parser);
+    let data = ItemData::validate(&paths, &mut items);
 
-    let data = parser.get_data();
-    eprintln!("{}", data);
+    eprintln!("{data:#?}");
 
-    let path = std::env::temp_dir().join(DATA_FILE);
-    eprintln!("Writing data to: {:#?}", path);
-    let mut f = File::create(&path).expect("Could not open data file");
-    f.write_fmt(format_args!(
-        "{}\n{}\n{}\n{}\n{}\n",
-        data.components_data,
-        data.globals_data,
-        data.events_data,
-        data.systems_data,
-        "hyperfold_engine()"
-    ))
-    .expect("Could not write to data file");
+    data.write_to_file();
 }

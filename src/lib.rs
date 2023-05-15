@@ -1,20 +1,17 @@
-#![feature(const_type_id)]
-#![feature(map_many_mut)]
-#![feature(hash_raw_entry)]
+#![feature(hash_drain_filter)]
 
-pub mod ecs;
-pub mod framework;
-pub mod includes;
 mod sdl2_bindings;
-mod sdl2_image_bindings;
-#[cfg(feature = "test")]
-pub mod test;
-pub mod utils;
-
 pub use sdl2_bindings::sdl2_ as sdl2;
+mod sdl2_image_bindings;
 pub use sdl2_image_bindings::sdl2_image_ as sdl2_image;
 
-ecs::component_manager!();
+pub use macros::{component, event, game_crate, global, system};
+pub mod ecs;
+pub mod framework;
+pub mod intersect;
+pub mod utils;
+
+game_crate!();
 
 pub fn init_sdl() {
     // Initialize SDL2

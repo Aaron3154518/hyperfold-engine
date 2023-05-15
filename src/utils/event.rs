@@ -1,4 +1,3 @@
-use crate::ecs;
 use num_traits::FromPrimitive;
 
 use super::rect::*;
@@ -11,7 +10,6 @@ const MOUSE_BTN_LEFT: u8 = sdl2::SDL_BUTTON_LEFT as u8;
 const MOUSE_BTN_RIGHT: u8 = sdl2::SDL_BUTTON_RIGHT as u8;
 const MOUSE_BTN_MIDDLE: u8 = sdl2::SDL_BUTTON_MIDDLE as u8;
 
-#[repr(u8)]
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub enum Mouse {
     Left = 0,
@@ -30,7 +28,6 @@ impl Mouse {
     }
 }
 
-#[repr(u8)]
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub enum Status {
     Down = 0x01,
@@ -116,7 +113,6 @@ impl KeyButton {
     }
 }
 
-#[repr(u8)]
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub enum InputSeek {
     None = 0,
@@ -124,7 +120,7 @@ pub enum InputSeek {
     End,
 }
 
-#[ecs::global(Const)]
+#[macros::global(Const)]
 pub struct Event {
     pub dt: u32,
     pub quit: bool,

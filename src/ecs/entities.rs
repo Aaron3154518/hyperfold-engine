@@ -1,13 +1,18 @@
-use crate::ecs;
 use uuid::Uuid;
+
+pub trait NewEntity {
+    fn new() -> Entity;
+}
 
 pub type Entity = Uuid;
 
-pub fn new() -> Entity {
-    Entity::new_v4()
+impl NewEntity for Entity {
+    fn new() -> Entity {
+        Self::new_v4()
+    }
 }
 
-#[ecs::global]
+#[macros::global]
 struct EntityTrash(pub Vec<Entity>);
 
 impl EntityTrash {

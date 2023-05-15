@@ -2,8 +2,7 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 
 use super::physics;
-use crate::ecs;
-use crate::ecs::components::Components;
+use crate::ecs::components::Container;
 use crate::ecs::entities::Entity;
 use crate::ecs::events;
 use crate::sdl2;
@@ -36,7 +35,7 @@ impl AssetManager {
     }
 }
 
-#[ecs::global]
+#[macros::global]
 pub struct RenderSystem {
     win: Window,
     pub r: Renderer,
@@ -89,7 +88,7 @@ macro_rules! draw {
     };
 }
 
-#[ecs::global(Const)]
+#[macros::global(Const)]
 struct Screen(pub Dimensions<u32>);
 
 impl Screen {
@@ -98,7 +97,7 @@ impl Screen {
     }
 }
 
-#[ecs::global]
+#[macros::global]
 struct Camera(pub Rect);
 
 impl Camera {
@@ -130,16 +129,16 @@ pub fn rect_to_camera_coords(rect: &Rect, screen: &Screen, camera: &Camera) -> R
     r
 }
 
-#[ecs::component]
+#[macros::component]
 struct Elevation(pub u8);
 
-#[ecs::component]
+#[macros::component]
 struct Image(pub Option<pointers::TextureAccess>);
 
-#[ecs::system]
+#[macros::system]
 fn render(
-    _e: &events::CoreEvent::Render,
-    mut comps: Components<(&Entity, &mut Elevation, &Entity, &physics::Position, &Image)>,
+    _e: &events::core::Render,
+    mut comps: Container<(&Entity, &mut Elevation, &Entity, &physics::Position, &Image)>,
     rs: &RenderSystem,
     screen: &Screen,
     camera: &Camera,

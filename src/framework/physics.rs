@@ -1,14 +1,12 @@
-use crate::ecs;
-
 use crate::{
-    ecs::events::CoreEvent,
+    ecs::events::core,
     utils::rect::{PointF, Rect},
 };
 
-#[ecs::component]
+#[macros::component]
 struct Position(pub Rect);
 
-#[ecs::component]
+#[macros::component]
 struct PhysicsData {
     pub v: PointF,
     pub a: PointF,
@@ -25,8 +23,8 @@ impl PhysicsData {
     }
 }
 
-#[ecs::system]
-fn update_physics(up: &CoreEvent::Update, pos: &mut Position, pd: &mut PhysicsData) {
+#[macros::system]
+fn update_physics(up: &core::Update, pos: &mut Position, pd: &mut PhysicsData) {
     let s = up.0 as f32 / 1000.0;
     let a_f = s * s / 2.0;
     pos.0
