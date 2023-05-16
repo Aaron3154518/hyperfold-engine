@@ -91,3 +91,32 @@ where
         }
     }
 }
+
+// Track ownership
+pub enum SharedTexture {
+    Owned(Texture),
+    Shared(TextureAccess),
+    None,
+}
+
+impl SharedTexture {
+    pub fn access(&self) -> Option<TextureAccess> {
+        match self {
+            SharedTexture::Owned(t) => Some(t.access()),
+            SharedTexture::Shared(t) => Some(*t),
+            SharedTexture::None => None,
+        }
+    }
+}
+
+impl From<Option<Texture>> for SharedTexture {
+    fn from(value: Option<Texture>) -> Self {
+        value.map_or(SharedTexture::None, |t| SharedTexture::Owned(t))
+    }
+}
+
+impl From<Option<TextureAccess>> for SharedTexture {
+    fn from(value: Option<TextureAccess>) -> Self {
+        value.map_or(SharedTexture::None, |t| SharedTexture::Shared(t))
+    }
+}

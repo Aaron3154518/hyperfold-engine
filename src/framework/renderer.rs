@@ -1,5 +1,8 @@
 use crate::framework::texture::Texture;
 use crate::sdl2;
+use crate::utils::colors::BLACK;
+use crate::utils::rect::Dimensions;
+use crate::utils::rect::Rect;
 
 use std::ffi::CString;
 use std::ptr::null_mut;
@@ -56,10 +59,9 @@ impl Drop for Window {
 pub trait RendererTrait {
     fn get(&self) -> *mut sdl2::SDL_Renderer;
 
+    // Managing render state
     fn set_target_ptr(&self, target: *mut sdl2::SDL_Texture) {
-        unsafe {
-            sdl2::SDL_SetRenderTarget(self.get(), target);
-        }
+        unsafe { sdl2::SDL_SetRenderTarget(self.get(), target) };
     }
 
     fn set_target(&self, target: Option<impl TextureTrait>) {
@@ -70,6 +72,22 @@ pub trait RendererTrait {
         self.set_target_ptr(null_mut())
     }
 
+    fn set_color(&self, color: sdl2::SDL_Color) {
+        unsafe { sdl2::SDL_SetRenderDrawColor(self.get(), color.r, color.g, color.b, color.a) };
+    }
+
+    fn set_blendmode(&self, mode: sdl2::SDL_BlendMode) {
+        unsafe { sdl2::SDL_SetRenderDrawBlendMode(self.get(), mode) };
+    }
+
+    // Get draw window size
+    fn output_size(&self) -> Dimensions<i32> {
+        let mut dim = Dimensions::<i32>::new();
+        unsafe { sdl2::SDL_GetRendererOutputSize(self.get(), &mut dim.w, &mut dim.h) };
+        dim
+    }
+
+    // Create new texture
     fn create_texture(&self, w: i32, h: i32) -> Option<Texture> {
         NonNull::new(unsafe {
             sdl2::SDL_CreateTexture(
@@ -85,6 +103,11 @@ pub trait RendererTrait {
             tex.set_blendmode(sdl2::SDL_BlendMode::SDL_BLENDMODE_BLEND);
             tex
         })
+    }
+
+    // Drawing
+    fn fill_rect(&self, rect: Rect) {
+        unsafe { sdl2::SDL_RenderFillRect(self.get(), &rect.to_sdl_rect()) };
     }
 
     fn draw(
@@ -116,6 +139,7 @@ impl Renderer {
     }
 
     pub fn clear(&self) {
+        self.set_color(BLACK);
         unsafe {
             sdl2::SDL_RenderClear(self.r.as_ptr());
         }

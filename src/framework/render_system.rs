@@ -3,6 +3,7 @@ use std::collections::HashMap;
 
 use super::physics;
 use super::renderer::{RendererAccess, RendererTrait};
+use super::texture::SharedTexture;
 use crate::ecs::components::Container;
 use crate::ecs::entities::Entity;
 use crate::ecs::events;
@@ -142,7 +143,19 @@ pub fn rect_to_camera_coords(rect: &Rect, screen: &Screen, camera: &Camera) -> R
 struct Elevation(pub u8);
 
 #[macros::component]
-struct Image(pub Option<TextureAccess>);
+struct Image(pub SharedTexture);
+
+impl From<Option<Texture>> for Image {
+    fn from(value: Option<Texture>) -> Self {
+        Self(SharedTexture::from(value))
+    }
+}
+
+impl From<Option<TextureAccess>> for Image {
+    fn from(value: Option<TextureAccess>) -> Self {
+        Self(SharedTexture::from(value))
+    }
+}
 
 #[macros::system]
 fn render(
@@ -161,9 +174,9 @@ fn render(
         }
     });
     for (_, _, pos, img) in comps {
-        if let Image(Some(tex)) = img {
+        if let Some(tex) = img.0.access() {
             rs.draw(
-                *tex,
+                tex,
                 std::ptr::null(),
                 &rect_to_camera_coords(&pos.0, screen, camera).to_sdl_rect(),
             )

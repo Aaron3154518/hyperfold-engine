@@ -2,64 +2,62 @@ use crate::{sdl2, utils::rect::Dimensions};
 
 use super::{
     renderer::{RendererAccess, RendererTrait},
+    shapes::{Rectangle, ShapeTrait},
     texture::{Texture, TextureAccess, TextureTrait},
 };
 
 // Trait for anything that wants to draw on a texture builder
 pub trait Drawable {
-    fn draw(&self, tex: &mut TextureBuilder);
-}
-
-pub enum Target {
-    Owned(Texture),
-    Shared(TextureAccess),
-    None,
+    fn draw(&self, tex: &TextureBuilder, r: &impl RendererTrait);
 }
 
 pub struct TextureBuilder {
-    target: Target,
+    target: Option<TextureAccess>,
     r: RendererAccess,
 }
 
 impl TextureBuilder {
-    pub fn new(r: RendererAccess, w: i32, h: i32, bkgrnd: sdl2::SDL_Color) -> Self {
-        Self {
-            target: r
-                .create_texture(w, h)
-                .map_or(Target::None, |t| Target::Owned(t)),
+    pub fn new(
+        r: RendererAccess,
+        w: i32,
+        h: i32,
+        bkgrnd: sdl2::SDL_Color,
+    ) -> (Self, Option<Texture>) {
+        let tex = r.create_texture(w, h);
+        let s = Self {
+            target: tex.as_ref().map_or(None, |t| Some(t.access())),
             r,
-        }
+        };
+        s.fill(bkgrnd);
+        (s, tex)
     }
 
-    pub fn from_texture(r: RendererAccess, src: TextureAccess, copy: bool) -> Self {
-        Self {
-            target: if copy {
-                let dim = src.get_size();
-                r.create_texture(dim.w, dim.h).map_or(Target::None, |tex| {
-                    // TODO: Render data
-                    // RenderData rd(src);
-                    // rd.mRect = Rect(0, 0, dim.w, dim.h);
-                    // draw(rd);
-                    Target::Owned(tex)
-                })
-            } else {
-                Target::Shared(src)
+    pub fn copy_texture(r: RendererAccess, src: TextureAccess) -> (Self, Option<Texture>) {
+        let dim = src.get_size();
+        let tex = r.create_texture(dim.w, dim.h);
+        (
+            Self {
+                target: tex.as_ref().map_or(None, |t| Some(t.access())),
+                r,
             },
+            tex,
+        )
+    }
+
+    pub fn open_texture(r: RendererAccess, src: TextureAccess) -> Self {
+        Self {
+            target: Some(src),
             r,
         }
     }
 
-    pub fn clear(&mut self) {
-        // TODO: shapes
+    pub fn fill(&self, bkgrnd: sdl2::SDL_Color) {
+        self.draw(Rectangle::new().set_color(bkgrnd))
     }
 
     // Get texture
     pub fn get(&self) -> Option<TextureAccess> {
-        match &self.target {
-            Target::Owned(t) => Some(t.access()),
-            Target::Shared(t) => Some(*t),
-            Target::None => None,
-        }
+        self.target
     }
 
     pub fn get_dim(&self) -> Dimensions<i32> {
@@ -70,17 +68,23 @@ impl TextureBuilder {
     }
 
     // Draw textures/text
-    pub fn draw(&mut self, drawable: impl Drawable) {
-        self.r.set_target(self.get());
-        drawable.draw(self);
+    pub fn draw(&self, drawable: impl Drawable) {
+        self.r.set_target(self.target);
+        drawable.draw(self, &self.r);
         self.r.clear_target();
     }
 
     // Brighten texture
-    pub fn brighten(&mut self, strength: u8) {
-        //     Shapes::Rectangle r;
-        // r.setColor(SDL_Color{strength, strength, strength, 255});
-        // r.setBlendMode(SDL_BLENDMODE_ADD);
-        // draw(r);
+    pub fn brighten(&self, strength: u8) {
+        self.draw(
+            Rectangle::new()
+                .set_color(sdl2::SDL_Color {
+                    r: strength,
+                    g: strength,
+                    b: strength,
+                    a: 255,
+                })
+                .set_blendmode(sdl2::SDL_BlendMode::SDL_BLENDMODE_ADD),
+        )
     }
 }

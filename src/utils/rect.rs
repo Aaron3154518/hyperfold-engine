@@ -76,6 +76,7 @@ impl Rect {
         }
     }
 
+    // Don't force normalize (e.g. intersect needs negative widths)
     pub fn from(x: f32, y: f32, w: f32, h: f32, ax: Align, ay: Align) -> Self {
         let mut r = Rect {
             x: 0.0,
@@ -343,7 +344,7 @@ impl Rect {
     }
 
     pub fn invalid(&self) -> bool {
-        self.w < 0.0 && self.h < 0.0
+        self.w < 0.0 || self.h < 0.0
     }
 
     pub fn normalize(&mut self) {
@@ -376,6 +377,10 @@ impl Rect {
         self.set_dim(self.w * factor, self.h * factor, ax, ay)
     }
 
+    pub fn expand(&mut self, dw: f32, dh: f32, ax: Align, ay: Align) {
+        self.set_dim(self.w + dw, self.h + dh, ax, ay)
+    }
+
     pub fn fit_within(&mut self, r: &Rect) {
         self.set_x(self.x.min(r.x2() - self.w).max(r.x()), Align::TopLeft);
         self.set_y(self.y.min(r.y2() - self.h).max(r.y()), Align::TopLeft);
@@ -383,6 +388,16 @@ impl Rect {
 
     pub fn intersects(&self, r: &Rect) -> bool {
         (self.x <= r.x2() && self.x2() >= r.x) && (self.y <= r.y2() && self.y2() >= r.y)
+    }
+
+    pub fn intersect(&self, r: &Rect) -> Option<Rect> {
+        let i = Rect::from_corners(
+            self.x.max(r.x),
+            self.y.max(r.y),
+            self.x2().min(r.x2()),
+            self.y2().min(r.y2()),
+        );
+        (i.w > 0.0 && i.h > 0.0).then_some(i)
     }
 
     pub fn get_min_rect(w: f32, h: f32, max_w: f32, max_h: f32) -> Rect {
