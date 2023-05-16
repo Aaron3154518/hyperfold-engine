@@ -1,6 +1,5 @@
 use std::{env, path::PathBuf};
 
-// use input::{Input, Input2};
 use parser::{codegen::codegen::Decoder, util::format_code};
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
@@ -9,8 +8,6 @@ use shared::{
     parse_args::{ComponentMacroArgs, GlobalMacroArgs},
 };
 use syn::{parse_macro_input, parse_quote};
-
-// mod input;
 
 #[proc_macro_attribute]
 pub fn component(input: TokenStream, item: TokenStream) -> TokenStream {
@@ -68,47 +65,3 @@ pub fn game_crate(_input: TokenStream) -> TokenStream {
 
     code.into()
 }
-
-// #[proc_macro]
-// pub fn query(input: TokenStream) -> TokenStream {
-//     let Input {
-//         func,
-//         body,
-//         query,
-//         event,
-//         comp_vars,
-//         comp_mut,
-//         comp_types,
-//         glob_vars,
-//         glob_mut,
-//         glob_types,
-//     } = parse_macro_input!(input as Input);
-
-//     let ev = format_ident!("event");
-//     let eid = format_ident!("eid");
-
-//     quote!(
-//         fn #func(#query { event: #ev, eid: #eid, components: (#(#comp_vars),*), globals: (#(#glob_vars),*), .. } :
-//             #query<#event, (#(&#comp_mut #comp_types),*), (#(&#glob_mut #glob_types),*)>) {
-//                 #body
-//             }
-//     )
-//     .into()
-// }
-
-// #[proc_macro]
-// pub fn query2(input: TokenStream) -> TokenStream {
-//     let Input2 {
-//         ident,
-//         vars,
-//         muts,
-//         types,
-//     } = parse_macro_input!(input as Input2);
-
-//     quote!(
-//         pub struct #ident<'a> {
-//             #(#vars: &'a #muts #types),*
-//         }
-//     )
-//     .into()
-// }
