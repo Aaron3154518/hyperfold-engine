@@ -9,6 +9,24 @@ where
     pub h: T,
 }
 
+impl Dimensions<i32> {
+    pub fn new() -> Self {
+        Self { w: 0, h: 0 }
+    }
+}
+
+impl Dimensions<u32> {
+    pub fn new() -> Self {
+        Self { w: 0, h: 0 }
+    }
+}
+
+impl Dimensions<f32> {
+    pub fn new() -> Self {
+        Self { w: 0.0, h: 0.0 }
+    }
+}
+
 pub type Point = sdl2::SDL_Point;
 pub type PointF = sdl2::SDL_FPoint;
 

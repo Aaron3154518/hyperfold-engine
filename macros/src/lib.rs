@@ -2,7 +2,7 @@ use std::{env, path::PathBuf};
 
 use parser::{codegen::codegen::Decoder, util::format_code};
 use proc_macro::TokenStream;
-use quote::{format_ident, quote};
+use quote::quote;
 use shared::{
     file::Out,
     parse_args::{ComponentMacroArgs, GlobalMacroArgs},

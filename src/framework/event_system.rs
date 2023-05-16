@@ -23,7 +23,7 @@ pub fn on_event(_ev: &core::Events, e: &event::Event, events: &mut dyn crate::_e
         }
     }
 
-    for (key, kb) in e.key_buttons.iter() {
+    for (_, kb) in e.key_buttons.iter() {
         if !kb.no_action() {
             events.new_event(inputs::Key(kb.clone()));
         }

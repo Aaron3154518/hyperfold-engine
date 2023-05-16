@@ -2,11 +2,16 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 
 use super::physics;
+use super::renderer::{RendererAccess, RendererTrait};
 use crate::ecs::components::Container;
 use crate::ecs::entities::Entity;
 use crate::ecs::events;
+use crate::framework::{
+    renderer::{Renderer, Window},
+    texture::{Texture, TextureAccess},
+};
+
 use crate::sdl2;
-use crate::utils::pointers::{self, Renderer, Texture, TextureAccess, TextureTrait, Window};
 use crate::utils::rect::{Align, Dimensions, Rect};
 
 const W: u32 = 960;
@@ -53,11 +58,15 @@ impl RenderSystem {
         }
     }
 
+    pub fn renderer(&self) -> RendererAccess {
+        self.r.access()
+    }
+
     pub fn get_image(&mut self, file: &'static str) -> Option<TextureAccess> {
         match self.am.get_image(file) {
             Some(tex) => Some(tex),
             None => {
-                self.am.add_image(file, Texture::new(&self.r, file));
+                self.am.add_image(file, Texture::from_file(&self.r, file));
                 match self.am.get_image(file) {
                     Some(tex) => Some(tex),
                     None => {
@@ -71,11 +80,11 @@ impl RenderSystem {
 
     pub fn draw(
         &self,
-        tex: &TextureAccess,
+        tex: TextureAccess,
         src: *const sdl2::SDL_Rect,
         dest: *const sdl2::SDL_Rect,
     ) {
-        tex.draw(&self.r, src, dest);
+        self.r.draw(&tex, src, dest);
     }
 }
 
@@ -133,12 +142,12 @@ pub fn rect_to_camera_coords(rect: &Rect, screen: &Screen, camera: &Camera) -> R
 struct Elevation(pub u8);
 
 #[macros::component]
-struct Image(pub Option<pointers::TextureAccess>);
+struct Image(pub Option<TextureAccess>);
 
 #[macros::system]
 fn render(
     _e: &events::core::Render,
-    mut comps: Container<(&Entity, &mut Elevation, &Entity, &physics::Position, &Image)>,
+    mut comps: Container<(&Entity, &mut Elevation, &physics::Position, &Image)>,
     rs: &RenderSystem,
     screen: &Screen,
     camera: &Camera,
@@ -151,10 +160,10 @@ fn render(
             cmp
         }
     });
-    for (_, _, _, pos, img) in comps {
+    for (_, _, pos, img) in comps {
         if let Image(Some(tex)) = img {
             rs.draw(
-                &tex,
+                *tex,
                 std::ptr::null(),
                 &rect_to_camera_coords(&pos.0, screen, camera).to_sdl_rect(),
             )
