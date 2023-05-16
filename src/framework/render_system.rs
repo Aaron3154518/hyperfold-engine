@@ -89,7 +89,7 @@ macro_rules! draw {
 }
 
 #[macros::global(Const)]
-struct Screen(pub Dimensions<u32>);
+pub struct Screen(pub Dimensions<u32>);
 
 impl Screen {
     pub fn new() -> Self {
@@ -98,7 +98,7 @@ impl Screen {
 }
 
 #[macros::global]
-struct Camera(pub Rect);
+pub struct Camera(pub Rect);
 
 impl Camera {
     pub fn new() -> Self {

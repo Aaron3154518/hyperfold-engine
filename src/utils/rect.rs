@@ -144,6 +144,18 @@ impl Rect {
         }
     }
 
+    // x and y
+    pub fn get_pos(&self, ax: Align, ay: Align) -> PointF {
+        PointF {
+            x: self.get_x(ax),
+            y: self.get_y(ay),
+        }
+    }
+
+    pub fn center(&self) -> PointF {
+        self.get_pos(Align::Center, Align::Center)
+    }
+
     // float w/h
     pub fn w(&self) -> f32 {
         self.w
@@ -204,6 +216,18 @@ impl Rect {
 
     pub fn get_y_i32(&self, a: Align) -> i32 {
         self.get_y(a).round() as i32
+    }
+
+    // x and y
+    pub fn get_pos_i32(&self, ax: Align, ay: Align) -> Point {
+        Point {
+            x: self.get_x_i32(ax),
+            y: self.get_y_i32(ay),
+        }
+    }
+
+    pub fn center_i32(&self) -> Point {
+        self.get_pos_i32(Align::Center, Align::Center)
     }
 
     // int dimensions

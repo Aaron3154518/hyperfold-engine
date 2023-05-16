@@ -13,7 +13,7 @@ impl NewEntity for Entity {
 }
 
 #[macros::global]
-struct EntityTrash(pub Vec<Entity>);
+pub struct EntityTrash(pub Vec<Entity>);
 
 impl EntityTrash {
     pub fn new() -> Self {
