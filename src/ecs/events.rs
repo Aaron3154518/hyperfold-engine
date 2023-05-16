@@ -1,3 +1,5 @@
+pub type Event<'a, T> = &'a T;
+
 pub trait AddEvent<T> {
     fn new_event(&mut self, t: T);
 
