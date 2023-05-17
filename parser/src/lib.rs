@@ -1,6 +1,8 @@
 #![feature(drain_filter)]
 #![feature(hash_drain_filter)]
+#![feature(array_methods)]
 #![allow(unused)]
+
 use std::{
     fs::{self, File},
     io::Read,

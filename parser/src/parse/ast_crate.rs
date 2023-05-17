@@ -51,17 +51,17 @@ pub struct Crate {
 
 impl Crate {
     pub fn new(dir: PathBuf, idx: usize, is_entry: bool) -> Self {
-        let err_dir = dir.to_owned();
+        let rel_dir = dir.to_owned();
         let dir: PathBuf = fs::canonicalize(dir).catch(format!(
             "Could not canonicalize path: {}",
-            err_dir.display()
+            rel_dir.display()
         ));
 
         Self {
             idx,
             name: dir
                 .file_name()
-                .catch(format!("Could not parse file name: {}", err_dir.display()))
+                .catch(format!("Could not parse file name: {}", rel_dir.display()))
                 .to_string_lossy()
                 .to_string(),
             dir: dir.to_owned(),

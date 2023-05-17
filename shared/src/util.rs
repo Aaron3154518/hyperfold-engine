@@ -1,6 +1,33 @@
-use std::iter::Enumerate;
+use std::{
+    iter::Enumerate,
+    ops::{Add, AddAssign},
+};
 
 extern crate alloc;
+
+// Prefix/postfix ++
+pub trait Increment
+where
+    Self: Copy,
+{
+    fn add_then(&mut self, v: Self) -> Self;
+
+    fn then_add(&mut self, v: Self) -> Self {
+        let s = *self;
+        self.add_then(v);
+        s
+    }
+}
+
+impl<T> Increment for T
+where
+    T: Copy + Add + AddAssign,
+{
+    fn add_then(&mut self, v: Self) -> Self {
+        *self += v;
+        *self
+    }
+}
 
 // Traits for calling except() with a String (i.e. with format!())
 pub trait Catch<T> {
@@ -35,6 +62,50 @@ impl<T> Get<T> for Result<T, T> {
     }
 }
 
+// Generalized unzip
+macro_rules! unzip {
+    ((), ($($vs: ident: $ts: ident),*)) => {};
+
+    (($f: ident: $tr: ident $(,$fs: ident: $trs: ident)*), ($v: ident: $t: ident $(,$vs: ident: $ts: ident)*)) => {
+        unzip!(($($fs: $trs),*), ($($vs: $ts),*));
+
+        pub trait $tr<$t $(,$ts)*> {
+            fn $f(self) -> (Vec<$t> $(,Vec<$ts>)*);
+        }
+
+        impl<$t $(,$ts)*> $tr<$t $(,$ts)*> for alloc::vec::IntoIter<($t $(,$ts)*)> {
+            fn $f(self) -> (Vec<$t> $(,Vec<$ts>)*) {
+                self.fold(
+                    (Vec::<$t>::new() $(, Vec::<$ts>::new())*),
+                    #[allow(non_snake_case)]
+                    |(mut $t $(,mut $ts)*), ($v $(,$vs)*)| {
+                        $t.push($v);
+                        $($ts.push($vs);)*
+                        ($t $(,$ts)*)
+                    }
+                )
+            }
+        }
+
+        // impl<$t $(,$ts)*> $tr<$t $(,$ts)*> for alloc::vec::IntoIter<($t $(,$ts)*)> {
+        //     fn unzip_vec(self) -> (Vec<$t> $(,Vec<$ts>)*) {
+
+        //     }
+        // }
+    };
+}
+
+unzip!(
+    (
+        unzip7_vec: Unzip7,
+        unzip6_vec: Unzip6,
+        unzip5_vec: Unzip5,
+        unzip4_vec: Unzip4,
+        unzip3_vec: Unzip3
+    ),
+    (a: A, b: B, c: C, d: D, e: E, f: F, g: G)
+);
+
 // Trait for mapping Vec elements to strings and joining them
 pub trait JoinMap<T> {
     fn map_vec<U, F>(&self, f: F) -> Vec<U>
@@ -47,6 +118,10 @@ pub trait JoinMap<T> {
     {
         self.map_vec(f).join(sep)
     }
+
+    fn unzip_vec<U, V, F>(&self, f: F) -> (Vec<U>, Vec<V>)
+    where
+        F: FnMut(&T) -> (U, V);
 }
 
 impl<T> JoinMap<T> for Vec<T> {
@@ -55,6 +130,13 @@ impl<T> JoinMap<T> for Vec<T> {
         F: FnMut(&T) -> U,
     {
         self.iter().map(f).collect()
+    }
+
+    fn unzip_vec<U, V, F>(&self, f: F) -> (Vec<U>, Vec<V>)
+    where
+        F: FnMut(&T) -> (U, V),
+    {
+        self.iter().map(f).unzip()
     }
 }
 
@@ -65,6 +147,13 @@ impl<T, const N: usize> JoinMap<T> for [T; N] {
     {
         self.iter().map(f).collect()
     }
+
+    fn unzip_vec<U, V, F>(&self, f: F) -> (Vec<U>, Vec<V>)
+    where
+        F: FnMut(&T) -> (U, V),
+    {
+        self.iter().map(f).unzip()
+    }
 }
 
 impl<T> JoinMap<T> for [T] {
@@ -73,6 +162,13 @@ impl<T> JoinMap<T> for [T] {
         F: FnMut(&T) -> U,
     {
         self.iter().map(f).collect()
+    }
+
+    fn unzip_vec<U, V, F>(&self, f: F) -> (Vec<U>, Vec<V>)
+    where
+        F: FnMut(&T) -> (U, V),
+    {
+        self.iter().map(f).unzip()
     }
 }
 
@@ -84,6 +180,10 @@ pub trait JoinMapInto<T> {
     fn join_map<F>(self, f: F, sep: &str) -> String
     where
         F: FnMut(T) -> String;
+
+    fn unzip_vec<U, V, F>(self, f: F) -> (Vec<U>, Vec<V>)
+    where
+        F: FnMut(T) -> (U, V);
 }
 
 impl<'a, T> JoinMapInto<&'a T> for core::slice::Iter<'a, T> {
@@ -99,6 +199,13 @@ impl<'a, T> JoinMapInto<&'a T> for core::slice::Iter<'a, T> {
         F: FnMut(&'a T) -> String,
     {
         self.map_vec(f).join(sep)
+    }
+
+    fn unzip_vec<U, V, F>(self, f: F) -> (Vec<U>, Vec<V>)
+    where
+        F: FnMut(&'a T) -> (U, V),
+    {
+        self.map(f).unzip()
     }
 }
 
@@ -116,6 +223,13 @@ impl<T> JoinMapInto<T> for alloc::vec::IntoIter<T> {
     {
         self.map_vec(f).join(sep)
     }
+
+    fn unzip_vec<U, V, F>(self, f: F) -> (Vec<U>, Vec<V>)
+    where
+        F: FnMut(T) -> (U, V),
+    {
+        self.map(f).unzip()
+    }
 }
 
 impl<T, Iter: Iterator<Item = T>> JoinMapInto<(usize, T)> for Enumerate<Iter> {
@@ -132,6 +246,13 @@ impl<T, Iter: Iterator<Item = T>> JoinMapInto<(usize, T)> for Enumerate<Iter> {
     {
         self.map_vec(f).join(sep)
     }
+
+    fn unzip_vec<U, V, F>(self, f: F) -> (Vec<U>, Vec<V>)
+    where
+        F: FnMut((usize, T)) -> (U, V),
+    {
+        self.map(f).unzip()
+    }
 }
 
 impl<'a> JoinMapInto<&'a str> for std::str::Split<'a, &str> {
@@ -147,6 +268,13 @@ impl<'a> JoinMapInto<&'a str> for std::str::Split<'a, &str> {
         F: FnMut(&'a str) -> String,
     {
         self.map_vec(f).join(sep)
+    }
+
+    fn unzip_vec<U, V, F>(self, f: F) -> (Vec<U>, Vec<V>)
+    where
+        F: FnMut(&'a str) -> (U, V),
+    {
+        self.map(f).unzip()
     }
 }
 
