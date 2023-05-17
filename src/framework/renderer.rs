@@ -99,7 +99,7 @@ pub trait RendererTrait {
             )
         })
         .map(|tex| {
-            let tex = Texture::new(tex);
+            let tex = Texture::new(tex.as_ptr());
             tex.set_blendmode(sdl2::SDL_BlendMode::SDL_BLENDMODE_BLEND);
             tex
         })
@@ -160,11 +160,12 @@ impl RendererTrait for Renderer {
 
 impl Drop for Renderer {
     fn drop(&mut self) {
-        unsafe { sdl2::SDL_DestroyRenderer(self.r.as_ptr()) }
+        unsafe { sdl2::SDL_DestroyRenderer(self.get()) }
     }
 }
 
 // Non-owning Renderer
+#[derive(Copy, Clone, Debug)]
 pub struct RendererAccess {
     pub r: NonNull<sdl2::SDL_Renderer>,
 }

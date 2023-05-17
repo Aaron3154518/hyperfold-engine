@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use crate::sdl2;
 
 #[derive(Clone, Copy, Debug)]
@@ -24,6 +26,15 @@ impl Dimensions<u32> {
 impl Dimensions<f32> {
     pub fn new() -> Self {
         Self { w: 0.0, h: 0.0 }
+    }
+}
+
+impl<T> Display for Dimensions<T>
+where
+    T: Display + Clone + Copy,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("{} x {}", self.w, self.h))
     }
 }
 
@@ -299,6 +310,11 @@ impl Rect {
         self.set_y(y, ay);
     }
 
+    pub fn copy_pos(&mut self, rect: Self, ax: Align, ay: Align) {
+        self.set_x(rect.get_x(ax), ax);
+        self.set_y(rect.get_y(ay), ay);
+    }
+
     pub fn set_w(&mut self, w: f32, a: Align) {
         match a {
             Align::TopLeft => {
@@ -381,9 +397,32 @@ impl Rect {
         self.set_dim(self.w + dw, self.h + dh, ax, ay)
     }
 
-    pub fn fit_within(&mut self, r: &Rect) {
+    pub fn move_within(&mut self, r: &Rect) {
         self.set_x(self.x.min(r.x2() - self.w).max(r.x()), Align::TopLeft);
         self.set_y(self.y.min(r.y2() - self.h).max(r.y()), Align::TopLeft);
+    }
+
+    pub fn min_rect(w: f32, h: f32, max_w: Option<f32>, max_h: Option<f32>) -> Self {
+        let factor = match (max_w, max_h) {
+            (None, None) => 1.0,
+            (None, Some(max_h)) => max_h / h,
+            (Some(max_w), None) => max_w / w,
+            (Some(max_w), Some(max_h)) => (max_w / w).min(max_h / h),
+        };
+        Self {
+            x: 0.0,
+            y: 0.0,
+            w: w * factor,
+            h: h * factor,
+        }
+    }
+
+    pub fn fit_within(&self, max_w: Option<f32>, max_h: Option<f32>) -> Self {
+        Self::min_rect(self.w, self.h, max_w, max_h)
+    }
+
+    pub fn get_fit_within(&self, w: f32, h: f32) -> Self {
+        Self::min_rect(w, h, Some(self.w), Some(self.h))
     }
 
     pub fn intersects(&self, r: &Rect) -> bool {

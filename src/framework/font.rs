@@ -1,6 +1,8 @@
 use std::{ffi::CString, ptr::NonNull};
 
-use crate::{sdl2_ttf, utils::rect::Dimensions};
+use crate::{sdl2, sdl2_ttf, utils::rect::Dimensions};
+
+use super::surface::Surface;
 
 // Font
 
@@ -19,7 +21,7 @@ pub trait FontTrait {
     fn get(&self) -> *mut sdl2_ttf::TTF_Font;
 
     fn size(&self) -> Dimensions<i32> {
-        let mut d = self.size_text("_");
+        let mut d = self.size_text(" ");
         d.h = unsafe { sdl2_ttf::TTF_FontHeight(self.get()) };
         d
     }
@@ -27,8 +29,22 @@ pub trait FontTrait {
     fn size_text(&self, text: &str) -> Dimensions<i32> {
         let cstr = CString::new(text).expect("Failed to create CString");
         let mut d = Dimensions::<i32>::new();
-        unsafe { sdl2_ttf::TTF_SizeText(self.get(), cstr.as_ptr(), &mut d.w, &mut d.h) };
+        unsafe { sdl2_ttf::TTF_SizeUTF8(self.get(), cstr.as_ptr(), &mut d.w, &mut d.h) };
         d
+    }
+
+    fn measure(&self, text: &str, w: u32) -> (i32, i32) {
+        let cstr = CString::new(text).expect("Failed to create CString");
+        let (mut width, mut count) = (0, 0);
+        unsafe {
+            sdl2_ttf::TTF_MeasureUTF8(self.get(), cstr.as_ptr(), w as i32, &mut width, &mut count)
+        };
+        (width, count)
+    }
+
+    fn render(&self, text: &str, color: sdl2::SDL_Color) -> Surface {
+        let cstr = CString::new(text).expect("Failed to crate CString");
+        Surface::new(unsafe { sdl2_ttf::TTF_RenderText_Blended(self.get(), cstr.as_ptr(), color) })
     }
 }
 
@@ -45,7 +61,7 @@ impl Font {
         let cstr = CString::new(file).expect("Failed to create CString");
         let f_ptr = unsafe { sdl2_ttf::TTF_OpenFont(cstr.as_ptr(), size as i32) };
         Self {
-            font: NonNull::new(f_ptr).expect("Failed to create File"),
+            font: NonNull::new(f_ptr).expect("Failed to create Font"),
         }
     }
 

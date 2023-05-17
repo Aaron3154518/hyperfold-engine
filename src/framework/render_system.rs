@@ -81,7 +81,8 @@ impl AssetManager {
 
                 let file = data.file.to_string();
                 self.fonts
-                    .insert(data, Font::from_file(&file, min_size))
+                    .try_insert(data, Font::from_file(&file, min_size))
+                    .ok()
                     .map(|f| f.access())
             }
         }

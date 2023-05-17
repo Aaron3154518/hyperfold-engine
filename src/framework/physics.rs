@@ -32,6 +32,6 @@ fn update_physics(up: &core::Update, pos: &mut Position, pd: &mut PhysicsData) {
     pd.v.x += pd.a.x * s;
     pd.v.y += pd.a.y * s;
     if let Some(b) = pd.boundary {
-        pos.0.fit_within(&b);
+        pos.0.move_within(&b);
     }
 }

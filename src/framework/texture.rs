@@ -3,9 +3,12 @@ use std::{
     ptr::{null_mut, NonNull},
 };
 
-use crate::{sdl2, sdl2_image, utils::rect::Dimensions};
+use crate::{
+    sdl2, sdl2_image,
+    utils::rect::{Align, Dimensions, Rect},
+};
 
-use super::renderer::RendererTrait;
+use super::{renderer::RendererTrait, surface::Surface};
 
 // Texture
 pub trait TextureTrait {
@@ -26,6 +29,17 @@ pub trait TextureTrait {
         }
         d
     }
+
+    fn min_rect(&self, rect: Rect) -> Rect {
+        let Dimensions::<i32> { w, h } = self.get_size();
+        rect.get_fit_within(w as f32, h as f32)
+    }
+
+    fn min_rect_align(&self, rect: Rect, ax: Align, ay: Align) -> Rect {
+        let mut r = self.min_rect(rect);
+        r.copy_pos(rect, ax, ay);
+        r
+    }
 }
 
 pub struct Texture {
@@ -33,16 +47,20 @@ pub struct Texture {
 }
 
 impl Texture {
-    pub fn new(tex: NonNull<sdl2::SDL_Texture>) -> Self {
-        Self { tex }
+    pub fn new(tex: *mut sdl2::SDL_Texture) -> Self {
+        Self {
+            tex: NonNull::new(tex).expect("Texture was null"),
+        }
     }
 
     pub fn from_file(r: &impl RendererTrait, file: &str) -> Self {
         let cstr = CString::new(file).expect("Failed to create CString");
         let t_ptr = unsafe { sdl2_image::IMG_LoadTexture(r.get(), cstr.as_ptr()) };
-        Texture {
-            tex: NonNull::new(t_ptr).expect("Failed to create Texture"),
-        }
+        Self::new(t_ptr)
+    }
+
+    pub fn from_surface(r: &impl RendererTrait, surf: Surface) -> Self {
+        Self::new(unsafe { sdl2::SDL_CreateTextureFromSurface(r.get(), surf.get()) })
     }
 
     pub fn access(&self) -> TextureAccess {
@@ -58,7 +76,7 @@ impl TextureTrait for Texture {
 
 impl Drop for Texture {
     fn drop(&mut self) {
-        unsafe { sdl2::SDL_DestroyTexture(self.tex.as_ptr()) }
+        unsafe { sdl2::SDL_DestroyTexture(self.get()) }
     }
 }
 
