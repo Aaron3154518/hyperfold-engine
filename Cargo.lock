@@ -110,6 +110,7 @@ dependencies = [
  "num-derive",
  "num-traits",
  "parser",
+ "shared",
  "uuid",
 ]
 

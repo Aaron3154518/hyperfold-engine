@@ -13,8 +13,9 @@ use crate::{
         ast_paths::{EngineGlobals, EngineTraits, ExpandEnum, Paths},
         ast_resolve::Path,
     },
-    util::{end, Call, Catch, JoinMap, JoinMapInto, NoneOr},
+    util::end,
 };
+use shared::util::{Call, Catch, JoinMap, JoinMapInto, NoneOr};
 
 use super::{
     ast_item_list::ItemList,

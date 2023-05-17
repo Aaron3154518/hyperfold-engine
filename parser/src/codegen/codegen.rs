@@ -15,7 +15,6 @@ use crate::{
     resolve::ast_paths::{
         EngineGlobals, EngineIdents, EngineTraits, ExpandEnum, GetPaths, NamespaceTraits,
     },
-    util::{Call, Catch, JoinMap, JoinMapInto, SplitCollect},
     validate::{
         ast_validate::Data,
         constants::{
@@ -23,6 +22,8 @@ use crate::{
         },
     },
 };
+
+use shared::util::{Call, Catch, JoinMap, JoinMapInto, SplitCollect};
 
 use super::{
     dependency::Dependency,

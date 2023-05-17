@@ -1,9 +1,8 @@
-use crate::{
-    resolve::{
-        ast_items::{Dependency, ItemsCrate},
-        ast_resolve::Path,
-    },
-    util::NoneOr,
+use shared::util::NoneOr;
+
+use crate::resolve::{
+    ast_items::{Dependency, ItemsCrate},
+    ast_resolve::Path,
 };
 
 use super::constants::NAMESPACE;

@@ -8,6 +8,7 @@ build = "build.rs"
 
 [dependencies]
 macros = { path = "./macros", dependency = "" }
+shared = { path = "./shared" }
 num-derive = "0.3.3"
 num-traits = "0.2.15"
 

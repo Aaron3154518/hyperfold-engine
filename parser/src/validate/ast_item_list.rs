@@ -1,11 +1,9 @@
-use crate::{
-    resolve::{
-        ast_items::{Component, Event, Global, ItemsCrate, Trait},
-        ast_paths::{EngineTraits, ExpandEnum, GetPaths, NamespaceTraits, Paths},
-        ast_resolve::Path,
-    },
-    util::{Catch, JoinMap, JoinMapInto},
+use crate::resolve::{
+    ast_items::{Component, Event, Global, ItemsCrate, Trait},
+    ast_paths::{EngineTraits, ExpandEnum, GetPaths, NamespaceTraits, Paths},
+    ast_resolve::Path,
 };
+use shared::util::{Catch, JoinMap, JoinMapInto};
 
 // This struct is used to modify the lists of items
 // Traits: hardcodes traits

@@ -14,9 +14,10 @@ use crate::{
         },
         ast_resolve::Path,
     },
-    util::{JoinMap, JoinMapInto},
     validate::constants::NAMESPACE,
 };
+
+use shared::util::{JoinMap, JoinMapInto};
 
 use super::idents::Idents;
 

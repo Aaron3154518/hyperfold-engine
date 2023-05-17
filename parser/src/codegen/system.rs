@@ -8,22 +8,14 @@ use quote::format_ident;
 use quote::quote;
 use regex::Regex;
 
-use crate::codegen::idents::Idents;
-use crate::codegen::util::arr_to_path;
-use crate::codegen::util::string_to_type;
-use crate::codegen::util::type_to_type;
-use crate::codegen::util::vec_to_path;
-use crate::resolve::ast_paths::EngineGlobals;
-use crate::resolve::ast_paths::EngineIdents;
-use crate::resolve::ast_paths::EngineTraits;
-use crate::resolve::ast_paths::GetPaths;
-use crate::util::Flatten;
-use crate::util::JoinMap;
-use crate::util::JoinMapInto;
 use crate::{
-    resolve::ast_paths::ExpandEnum,
-    util::{Call, Catch, SplitCollect},
+    codegen::{
+        idents::Idents,
+        util::{arr_to_path, string_to_type, type_to_type, vec_to_path},
+    },
+    resolve::ast_paths::{EngineGlobals, EngineIdents, EngineTraits, ExpandEnum, GetPaths},
 };
+use shared::util::{Call, Catch, Flatten, JoinMap, JoinMapInto, SplitCollect};
 
 #[shared::macros::expand_enum]
 pub enum LabelType {

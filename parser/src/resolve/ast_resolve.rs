@@ -4,7 +4,7 @@ use crate::parse::{
     ast_crate::Crate,
     ast_mod::{Mod, Symbol},
 };
-use crate::util::Catch;
+use shared::util::Catch;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct Path {

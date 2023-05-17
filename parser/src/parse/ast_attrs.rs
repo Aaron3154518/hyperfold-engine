@@ -1,7 +1,8 @@
 use parse_cfg::Cfg;
 use quote::ToTokens;
 
-use crate::util::{parse_vec_path, NoneOr};
+use crate::util::parse_vec_path;
+use shared::util::NoneOr;
 
 // Parse attributes from engine components
 #[derive(Copy, Clone, Debug)]

@@ -7,6 +7,8 @@ use std::{
     path::PathBuf,
 };
 
+use shared::util::{Call, Catch};
+
 use super::{
     ast_file::DirType,
     ast_mod::{Mod, ModType},
@@ -14,7 +16,7 @@ use super::{
 use crate::{
     codegen::mods::{dependency_namespace_mod, entry_namespace_mod},
     resolve::ast_paths::Paths,
-    util::{end, Call, Catch},
+    util::end,
 };
 
 // TODO: hardcoded

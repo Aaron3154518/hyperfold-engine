@@ -2,9 +2,11 @@ use quote::format_ident;
 
 use crate::{
     codegen::{idents::Idents, util::vec_to_path},
-    util::{end, JoinMap},
+    util::end,
     validate::constants::NAMESPACE,
 };
+
+use shared::util::JoinMap;
 
 use super::ast_resolve::Path;
 

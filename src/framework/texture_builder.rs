@@ -8,7 +8,7 @@ use super::{
 
 // Trait for anything that wants to draw on a texture builder
 pub trait Drawable {
-    fn draw(&self, tex: &TextureBuilder, r: &impl RendererTrait);
+    fn draw(&self, r: &impl RendererTrait);
 }
 
 pub struct TextureBuilder {
@@ -70,7 +70,7 @@ impl TextureBuilder {
     // Draw textures/text
     pub fn draw(&self, drawable: impl Drawable) {
         self.r.set_target(self.target);
-        drawable.draw(self, &self.r);
+        drawable.draw(&self.r);
         self.r.clear_target();
     }
 

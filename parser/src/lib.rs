@@ -10,12 +10,12 @@ use std::{
 use parse::ast_crate::Crate;
 use regex::Regex;
 use resolve::ast_resolve;
-use util::SplitCollect;
+use shared::util::JoinMapInto;
 
 use crate::{
     codegen::codegen::Decoder,
     resolve::{ast_items::ItemsCrate, ast_paths::Paths},
-    util::{end, format_code, JoinMapInto},
+    util::{end, format_code},
     validate::ast_validate::ItemData,
 };
 

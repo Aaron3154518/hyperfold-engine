@@ -1,15 +1,18 @@
+use std::f32::consts::{PI, TAU};
+
+use num_traits::Pow;
+use shared::util::Call;
+
 use crate::{
     sdl2,
     utils::{
         colors::BLACK,
-        rect::{Align, Rect},
+        rect::{Align, Point, PointF, Rect},
+        util::{normalize_rad, CrossProduct, FloatMath, IntMath, DEG_TO_RAD, F32_ERR, HALF_PI},
     },
 };
 
-use super::{
-    renderer::RendererTrait,
-    texture_builder::{Drawable, TextureBuilder},
-};
+use super::{renderer::RendererTrait, texture_builder::Drawable};
 
 // Shape data
 pub trait ShapeTrait {
@@ -64,6 +67,14 @@ pub trait ShapeTrait {
             None => Some(screen_bounds),
         }
     }
+
+    fn set_draw_state(&self, r: &impl RendererTrait) {
+        let ShapeData {
+            color, blendmode, ..
+        } = self.shape_data();
+        r.set_color(*color);
+        r.set_blendmode(*blendmode);
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -100,6 +111,7 @@ pub struct RectangleData {
     r2: Option<Rect>,
 }
 
+#[derive(Clone, Copy)]
 pub struct Rectangle {
     data: RectangleData,
     shape: ShapeData,
@@ -169,9 +181,8 @@ impl ShapeTrait for Rectangle {
 }
 
 impl Drawable for Rectangle {
-    fn draw(&self, tex: &TextureBuilder, r: &impl RendererTrait) {
-        r.set_color(self.shape.color);
-        r.set_blendmode(self.shape.blendmode);
+    fn draw(&self, r: &impl RendererTrait) {
+        self.set_draw_state(r);
 
         let fill_r = match self.get_boundary(r) {
             Some(r) => r,
@@ -235,46 +246,331 @@ impl Drawable for Rectangle {
                 Rectangle::new()
                     .set_shape_data(self.shape)
                     .fill(side)
-                    .draw(tex, r);
+                    .draw(r);
             }
         }
     }
 }
 
-// // Circle
-// struct Circle : public Drawable,
-//                 public ShapeColor,
-//                 public ShapeBlendmode,
-//                 public ShapeBoundary {
-//     struct Data {
-//         SDL_Point c{0, 0};
-//         int r1 = 0, r2 = 0;
-//         float a1 = 0, a2 = TWO_PI;
-//         unsigned int dashes = 0;
-//     };
+// Circle
+#[derive(Clone, Copy)]
+pub struct CircleData {
+    c: Point,
+    r1: u32,
+    r2: u32,
+    a1_rad: f32,
+    a2_rad: f32,
+    dashes: u16,
+}
 
-//     struct Sector {
-//         float a1, a2;
-//         int quad;
-//     };
+#[derive(Clone, Copy)]
+enum Quadrant {
+    UpperRight,
+    UpperLeft,
+    BottomLeft,
+    BottomRight,
+}
 
-//     const Data &operator()() const;
+impl Quadrant {
+    pub fn next(&self) -> Self {
+        match self {
+            Quadrant::UpperRight => Quadrant::UpperLeft,
+            Quadrant::UpperLeft => Quadrant::BottomLeft,
+            Quadrant::BottomLeft => Quadrant::BottomRight,
+            Quadrant::BottomRight => Quadrant::UpperRight,
+        }
+    }
+}
 
-//     void setCenter(SDL_Point c);
-//     void setRadius(int r);
-//     void setRadius(int r, int thickness, bool center = false);
-//     void setFullCircle();
-//     void setAngleRad(float a1, float a2);
-//     void setAngleDeg(float a1, float a2);
-//     void setDashed(unsigned int dashes);
+impl From<f32> for Quadrant {
+    fn from(rad: f32) -> Self {
+        match (normalize_rad(rad) / HALF_PI).floor_i32() {
+            0 => Quadrant::UpperRight,
+            1 => Quadrant::UpperLeft,
+            2 => Quadrant::BottomLeft,
+            3 => Quadrant::BottomRight,
+            _ => panic!("Could not convert angle to quadrant: {rad}"),
+        }
+    }
+}
 
-//     void draw(TextureBuilder &tex);
+#[derive(Clone, Copy)]
+struct Sector {
+    a1_rad: f32,
+    a2_rad: f32,
+    quad: Quadrant,
+}
 
-//    private:
-//     Data data;
+#[derive(Clone, Copy)]
+pub struct Circle {
+    data: CircleData,
+    shape_data: ShapeData,
+}
 
-//     void drawCircle(const Rect &bounds) const;
-//     void drawSectors(const Rect &bounds) const;
-//     void drawSector(const Sector &s, const Rect &bounds) const;
-//     void drawDashed(const Rect &bounds) const;
-// };
+impl Circle {
+    pub fn new() -> Self {
+        Self {
+            data: CircleData {
+                c: Point::new(),
+                r1: 0,
+                r2: 0,
+                a1_rad: 0.0,
+                a2_rad: TAU,
+                dashes: 0,
+            },
+            shape_data: ShapeData::new(),
+        }
+    }
+
+    pub fn set_center(mut self, c: Point) -> Self {
+        self.data.c = c;
+        self
+    }
+
+    pub fn fill(mut self, r: u32) -> Self {
+        self.data.r2 = r;
+        self
+    }
+
+    pub fn except(mut self, r: u32) -> Self {
+        self.data.r1 = r;
+        self
+    }
+
+    pub fn border(mut self, r: u32, thickness: i32, center: bool) -> Self {
+        let abs_thick = thickness.unsigned_abs();
+        if center {
+            self.data.r2 = r + abs_thick / 2;
+        } else {
+            self.data.r2 = if thickness < 0 { r } else { r + abs_thick };
+        }
+        self.data.r1 = 0.max(self.data.r2 - abs_thick);
+        self
+    }
+
+    pub fn full_circle(mut self) -> Self {
+        (self.data.a1_rad, self.data.a2_rad) = (0.0, TAU);
+        self
+    }
+
+    pub fn set_angle_rad(mut self, a1: f32, a2: f32) -> Self {
+        (self.data.a1_rad, self.data.a2_rad) = (normalize_rad(a1), normalize_rad(a2));
+        self
+    }
+
+    pub fn set_angle_deg(self, a1: f32, a2: f32) -> Self {
+        self.set_angle_rad(a1 * DEG_TO_RAD, a2 * DEG_TO_RAD)
+    }
+
+    pub fn dashed(mut self, dashes: u16) -> Self {
+        self.data.dashes = dashes;
+        self
+    }
+
+    pub fn data(&self) -> CircleData {
+        self.data
+    }
+
+    fn draw_circle(&self, bounds: Rect, r: &impl RendererTrait) {
+        // Circle
+        let mut dx = 0;
+        while dx < self.data.r2 {
+            let dy1 = if dx >= self.data.r1 {
+                0
+            } else {
+                (self.data.r1.pow(2) - dx.pow(2)).sqrt().round_i32()
+            };
+            let dy2 = (self.data.r2.pow(2) - dx.pow(2)).sqrt().round_i32();
+            // Iterate through dx, -dx
+            for dx in [dx as i32, -(dx as i32)] {
+                let x = self.data.c.x + dx;
+                // Make sure x is in bounds
+                if x >= bounds.x_i32() && x <= bounds.x2_i32() {
+                    // Iterate through [dy1, dy2], [-dy2, -dy1]
+                    for (dy1, dy2) in [(dy1, dy2), (-dy2, -dy1)] {
+                        let y1 = bounds.y_i32().max(self.data.c.y + dy1);
+                        let y2 = bounds.y2_i32().min(self.data.c.y + dy2);
+                        // Make sure at least one y is in bounds
+                        if y1 <= bounds.y2_i32() && y2 >= bounds.y_i32() {
+                            unsafe { sdl2::SDL_RenderDrawLine(r.get(), x, y1, x, y2) };
+                        }
+                    }
+                }
+            }
+            dx += 1;
+        }
+    }
+
+    fn draw_sectors(&self, bounds: Rect, r: &impl RendererTrait) {
+        let mut da = self.data.a2_rad - self.data.a1_rad;
+        if da < 0.0 {
+            da += TAU;
+        }
+
+        // Draw sectors
+        let mut s_a2 = self.data.a1_rad;
+        let mut s_quad = Quadrant::from(self.data.a1_rad);
+        while da > 0.0 {
+            let s_a1 = s_a2 % HALF_PI;
+            let s_da = da.min(HALF_PI).min(HALF_PI - s_a1);
+            s_a2 = s_a1 + s_da;
+            self.draw_sector(
+                Sector {
+                    a1_rad: s_a1,
+                    a2_rad: s_a2,
+                    quad: s_quad,
+                },
+                bounds,
+                r,
+            );
+            s_quad = s_quad.next();
+            da -= s_da;
+        }
+    }
+
+    fn draw_sector(&self, s: Sector, bounds: Rect, r: &impl RendererTrait) {
+        let flip = match s.quad {
+            Quadrant::UpperRight | Quadrant::UpperLeft => false,
+            Quadrant::BottomLeft | Quadrant::BottomRight => true,
+        };
+
+        let (sin_a1, cos_a1) = s.a1_rad.sin_cos();
+        let (sin_a2, cos_a2) = s.a2_rad.sin_cos();
+
+        let [p11, p12, p21, p22] = [self.data.r1 as f32, self.data.r2 as f32]
+            .cross(&[(cos_a1, sin_a1), (cos_a2, sin_a2)])
+            .map(|(r, (cos, sin))| PointF {
+                x: r * cos,
+                y: r * sin,
+            });
+
+        let [v1, v2] = [(p21, p11), (p22, p12)].map(|(p2, p1)| PointF {
+            x: p2.x - p1.x,
+            y: p2.y - p1.y,
+        });
+
+        let (m1_inf, m2_inf) = (v1.x.abs() < F32_ERR, v2.x.abs() < F32_ERR);
+        let [m1, m2] =
+            [(m1_inf, v1), (m2_inf, v2)].map(|(inf, v)| if inf { 0.0 } else { v.y / v.x });
+        let [b1, b2] = [(p11, m1), (p22, m2)].map(|(p, m)| p.y - m * p.x);
+
+        let mut off_x = p12.x.ceil();
+        while off_x <= p21.x {
+            let mut dy1 = if off_x < p11.x {
+                (self.data.r1.pow(2) as f32 - off_x.pow(2.0)).sqrt()
+            } else {
+                if m1_inf {
+                    self.data.r1 as f32
+                } else {
+                    m1 * off_x + b1
+                }
+            }
+            .round_i32();
+
+            let mut dy2 = if off_x < p22.x {
+                if m2_inf {
+                    self.data.r2 as f32
+                } else {
+                    m2 * off_x + b2
+                }
+            } else {
+                (self.data.r2.pow(2) as f32 - off_x.pow(2.0)).sqrt()
+            }
+            .round_i32();
+
+            let mut dx = off_x.round_i32();
+            if flip {
+                (dx, dy1, dy2) = (-dx, -dy1, -dy2);
+            }
+
+            match s.quad {
+                Quadrant::UpperRight | Quadrant::BottomLeft => (dx, -dy1, dx, -dy2),
+                Quadrant::UpperLeft | Quadrant::BottomRight => (-dy1, -dx, -dy2, -dx),
+            }
+            .call_into(|(dx1, dy1, dx2, dy2)| {
+                let (x1, y1, x2, y2) = (
+                    self.data.c.x + dx1,
+                    self.data.c.y + dy1,
+                    self.data.c.x + dx2,
+                    self.data.c.y + dy2,
+                );
+
+                if x1 >= bounds.x2_i32()
+                    || y1 >= bounds.y2_i32()
+                    || x2 <= bounds.x_i32()
+                    || y2 <= bounds.y_i32()
+                {
+                    return;
+                }
+
+                unsafe {
+                    sdl2::SDL_RenderDrawLine(
+                        r.get(),
+                        x1.max(bounds.x_i32()),
+                        y1.max(bounds.y_i32()),
+                        x2.min(bounds.x2_i32()),
+                        y2.min(bounds.y2_i32()),
+                    )
+                };
+            });
+
+            off_x += 1.0;
+        }
+    }
+
+    fn draw_dashed(&self, bounds: Rect, r: &impl RendererTrait) {
+        let da = PI / self.data.dashes as f32;
+        let max_a = if self.data.a1_rad <= self.data.a2_rad {
+            self.data.a2_rad
+        } else {
+            self.data.a2_rad + TAU
+        };
+        let circle = *self;
+        let mut s_a1 = self.data.a1_rad;
+        while s_a1 < max_a {
+            circle
+                .set_angle_rad(s_a1, max_a.min(s_a1 + da))
+                .draw_sectors(bounds, r);
+            s_a1 += da * 2.0;
+        }
+    }
+}
+
+impl ShapeTrait for Circle {
+    fn shape_data<'a>(&'a self) -> &'a ShapeData {
+        &self.shape_data
+    }
+
+    fn shape_data_mut<'a>(&'a mut self) -> &'a mut ShapeData {
+        &mut self.shape_data
+    }
+}
+
+impl Drawable for Circle {
+    fn draw(&self, r: &impl RendererTrait) {
+        self.set_draw_state(r);
+
+        let bounds = match self.get_boundary(r) {
+            Some(r) => r,
+            None => return,
+        };
+
+        match self.data.dashes {
+            0 => {
+                let mut da = self.data.a2_rad - self.data.a1_rad;
+                if da < 0.0 {
+                    da += TAU
+                }
+                if (da - TAU).abs() < F32_ERR {
+                    self.draw_circle(bounds, r)
+                } else {
+                    self.draw_sectors(bounds, r)
+                }
+            }
+            _ => {
+                self.draw_dashed(bounds, r);
+                return;
+            }
+        }
+    }
+}

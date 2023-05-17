@@ -1,10 +1,11 @@
 use std::{fs, path::PathBuf};
 
+use shared::util::Catch;
 use syn::visit::Visit;
 
 use crate::{
     parse::ast_attrs::{get_attributes_if_active, Attribute, EcsAttribute},
-    util::{end, Catch},
+    util::end,
 };
 
 use super::ast_fn_arg::FnArg;

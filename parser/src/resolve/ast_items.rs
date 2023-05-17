@@ -8,8 +8,8 @@ use crate::{
         ast_mod::{MarkType, Mod},
     },
     resolve::ast_resolve::resolve_path,
-    util::{Catch, Get},
 };
+use shared::util::{Catch, Get};
 
 use shared::parse_args::{ComponentMacroArgs, GlobalMacroArgs, SystemMacroArgs};
 

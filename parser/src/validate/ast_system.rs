@@ -1,6 +1,9 @@
 use std::collections::HashSet;
 
-use shared::parse_args::{ComponentMacroArgs, GlobalMacroArgs, SystemMacroArgs};
+use shared::{
+    parse_args::{ComponentMacroArgs, GlobalMacroArgs, SystemMacroArgs},
+    util::JoinMap,
+};
 
 use crate::{
     parse::ast_fn_arg::{FnArg, FnArgType},
@@ -9,7 +12,6 @@ use crate::{
         ast_paths::{EngineGlobals, EngineIdents, Paths},
         ast_resolve::Path,
     },
-    util::JoinMap,
     validate::constants::{component_var, event_var},
 };
 

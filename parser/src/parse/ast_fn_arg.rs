@@ -1,8 +1,10 @@
 use std::{fmt::Display, path::PathBuf};
 
+use shared::util::Catch;
+
 use crate::{
     resolve::ast_resolve::{resolve_path, Path},
-    util::{parse_syn_path, Catch},
+    util::parse_syn_path,
 };
 
 use super::{ast_crate::Crate, ast_mod::Mod};
