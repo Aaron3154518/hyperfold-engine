@@ -1,3 +1,5 @@
+use super::texture_builder::TextureBuilder;
+
 
 
 // Text
@@ -8,7 +10,7 @@ pub struct Text {
 };
 
 impl Text {
-    pub fn draw()
+    pub fn draw(tex: &TextureBuilder, rect:Rect, text:String ){}
 }
 
 pub fn Text::draw(TextureBuilder& tex, Rect rect, const SharedFont& font,

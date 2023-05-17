@@ -1,6 +1,9 @@
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
+use shared::util::NoneOr;
+
+use super::font::{Font, FontAccess, FontData, FontTrait};
 use super::physics;
 use super::renderer::{RendererAccess, RendererTrait};
 use super::texture::SharedTexture;
@@ -20,12 +23,14 @@ const H: u32 = 720;
 
 pub struct AssetManager {
     file_imgs: HashMap<&'static str, Texture>,
+    fonts: HashMap<FontData, Font>,
 }
 
 impl AssetManager {
     pub fn new() -> Self {
         AssetManager {
             file_imgs: HashMap::new(),
+            fonts: HashMap::new(),
         }
     }
 
@@ -38,6 +43,48 @@ impl AssetManager {
 
     pub fn add_image(&mut self, file: &'static str, tex: Texture) {
         self.file_imgs.insert(file, tex);
+    }
+
+    pub fn get_font(&mut self, data: FontData) -> Option<FontAccess> {
+        match self.fonts.get(&data) {
+            Some(f) => Some(f.access()),
+            None => {
+                // Min is always too small or just right, max is too big
+                let (mut min_size, mut max_size) = (1, 10);
+                // If both dimensions are none, use smallest font
+                if data.w.is_some() || data.h.is_some() {
+                    let mut dim = Font::from_file(&data.file, min_size).size_text(&data.sample);
+                    // While too small
+                    while data.w.is_none_or(|w| dim.w as u32 <= *w)
+                        && data.h.is_none_or(|h| dim.h as u32 <= *h)
+                    {
+                        min_size = max_size;
+                        max_size *= 2;
+                        dim = Font::from_file(&data.file, max_size).size_text(&data.sample);
+                    }
+
+                    // Terminate when max_size (too big) is right after min_size (too small)
+                    while max_size - min_size > 1 {
+                        let size = (max_size + min_size) / 2;
+                        dim = Font::from_file(&data.file, size).size_text(&data.sample);
+                        // Too big
+                        if data.w.is_some_and(|w| dim.w as u32 > w)
+                            || data.h.is_some_and(|h| dim.h as u32 > h)
+                        {
+                            max_size = size;
+                        } else {
+                            // Too small or just right
+                            min_size = size;
+                        }
+                    }
+                }
+
+                let file = data.file.to_string();
+                self.fonts
+                    .insert(data, Font::from_file(&file, min_size))
+                    .map(|f| f.access())
+            }
+        }
     }
 }
 
