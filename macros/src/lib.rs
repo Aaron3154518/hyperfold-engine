@@ -1,6 +1,10 @@
-use std::{env, fs, path::PathBuf};
+use std::{
+    env::{self, temp_dir},
+    fs,
+    path::PathBuf,
+};
 
-use parser::codegen::ast_codegen::INDEX;
+use parser::codegen::ast_codegen::{INDEX, INDEX_SEP};
 use proc_macro::TokenStream;
 use quote::quote;
 use shared::{
@@ -58,19 +62,17 @@ pub fn game_crate(_input: TokenStream) -> TokenStream {
     ))
     .expect("Could not canonicalize manifest directory");
 
-    let data = fs::read_to_string(
-        PathBuf::from(std::env::var("OUT_DIR").expect("No out directory")).join(INDEX),
-    )
-    .expect("Could not read index file");
-    let file = format!(
-        "/{}.rs",
-        data.split("\n")
-            .position(|path| dir == PathBuf::from(path))
-            .catch(format!(
-                "Could not find directory in index: {}",
-                dir.display()
-            ))
-    );
+    let data = fs::read_to_string(temp_dir().join(INDEX)).expect("Could not read index file");
+    let file = data
+        .split("\n")
+        .find_map(|line| {
+            line.split_once(INDEX_SEP)
+                .and_then(|(path, file)| (dir == PathBuf::from(path)).then_some(file))
+        })
+        .catch(format!(
+            "Could not find directory in index: {}",
+            dir.display()
+        ));
 
-    quote!(include!(concat!(env!("OUT_DIR"), #file));).into()
+    quote!(include!(#file);).into()
 }

@@ -1,13 +1,7 @@
 use bindgen::callbacks::{DeriveInfo, ParseCallbacks};
 use std::{env, path::PathBuf};
 
-use parser::{
-    codegen::ast_codegen,
-    parse::ast_crate::Crate,
-    resolve::ast_items::ItemsCrate,
-    util::end,
-    // validate::ast_validate::ItemData,
-};
+use parser::{codegen::ast_codegen, parse::ast_crate::Crate, resolve::ast_items::ItemsCrate};
 
 #[derive(Default, Debug)]
 struct MyCallbacks;
@@ -24,7 +18,7 @@ impl ParseCallbacks for MyCallbacks {
 }
 
 // TODO: hardcoded
-const ENGINE_CRATE: &str = "."; //"hyperfold-engine";
+const ENGINE_CRATE: &str = "hyperfold-engine";
 const SDL2_PATH: &str = "sdl/SDL2-2.26.5";
 const SDL2_IMAGE_PATH: &str = "sdl/SDL2_image-2.6.3";
 const SDL2_TTF_PATH: &str = "sdl/SDL2_ttf-2.20.2";
@@ -145,24 +139,9 @@ pub fn main() {
     //     .collect::<Vec<_>>();
 
     // TODO: hardcoded
-    let (crates, paths) = Crate::parse(PathBuf::from("."));
+    let (crates, paths) = Crate::parse(PathBuf::from("../"));
 
-    let mut items = crates[..end(&crates, 1)]
-        .iter()
-        .map(|cr| {
-            let mut ic = ItemsCrate::new();
-            ic.parse_crate(cr, &paths, &crates);
-            // Remove macros crate as crate dependency
-            if let Some(i) = ic
-                .dependencies
-                .iter()
-                .position(|d| d.cr_idx == crates.len() - 1)
-            {
-                ic.dependencies.swap_remove(i);
-            }
-            ic
-        })
-        .collect::<Vec<_>>();
+    let mut items = ItemsCrate::parse(&paths, &crates);
 
     ast_codegen::codegen(&paths, &mut items);
 }

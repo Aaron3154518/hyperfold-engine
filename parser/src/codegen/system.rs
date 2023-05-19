@@ -98,15 +98,20 @@ impl System {
         }
     }
 
-    pub fn from(system: &ast_items::System, paths: &Paths, crates: &Vec<ItemsCrate>) -> Self {
+    pub fn from(
+        system: &ast_items::System,
+        cr_path: &syn::Path,
+        paths: &Paths,
+        crates: &Vec<ItemsCrate>,
+    ) -> Self {
         let mut sys = System::new();
 
         let [gfoo, e_ident, v_ident, eid] =
             [Idents::GenGFoo, Idents::GenE, Idents::GenV, Idents::GenEid].map(|i| i.to_ident());
 
         let mut validate = SystemValidate::new();
-        let path = vec_to_path(system.path.path.to_vec());
-        sys.name = quote!(#path);
+        let path = vec_to_path(system.path.path[1..].to_vec());
+        sys.name = quote!(#cr_path::#path);
         sys.is_init = system.attr_args.is_init;
         sys.args = system.args.map_vec(|arg| {
             match arg

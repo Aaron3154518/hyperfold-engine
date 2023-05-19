@@ -21,27 +21,40 @@ use shared::util::{JoinMap, JoinMapInto};
 
 use super::idents::Idents;
 
-pub fn entry_namespace_items(items: &mut ItemsCrate) {
-    for tr in NamespaceTraits::VARIANTS.iter() {
+// Add namespace traits and globals, happens at resolve-time
+pub fn add_traits(items: &mut Vec<ItemsCrate>) {
+    let entry = items
+        .iter_mut()
+        .find(|cr| cr.cr_idx == 0)
+        .expect("No entry crate");
+
+    let traits = NamespaceTraits::VARIANTS.map(|tr| {
         // Add trait
-        items.traits.push(Trait {
+        let new_tr = Trait {
             path: Path {
-                cr_idx: items.cr_idx,
+                cr_idx: entry.cr_idx,
                 path: tr.full_path(),
             },
-            g_idx: items.globals.len(),
-        });
+            g_idx: entry.globals.len(),
+        };
         // Add trait global
-        items.globals.push(Global {
+        entry.globals.push(Global {
             path: Path {
-                cr_idx: items.cr_idx,
+                cr_idx: entry.cr_idx,
                 path: tr.get_global().full_path(),
             },
             args: GlobalMacroArgs::from(Vec::new()),
         });
+        new_tr
+    });
+
+    drop(entry);
+    for i in items.iter_mut() {
+        traits.iter().for_each(|tr| i.traits.push(tr.clone()));
     }
 }
 
+// Add namespace mod, happends as parse-time
 pub fn entry_namespace_mod(cr: &Crate, dir: PathBuf, mods: Vec<String>) -> Mod {
     let mut m = dependency_namespace_mod(cr, dir, mods);
     // Foo structs

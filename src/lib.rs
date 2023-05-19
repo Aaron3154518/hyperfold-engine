@@ -113,12 +113,12 @@ pub fn quit_sdl() {
     }
 }
 
-fn main() {
-    init_sdl();
+// fn main() {
+//     init_sdl();
 
-    let mut sfoo = _engine::SFoo::new();
-    sfoo.run();
-    drop(sfoo);
+//     let mut sfoo = _engine::SFoo::new();
+//     sfoo.run();
+//     drop(sfoo);
 
-    quit_sdl();
-}
+//     quit_sdl();
+// }

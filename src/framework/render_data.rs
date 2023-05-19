@@ -7,6 +7,7 @@ use super::{
     texture_builder::Drawable,
 };
 
+#[macros::component]
 pub struct RenderData {
     tex: TextureAccess,
     pos: Rect,

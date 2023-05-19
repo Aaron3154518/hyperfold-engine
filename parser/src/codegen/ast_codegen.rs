@@ -1,3 +1,4 @@
+use std::env::temp_dir;
 use std::{fs, path::PathBuf};
 
 use proc_macro2::TokenStream;
@@ -32,7 +33,8 @@ use crate::{
 
 use super::util::string_to_type;
 
-pub const INDEX: &str = "Index.txt";
+pub const INDEX: &str = "hyperfold_engine_index.txt";
+pub const INDEX_SEP: &str = "\t";
 
 pub fn codegen(paths: &Paths, crates: &mut Vec<ItemsCrate>) {
     let out = PathBuf::from(std::env::var("OUT_DIR").expect("No out directory specified"));
@@ -40,23 +42,28 @@ pub fn codegen(paths: &Paths, crates: &mut Vec<ItemsCrate>) {
     // Sort by crate index
     crates.sort_by_key(|cr| cr.cr_idx);
 
+    // Write codegen
+    for cr in crates.iter() {}
+
     // Create index file
     fs::write(
-        out.join(INDEX),
+        temp_dir().join(INDEX),
         crates
-            .map_vec(|cr| cr.dir.to_string_lossy().to_string())
+            .map_vec(|cr| {
+                // Write to file
+                let file = out.join(format!("{}.rs", cr.cr_idx));
+                fs::write(file.to_owned(), cr.codegen(paths, crates).to_string())
+                    .catch(format!("Could not write to: {}", file.display()));
+                format!(
+                    "{}{}{}",
+                    cr.dir.to_string_lossy().to_string(),
+                    INDEX_SEP,
+                    file.display()
+                )
+            })
             .join("\n"),
     )
     .catch(format!("Could not write to index file: {INDEX}"));
-
-    // Write codegen
-    for cr in crates.iter() {
-        fs::write(
-            out.join(format!("{}.rs", cr.cr_idx)),
-            cr.codegen(paths, crates).to_string(),
-        )
-        .catch(format!("Could not write to {}.rs", cr.cr_idx));
-    }
 }
 
 // Get dependencies in post order (children first)
@@ -193,7 +200,7 @@ impl ItemsCrate {
 
         // Get component types by crate for system codegen
         // Get full list of components, global, evnets, and systems
-        let (c_tys, c_vars, g_tys, g_vars, e_tys, e_vars, e_varis) = crates
+        let (crate_c_tys, c_tys, c_vars, g_tys, g_vars, e_tys, e_vars, e_varis) = crates
             .iter()
             .zip(crate_paths.iter())
             .collect::<Vec<_>>()
@@ -203,14 +210,14 @@ impl ItemsCrate {
                         let path = vec_to_path(c.path.path[1..].to_vec());
                         (
                             quote!(#cr_path::#path),
-                            format_ident!("{}", component_var(self.cr_idx, i)),
+                            format_ident!("{}", component_var(cr.cr_idx, i)),
                         )
                     }),
                     cr.globals.iter().enumerate().unzip_vec(|(i, g)| {
                         let path = vec_to_path(g.path.path[1..].to_vec());
                         (
                             quote!(#cr_path::#path),
-                            format_ident!("{}", global_var(self.cr_idx, i)),
+                            format_ident!("{}", global_var(cr.cr_idx, i)),
                         )
                     }),
                     cr.events
@@ -234,19 +241,31 @@ impl ItemsCrate {
                     )
             })
             .into_iter()
-            .unzip7_vec();
+            .unzip7_vec()
+            .call_into(|(c_tys, c_vars, g_tys, g_vars, e_tys, e_vars, e_varis)| {
+                (
+                    c_tys.to_vec(),
+                    c_tys.concat(),
+                    c_vars.concat(),
+                    g_tys.concat(),
+                    g_vars.concat(),
+                    e_tys.concat(),
+                    e_vars.concat(),
+                    e_varis.concat(),
+                )
+            });
 
         // Global manager
         let gfoo_ident = Idents::GFoo.to_ident();
         let gfoo_def = quote!(
             pub struct #gfoo_ident {
-                #(#(#g_vars: #g_tys),*),*
+                #(#g_vars: #g_tys),*
             }
 
             impl #gfoo_ident {
                 pub fn new() -> Self {
                     Self {
-                        #(#(#g_vars: #g_tys::new()),*,)*
+                        #(#g_vars: #g_tys::new()),*
                     }
                 }
             }
@@ -273,39 +292,39 @@ impl ItemsCrate {
         let cfoo_def = quote!(
             pub struct #cfoo_ident {
                 eids: std::collections::HashSet<#entity>,
-                #(#(#c_vars: std::collections::HashMap<#entity, #c_tys>),*,)*
+                #(#c_vars: std::collections::HashMap<#entity, #c_tys>),*
             }
 
             impl #cfoo_ident {
                 pub fn new() -> Self {
                     Self {
                         eids: std::collections::HashSet::new(),
-                        #(#(#c_vars: std::collections::HashMap::new()),*,)*
+                        #(#c_vars: std::collections::HashMap::new()),*
                     }
                 }
 
                 pub fn append(&mut self, cm: &mut Self) {
                     self.eids.extend(cm.eids.drain());
-                    #(#(self.#c_vars.extend(cm.#c_vars.drain());)*)*
+                    #(self.#c_vars.extend(cm.#c_vars.drain());)*
                 }
 
                 pub fn remove(&mut self, tr: &mut #entity_trash) {
                     for eid in tr.0.drain(..) {
                         self.eids.remove(&eid);
-                        #(#(self.#c_vars.remove(&eid);)*)*
+                        #(self.#c_vars.remove(&eid);)*
                     }
                 }
             }
         );
         let cfoo_traits = quote!(
-            #(#(
+            #(
                 impl #add_comp_tr<#c_tys> for #cfoo_ident {
                     fn add_component(&mut self, e: #entity, t: #c_tys) {
                         self.eids.insert(e);
                         self.#c_vars.insert(e, t);
                     }
                 }
-            )*)*
+            )*
             #(
                 impl #crate_paths_post::#ns::#add_comp for #cfoo_ident {}
             )*
@@ -316,25 +335,25 @@ impl ItemsCrate {
         let add_event_tr = &engine_trait_paths[EngineTraits::AddEvent as usize];
         let e_ident = Idents::E.to_ident();
         let e_len_ident = Idents::ELen.to_ident();
-        let e_len = e_vars.iter().fold(0, |s, v| s + v.len());
+        let e_len = e_varis.len();
         let e_def = quote!(
             #[derive(Hash, Clone, Copy, Eq, PartialEq, Debug)]
             pub enum #e_ident {
-                #(#(#e_varis),*),*
+                #(#e_varis),*
             }
             pub const #e_len_ident: usize = #e_len;
         );
         let efoo_ident = Idents::EFoo.to_ident();
         let efoo_def = quote!(
             pub struct #efoo_ident {
-                #(#(#e_vars: Vec<#e_tys>),*),*,
+                #(#e_vars: Vec<#e_tys>),*,
                 events: std::collections::VecDeque<(#e_ident, usize)>
             }
 
             impl #efoo_ident {
                 pub fn new() -> Self {
                     Self {
-                        #(#(#e_vars: Vec::new()),*),*,
+                        #(#e_vars: Vec::new()),*,
                         events: std::collections::VecDeque::new()
                     }
                 }
@@ -352,25 +371,25 @@ impl ItemsCrate {
                 }
 
                 pub fn append(&mut self, other: &mut Self) {
-                    #(#(
+                    #(
                         other.#e_vars.reverse();
                         self.#e_vars.append(&mut other.#e_vars);
-                    )*)*
+                    )*
                 }
 
                 pub fn pop(&mut self, e: #e_ident) {
                     match e {
-                        #(#(
+                        #(
                             #e_ident::#e_varis => {
                                 self.#e_vars.pop();
                             }
-                        )*)*
+                        )*
                     }
                 }
             }
         );
         let efoo_traits = quote!(
-            #(#(
+            #(
                 impl #add_event_tr<#e_tys> for #efoo_ident {
                     fn new_event(&mut self, t: #e_tys) {
                         self.#e_vars.push(t);
@@ -381,7 +400,7 @@ impl ItemsCrate {
                         self.#e_vars.last()
                     }
                 }
-            )*)*
+            )*
             #(
                 impl #crate_paths_post::#ns::#add_event for #efoo_ident {}
             )*
@@ -403,9 +422,9 @@ impl ItemsCrate {
             (Vec::new(), Vec::new()),
             |(mut s_init, mut sys), (cr, cr_path)| {
                 for s in cr.systems.iter() {
-                    let s = codegen::system::System::from(s, paths, crates);
+                    let s = codegen::system::System::from(s, cr_path, paths, crates);
                     if s.is_init { &mut s_init } else { &mut sys }
-                        .push(s.to_quote(&engine_cr_path, &c_tys))
+                        .push(s.to_quote(&engine_cr_path, &crate_c_tys))
                 }
                 (s_init, sys)
             },
@@ -616,6 +635,7 @@ impl ItemsCrate {
             _ => self.codegen_dep(paths, crates),
         };
         quote!(
+            #[allow(unused_parens, unused_variables)]
             pub mod #ns {
                 #code
             }

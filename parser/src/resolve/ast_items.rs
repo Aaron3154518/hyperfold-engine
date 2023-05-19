@@ -1,15 +1,16 @@
 use std::path::PathBuf;
 
 use crate::{
-    codegen::mods::entry_namespace_items,
+    codegen::mods::add_traits,
     parse::{
         ast_crate::Crate,
         ast_fn_arg::{FnArg, FnArgType},
         ast_mod::{MarkType, Mod},
     },
     resolve::ast_resolve::resolve_path,
+    util::end,
 };
-use shared::util::{Catch, Get};
+use shared::util::{Catch, Get, JoinMap};
 
 use shared::parse_args::{ComponentMacroArgs, GlobalMacroArgs, SystemMacroArgs};
 
@@ -84,6 +85,25 @@ impl ItemsCrate {
         }
     }
 
+    pub fn parse(paths: &Paths, crates: &Vec<Crate>) -> Vec<Self> {
+        // Skip macros crate
+        let mut items = crates[..end(&crates, 1)].map_vec(|cr| {
+            let mut ic = ItemsCrate::new();
+            ic.parse_crate(cr, &paths, &crates);
+            // Remove macros crate as crate dependency
+            if let Some(i) = ic
+                .dependencies
+                .iter()
+                .position(|d| d.cr_idx == crates.len() - 1)
+            {
+                ic.dependencies.swap_remove(i);
+            }
+            ic
+        });
+        add_traits(&mut items);
+        items
+    }
+
     pub fn parse_crate(&mut self, cr: &Crate, paths: &Paths, crates: &Vec<Crate>) {
         self.dir = cr.dir.to_owned();
         self.cr_name = cr.name.to_string();
@@ -96,12 +116,7 @@ impl ItemsCrate {
                 cr_alias: alias.to_string(),
             })
             .collect::<Vec<_>>();
-        self.parse_mod(cr, &cr.main, paths, crates);
-
-        // Add globals to entry crate
-        if self.cr_idx == 0 {
-            entry_namespace_items(self);
-        }
+        self.parse_mod(cr, &cr.main, paths, crates)
     }
 
     pub fn parse_mod(&mut self, cr: &Crate, m: &Mod, paths: &Paths, crates: &Vec<Crate>) {
