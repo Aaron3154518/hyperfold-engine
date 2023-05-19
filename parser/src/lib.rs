@@ -15,10 +15,8 @@ use resolve::ast_resolve;
 use shared::util::JoinMapInto;
 
 use crate::{
-    codegen::codegen::Decoder,
     resolve::{ast_items::ItemsCrate, ast_paths::Paths},
     util::{end, format_code},
-    validate::ast_validate::ItemData,
 };
 
 pub mod codegen;
@@ -104,15 +102,4 @@ fn test() {
         })
         .collect::<Vec<_>>();
     // println!("{:#?}", items);
-
-    let data = ItemData::validate(&paths, &mut items);
-    data.write_to_file();
-    println!("{:#?}", data);
-
-    let decoder = Decoder::new();
-    // println!("{:#?}", decoder);
-    println!(
-        "{}",
-        format_code(decoder.codegen(PathBuf::from("./test/a")).1.to_string())
-    );
 }

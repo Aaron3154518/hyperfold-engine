@@ -33,7 +33,6 @@ pub struct Global {
 #[derive(Clone, Debug)]
 pub struct Trait {
     pub path: Path,
-    pub cr_idx: usize,
     pub g_idx: usize,
 }
 
@@ -64,6 +63,7 @@ pub struct ItemsCrate {
     pub cr_idx: usize,
     pub components: Vec<Component>,
     pub globals: Vec<Global>,
+    pub traits: Vec<Trait>,
     pub events: Vec<Event>,
     pub systems: Vec<System>,
     pub dependencies: Vec<Dependency>,
@@ -77,6 +77,7 @@ impl ItemsCrate {
             cr_idx: 0,
             components: Vec::new(),
             globals: Vec::new(),
+            traits: Vec::new(),
             events: Vec::new(),
             systems: Vec::new(),
             dependencies: Vec::new(),

@@ -10,6 +10,7 @@ use shared::util::Unzip3;
 use shared::util::Unzip7;
 use shared::util::{Catch, JoinMap};
 
+use crate::codegen;
 use crate::codegen::idents::Idents;
 use crate::codegen::util::vec_to_path;
 use crate::resolve::ast_items::Dependency;
@@ -19,6 +20,7 @@ use crate::resolve::ast_paths::EngineTraits;
 use crate::resolve::ast_paths::ExpandEnum;
 use crate::resolve::ast_paths::GetPaths;
 use crate::resolve::ast_resolve::Path;
+// use crate::validate::ast_item_list::ItemList;
 use crate::validate::constants::component_var;
 use crate::validate::constants::event_var;
 use crate::validate::constants::event_variant;
@@ -30,7 +32,7 @@ use crate::{
 
 use super::util::string_to_type;
 
-const INDEX: &str = "Index.txt";
+pub const INDEX: &str = "Index.txt";
 
 pub fn codegen(paths: &Paths, crates: &mut Vec<ItemsCrate>) {
     let out = PathBuf::from(std::env::var("OUT_DIR").expect("No out directory specified"));
@@ -102,7 +104,7 @@ impl ItemsCrate {
                         cr.cr_name.to_string()
                     }],
                 }
-                .path_from(0, crates),
+                .path_from(self.cr_idx, crates),
             )
         })
     }
@@ -112,7 +114,7 @@ impl ItemsCrate {
         paths: &Paths,
         crates: &Vec<ItemsCrate>,
     ) -> [(usize, usize); EngineGlobals::LEN] {
-        paths.globals.map(|gl| {
+        paths.globals.each_ref().map(|gl| {
             (
                 gl.cr_idx,
                 crates[gl.cr_idx]
@@ -190,22 +192,22 @@ impl ItemsCrate {
         let engine_cr_path = &crate_paths[paths.engine_cr_idx];
 
         // Get component types by crate for system codegen
-        // Get full list of components, global, and events
-        let (crate_c_tys, c_tys, c_vars, g_tys, g_vars, e_tys, e_vars, e_varis) = crates
+        // Get full list of components, global, evnets, and systems
+        let (c_tys, c_vars, g_tys, g_vars, e_tys, e_vars, e_varis) = crates
             .iter()
             .zip(crate_paths.iter())
             .collect::<Vec<_>>()
             .map_vec(|&(cr, cr_path)| {
                 (
                     cr.components.iter().enumerate().unzip_vec(|(i, c)| {
-                        let path = vec_to_path(c.path.path.to_vec());
+                        let path = vec_to_path(c.path.path[1..].to_vec());
                         (
                             quote!(#cr_path::#path),
                             format_ident!("{}", component_var(self.cr_idx, i)),
                         )
                     }),
                     cr.globals.iter().enumerate().unzip_vec(|(i, g)| {
-                        let path = vec_to_path(g.path.path.to_vec());
+                        let path = vec_to_path(g.path.path[1..].to_vec());
                         (
                             quote!(#cr_path::#path),
                             format_ident!("{}", global_var(self.cr_idx, i)),
@@ -215,7 +217,7 @@ impl ItemsCrate {
                         .iter()
                         .enumerate()
                         .map_vec(|(i, e)| {
-                            let ty = vec_to_path(e.path.path.to_vec());
+                            let ty = vec_to_path(e.path.path[1..].to_vec());
                             (
                                 quote!(#cr_path::#ty),
                                 format_ident!("{}", event_var(cr.cr_idx, i)),
@@ -232,31 +234,19 @@ impl ItemsCrate {
                     )
             })
             .into_iter()
-            .unzip7_vec()
-            .call_into(|(c_tys, c_vars, g_tys, g_vars, e_tys, e_vars, e_varis)| {
-                (
-                    c_tys.to_vec(),
-                    c_tys.concat(),
-                    c_vars.concat(),
-                    g_tys.concat(),
-                    g_vars.concat(),
-                    e_tys.concat(),
-                    e_vars.concat(),
-                    e_varis.concat(),
-                )
-            });
+            .unzip7_vec();
 
         // Global manager
         let gfoo_ident = Idents::GFoo.to_ident();
         let gfoo_def = quote!(
             pub struct #gfoo_ident {
-                #(#g_vars: #g_tys),*
+                #(#(#g_vars: #g_tys),*),*
             }
 
             impl #gfoo_ident {
                 pub fn new() -> Self {
                     Self {
-                        #(#g_vars: #g_tys::new(),)*
+                        #(#(#g_vars: #g_tys::new()),*,)*
                     }
                 }
             }
@@ -276,322 +266,332 @@ impl ItemsCrate {
             .to_path()
             .call(|i| quote!(#engine_cr_path::#i));
 
-        // // Component manager
-        // let add_comp = Idents::AddComponent.to_ident();
-        // let add_comp_tr = &engine_trait_paths[EngineTraits::AddComponent as usize];
-        // let cfoo_ident = Idents::CFoo.to_ident();
-        // let cfoo_def = quote!(
-        //     pub struct #cfoo_ident {
-        //         eids: std::collections::HashSet<#entity>,
-        //         #(#c_vars: std::collections::HashMap<#entity, #c_tys>,)*
-        //     }
+        // Component manager
+        let add_comp = Idents::AddComponent.to_ident();
+        let add_comp_tr = &engine_trait_paths[EngineTraits::AddComponent as usize];
+        let cfoo_ident = Idents::CFoo.to_ident();
+        let cfoo_def = quote!(
+            pub struct #cfoo_ident {
+                eids: std::collections::HashSet<#entity>,
+                #(#(#c_vars: std::collections::HashMap<#entity, #c_tys>),*,)*
+            }
 
-        //     impl #cfoo_ident {
-        //         pub fn new() -> Self {
-        //             Self {
-        //                 eids: std::collections::HashSet::new(),
-        //                 #(#c_vars: std::collections::HashMap::new(),)*
-        //             }
-        //         }
+            impl #cfoo_ident {
+                pub fn new() -> Self {
+                    Self {
+                        eids: std::collections::HashSet::new(),
+                        #(#(#c_vars: std::collections::HashMap::new()),*,)*
+                    }
+                }
 
-        //         pub fn append(&mut self, cm: &mut Self) {
-        //             self.eids.extend(cm.eids.drain());
-        //             #(self.#c_vars.extend(cm.#c_vars.drain());)*
-        //         }
+                pub fn append(&mut self, cm: &mut Self) {
+                    self.eids.extend(cm.eids.drain());
+                    #(#(self.#c_vars.extend(cm.#c_vars.drain());)*)*
+                }
 
-        //         pub fn remove(&mut self, tr: &mut #entity_trash) {
-        //             for eid in tr.0.drain(..) {
-        //                 self.eids.remove(&eid);
-        //                 #(self.#c_vars.remove(&eid);)*
-        //             }
-        //         }
-        //     }
-        // );
-        // let cfoo_traits = quote!(
-        //     #(
-        //         impl #add_comp_tr<#c_tys> for #cfoo_ident {
-        //             fn add_component(&mut self, e: #entity, t: #c_tys) {
-        //                 self.eids.insert(e);
-        //                 self.#c_vars.insert(e, t);
-        //             }
-        //         }
-        //     )*
-        //     #(
-        //         impl #crate_paths_post::#ns::#add_comp for #cfoo_ident {}
-        //     )*
-        // );
+                pub fn remove(&mut self, tr: &mut #entity_trash) {
+                    for eid in tr.0.drain(..) {
+                        self.eids.remove(&eid);
+                        #(#(self.#c_vars.remove(&eid);)*)*
+                    }
+                }
+            }
+        );
+        let cfoo_traits = quote!(
+            #(#(
+                impl #add_comp_tr<#c_tys> for #cfoo_ident {
+                    fn add_component(&mut self, e: #entity, t: #c_tys) {
+                        self.eids.insert(e);
+                        self.#c_vars.insert(e, t);
+                    }
+                }
+            )*)*
+            #(
+                impl #crate_paths_post::#ns::#add_comp for #cfoo_ident {}
+            )*
+        );
 
-        // // Event manager
-        // let add_event = Idents::AddEvent.to_ident();
-        // let add_event_tr = &engine_trait_paths[EngineTraits::AddEvent as usize];
-        // let e_ident = Idents::E.to_ident();
-        // let e_len_ident = Idents::ELen.to_ident();
-        // let e_len = e_vars.len();
-        // let e_def = quote!(
-        //     #[derive(Hash, Clone, Copy, Eq, PartialEq, Debug)]
-        //     pub enum #e_ident {
-        //         #(#e_varis),*
-        //     }
-        //     pub const #e_len_ident: usize = #e_len;
-        // );
-        // let efoo_ident = Idents::EFoo.to_ident();
-        // let efoo_def = quote!(
-        //     pub struct #efoo_ident {
-        //         #(#e_vars: Vec<#e_tys>),*,
-        //         events: std::collections::VecDeque<(#e_ident, usize)>
-        //     }
+        // Event manager
+        let add_event = Idents::AddEvent.to_ident();
+        let add_event_tr = &engine_trait_paths[EngineTraits::AddEvent as usize];
+        let e_ident = Idents::E.to_ident();
+        let e_len_ident = Idents::ELen.to_ident();
+        let e_len = e_vars.iter().fold(0, |s, v| s + v.len());
+        let e_def = quote!(
+            #[derive(Hash, Clone, Copy, Eq, PartialEq, Debug)]
+            pub enum #e_ident {
+                #(#(#e_varis),*),*
+            }
+            pub const #e_len_ident: usize = #e_len;
+        );
+        let efoo_ident = Idents::EFoo.to_ident();
+        let efoo_def = quote!(
+            pub struct #efoo_ident {
+                #(#(#e_vars: Vec<#e_tys>),*),*,
+                events: std::collections::VecDeque<(#e_ident, usize)>
+            }
 
-        //     impl #efoo_ident {
-        //         pub fn new() -> Self {
-        //             Self {
-        //                 #(#e_vars: Vec::new()),*,
-        //                 events: std::collections::VecDeque::new()
-        //             }
-        //         }
+            impl #efoo_ident {
+                pub fn new() -> Self {
+                    Self {
+                        #(#(#e_vars: Vec::new()),*),*,
+                        events: std::collections::VecDeque::new()
+                    }
+                }
 
-        //         pub fn has_events(&self) -> bool {
-        //             !self.events.is_empty()
-        //         }
+                pub fn has_events(&self) -> bool {
+                    !self.events.is_empty()
+                }
 
-        //         fn add_event(&mut self, e: #e_ident) {
-        //             self.events.push_back((e, 0));
-        //         }
+                fn add_event(&mut self, e: #e_ident) {
+                    self.events.push_back((e, 0));
+                }
 
-        //         pub fn get_events(&mut self) -> std::collections::VecDeque<(#e_ident, usize)> {
-        //             std::mem::replace(&mut self.events, std::collections::VecDeque::new())
-        //         }
+                pub fn get_events(&mut self) -> std::collections::VecDeque<(#e_ident, usize)> {
+                    std::mem::replace(&mut self.events, std::collections::VecDeque::new())
+                }
 
-        //         pub fn append(&mut self, other: &mut Self) {
-        //             #(
-        //                 other.#e_vars.reverse();
-        //                 self.#e_vars.append(&mut other.#e_vars);
-        //             )*
-        //         }
+                pub fn append(&mut self, other: &mut Self) {
+                    #(#(
+                        other.#e_vars.reverse();
+                        self.#e_vars.append(&mut other.#e_vars);
+                    )*)*
+                }
 
-        //         pub fn pop(&mut self, e: #e_ident) {
-        //             match e {
-        //                 #(
-        //                     #e_ident::#e_varis => {
-        //                         self.#e_vars.pop();
-        //                     }
-        //                 )*
-        //             }
-        //         }
-        //     }
-        // );
-        // let efoo_traits = quote!(
-        //     #(
-        //         impl #add_event_tr<#e_tys> for #efoo_ident {
-        //             fn new_event(&mut self, t: #e_tys) {
-        //                 self.#e_vars.push(t);
-        //                 self.add_event(#e_ident::#e_varis);
-        //             }
+                pub fn pop(&mut self, e: #e_ident) {
+                    match e {
+                        #(#(
+                            #e_ident::#e_varis => {
+                                self.#e_vars.pop();
+                            }
+                        )*)*
+                    }
+                }
+            }
+        );
+        let efoo_traits = quote!(
+            #(#(
+                impl #add_event_tr<#e_tys> for #efoo_ident {
+                    fn new_event(&mut self, t: #e_tys) {
+                        self.#e_vars.push(t);
+                        self.add_event(#e_ident::#e_varis);
+                    }
 
-        //             fn get_event<'a>(&'a self) -> Option<&'a #e_tys> {
-        //                 self.#e_vars.last()
-        //             }
-        //         }
-        //     )*
-        //     #(
-        //         impl #crate_paths_post::#ns::#add_event for #efoo_ident {}
-        //     )*
-        // );
+                    fn get_event<'a>(&'a self) -> Option<&'a #e_tys> {
+                        self.#e_vars.last()
+                    }
+                }
+            )*)*
+            #(
+                impl #crate_paths_post::#ns::#add_event for #efoo_ident {}
+            )*
+        );
 
-        // // Variables for engine globals
-        // let engine_globals =
-        //     engine_globals.map(|(cr_idx, g_i)| format_ident!("{}", global_var(cr_idx, g_i)));
-        // let g_event = &engine_globals[EngineGlobals::Event as usize];
-        // let g_render_system = &engine_globals[EngineGlobals::RenderSystem as usize];
-        // let g_entity_trash = &engine_globals[EngineGlobals::EntityTrash as usize];
-        // let g_screen = &engine_globals[EngineGlobals::Screen as usize];
-        // let g_camera = &engine_globals[EngineGlobals::Camera as usize];
-        // let g_efoo = &engine_globals[EngineGlobals::EFoo as usize];
-        // let g_cfoo = &engine_globals[EngineGlobals::CFoo as usize];
+        // Variables for engine globals
+        let engine_globals =
+            engine_globals.map(|(cr_idx, g_i)| format_ident!("{}", global_var(cr_idx, g_i)));
+        let g_event = &engine_globals[EngineGlobals::Event as usize];
+        let g_render_system = &engine_globals[EngineGlobals::RenderSystem as usize];
+        let g_entity_trash = &engine_globals[EngineGlobals::EntityTrash as usize];
+        let g_screen = &engine_globals[EngineGlobals::Screen as usize];
+        let g_camera = &engine_globals[EngineGlobals::Camera as usize];
+        let g_efoo = &engine_globals[EngineGlobals::EFoo as usize];
+        let g_cfoo = &engine_globals[EngineGlobals::CFoo as usize];
 
-        // // Systems
-        // let systems =
-        //     crate_paths
-        //         .iter()
-        //         .enumerate()
-        //         .fold(Vec::new(), |mut v, (cr_idx, cr_path)| {
-        //             v.append(&mut self.get_systems(cr_idx, cr_path));
-        //             v
-        //         });
-        // let init_systems_code = systems
-        //     .iter()
-        //     .filter(|s| s.is_init)
-        //     .map(|s| s.to_quote(engine_cr_path, &crate_c_tys))
-        //     .collect::<Vec<_>>();
-        // let systems_code = systems
-        //     .iter()
-        //     .filter(|s| !s.is_init)
-        //     .map(|s| s.to_quote(engine_cr_path, &crate_c_tys))
-        //     .collect::<Vec<_>>();
+        // Systems
+        let (init_systems, systems) = crates.iter().zip(crate_paths.iter()).fold(
+            (Vec::new(), Vec::new()),
+            |(mut s_init, mut sys), (cr, cr_path)| {
+                for s in cr.systems.iter() {
+                    let s = codegen::system::System::from(s, paths, crates);
+                    if s.is_init { &mut s_init } else { &mut sys }
+                        .push(s.to_quote(&engine_cr_path, &c_tys))
+                }
+                (s_init, sys)
+            },
+        );
 
-        // let [cfoo, gfoo, efoo] =
-        //     [Idents::GenCFoo, Idents::GenGFoo, Idents::GenEFoo].map(|i| i.to_ident());
-        // let [core_update, core_events, core_render] = [
-        //     EngineIdents::CoreUpdate,
-        //     EngineIdents::CoreEvents,
-        //     EngineIdents::CoreRender,
-        // ]
-        // .map(|i| vec_to_path(i.path_stem()));
+        let [cfoo, gfoo, efoo] =
+            [Idents::GenCFoo, Idents::GenGFoo, Idents::GenEFoo].map(|i| i.to_ident());
+        let [core_update, core_events, core_render] = [
+            EngineIdents::CoreUpdate,
+            EngineIdents::CoreEvents,
+            EngineIdents::CoreRender,
+        ]
+        .map(|i| vec_to_path(i.path_stem()));
 
-        // // Sdl
-        // let sdl2 = EngineIdents::SDL2.to_path();
+        // Sdl
+        let sdl2 = EngineIdents::SDL2.to_path();
 
-        // // Systems manager
-        // let sfoo_ident = Idents::SFoo.to_ident();
-        // let sfoo_def = quote!(
-        //     pub struct #sfoo_ident {
-        //         #cfoo: #cfoo_ident,
-        //         #gfoo: #gfoo_ident,
-        //         #efoo: #efoo_ident,
-        //         stack: Vec<std::collections::VecDeque<(#e_ident, usize)>>,
-        //         services: [Vec<Box<dyn Fn(&mut #cfoo_ident, &mut #gfoo_ident, &mut #efoo_ident)>>; #e_len_ident]
-        //     }
+        // Systems manager
+        let sfoo_ident = Idents::SFoo.to_ident();
+        let sfoo_struct = quote!(
+            pub struct #sfoo_ident {
+                #cfoo: #cfoo_ident,
+                #gfoo: #gfoo_ident,
+                #efoo: #efoo_ident,
+                stack: Vec<std::collections::VecDeque<(#e_ident, usize)>>,
+                services: [Vec<Box<dyn Fn(&mut #cfoo_ident, &mut #gfoo_ident, &mut #efoo_ident)>>; #e_len_ident]
+            }
+        );
+        let sfoo_new = quote!(
+            pub fn new() -> Self {
+                let mut s = Self {
+                    #cfoo: #cfoo_ident::new(),
+                    #gfoo: #gfoo_ident::new(),
+                    #efoo: #efoo_ident::new(),
+                    stack: Vec::new(),
+                    services: std::array::from_fn(|_| Vec::new())
+                };
+                s.init();
+                s
+            }
+        );
+        let sfoo_init = quote!(
+            // Init
+            fn init(&mut self) {
+                #(#init_systems)*
+                self.post_tick();
+                self.add_systems();
+            }
 
-        //     impl #sfoo_ident {
-        //         pub fn new() -> Self {
-        //             let mut s = Self {
-        //                 #cfoo: #cfoo_ident::new(),
-        //                 #gfoo: #gfoo_ident::new(),
-        //                 #efoo: #efoo_ident::new(),
-        //                 stack: Vec::new(),
-        //                 services: std::array::from_fn(|_| Vec::new())
-        //             };
-        //             s.init();
-        //             s
-        //         }
+            fn add_system(&mut self, e: #e_ident, f: Box<dyn Fn(&mut #cfoo_ident, &mut #gfoo_ident, &mut #efoo_ident)>) {
+                self.services[e as usize].push(f);
+            }
 
-        //         // Init
-        //         fn init(&mut self) {
-        //             #(#init_systems_code)*
-        //             self.post_tick();
-        //             self.add_systems();
-        //         }
+            fn add_systems(&mut self) {
+                #(#systems)*
+            }
+        );
+        let sfoo_run = quote!(
+            pub fn run(&mut self) {
+                static FPS: u32 = 60;
+                static FRAME_TIME: u32 = 1000 / FPS;
 
-        //         fn add_system(&mut self, e: #e_ident, f: Box<dyn Fn(&mut #cfoo_ident, &mut #gfoo_ident, &mut #efoo_ident)>) {
-        //             self.services[e as usize].push(f);
-        //         }
+                let mut t = unsafe { #engine_cr_path::#sdl2::SDL_GetTicks() };
+                let mut dt;
+                let mut tsum: u64 = 0;
+                let mut tcnt: u64 = 0;
+                while !self.#gfoo.#g_event.quit {
+                    dt = unsafe { #engine_cr_path::#sdl2::SDL_GetTicks() } - t;
+                    t += dt;
 
-        //         fn add_systems(&mut self) {
-        //             #(#systems_code)*
-        //         }
+                    self.tick(dt);
 
-        //         // Tick
-        //         pub fn run(&mut self) {
-        //             static FPS: u32 = 60;
-        //             static FRAME_TIME: u32 = 1000 / FPS;
+                    dt = unsafe { #engine_cr_path::#sdl2::SDL_GetTicks() } - t;
+                    tsum += dt as u64;
+                    tcnt += 1;
+                    if dt < FRAME_TIME {
+                        unsafe { #engine_cr_path::#sdl2::SDL_Delay(FRAME_TIME - dt) };
+                    }
+                }
 
-        //             let mut t = unsafe { #engine_cr_path::#sdl2::SDL_GetTicks() };
-        //             let mut dt;
-        //             let mut tsum: u64 = 0;
-        //             let mut tcnt: u64 = 0;
-        //             while !self.#gfoo.#g_event.quit {
-        //                 dt = unsafe { #engine_cr_path::#sdl2::SDL_GetTicks() } - t;
-        //                 t += dt;
+                println!("Average Frame Time: {}ms", tsum as f64 / tcnt as f64);
+            }
+        );
+        let sfoo_tick = quote!(
+            fn tick(&mut self, ts: u32) {
+                // Update #efoo
+                self.#gfoo.#g_event.update(ts, &self.#gfoo.#g_camera.0, &self.#gfoo.#g_screen.0);
+                // Clear the screen
+                self.#gfoo.#g_render_system.r.clear();
+                // Add initial #efoo
+                self.add_events(self.init_events(ts));
+                while !self.stack.is_empty() {
+                    // Get element from next queue
+                    if let Some((e, i, n)) = self
+                        .stack
+                        // Get last queue
+                        .last_mut()
+                        // Get next #efoo
+                        .and_then(|queue| queue.front_mut())
+                        // Check if the system exists
+                        .and_then(|(e, i)| {
+                            // Increment the event idx and return the old values
+                            let v_s = &self.services[*e as usize];
+                            v_s.get(*i).map(|_| {
+                                let vals = (e.clone(), i.clone(), v_s.len());
+                                *i += 1;
+                                vals
+                            })
+                        })
+                    {
+                        // This is the last system for this event
+                        if i + 1 >= n {
+                            self.pop();
+                        }
+                        // Add a new queue for new #efoo
+                        self.#gfoo.#g_efoo = #efoo_ident::new();
+                        // Run the system
+                        if let Some(s) = self.services[e as usize].get(i) {
+                            (s)(&mut self.#cfoo, &mut self.#gfoo, &mut self.#efoo);
+                        }
+                        // If this is the last system, remove the event
+                        if i + 1 >= n {
+                            self.#efoo.pop(e);
+                        }
+                        // Add new #efoo
+                        let #efoo = std::mem::replace(&mut self.#gfoo.#g_efoo, #efoo_ident::new());
+                        self.add_events(#efoo);
+                    } else {
+                        // We're done with this event
+                        self.pop();
+                    }
+                }
+                // Display the screen
+                self.#gfoo.#g_render_system.r.present();
 
-        //                 self.tick(dt);
+                self.post_tick();
+            }
 
-        //                 dt = unsafe { #engine_cr_path::#sdl2::SDL_GetTicks() } - t;
-        //                 tsum += dt as u64;
-        //                 tcnt += 1;
-        //                 if dt < FRAME_TIME {
-        //                     unsafe { #engine_cr_path::#sdl2::SDL_Delay(FRAME_TIME - dt) };
-        //                 }
-        //             }
+            fn post_tick(&mut self) {
+                // Remove marked entities
+                self.#cfoo.remove(&mut self.#gfoo.#g_entity_trash);
+                // Add new entities
+                self.#cfoo.append(&mut self.#gfoo.#g_cfoo);
+            }
+        );
+        let sfoo_events = quote!(
+            fn init_events(&self, ts: u32) -> #efoo_ident {
+                let mut #efoo = #efoo_ident::new();
+                #add_event_tr::new_event(&mut #efoo, #engine_cr_path::#core_events);
+                #add_event_tr::new_event(&mut #efoo, #engine_cr_path::#core_update(ts));
+                #add_event_tr::new_event(&mut #efoo, #engine_cr_path::#core_render);
+                #efoo
+            }
 
-        //             println!("Average Frame Time: {}ms", tsum as f64 / tcnt as f64);
-        //         }
+            fn add_events(&mut self, mut em: #efoo_ident) {
+                if em.has_events() {
+                    self.#efoo.append(&mut em);
+                    self.stack.push(em.get_events());
+                }
+            }
 
-        //         fn tick(&mut self, ts: u32) {
-        //             // Update #efoo
-        //             self.#gfoo.#g_event.update(ts, &self.#gfoo.#g_camera.0, &self.#gfoo.#g_screen.0);
-        //             // Clear the screen
-        //             self.#gfoo.#g_render_system.r.clear();
-        //             // Add initial #efoo
-        //             self.add_events(self.init_events(ts));
-        //             while !self.stack.is_empty() {
-        //                 // Get element from next queue
-        //                 if let Some((e, i, n)) = self
-        //                     .stack
-        //                     // Get last queue
-        //                     .last_mut()
-        //                     // Get next #efoo
-        //                     .and_then(|queue| queue.front_mut())
-        //                     // Check if the system exists
-        //                     .and_then(|(e, i)| {
-        //                         // Increment the event idx and return the old values
-        //                         let v_s = &self.services[*e as usize];
-        //                         v_s.get(*i).map(|_| {
-        //                             let vals = (e.clone(), i.clone(), v_s.len());
-        //                             *i += 1;
-        //                             vals
-        //                         })
-        //                     })
-        //                 {
-        //                     // This is the last system for this event
-        //                     if i + 1 >= n {
-        //                         self.pop();
-        //                     }
-        //                     // Add a new queue for new #efoo
-        //                     self.#gfoo.#g_efoo = #efoo_ident::new();
-        //                     // Run the system
-        //                     if let Some(s) = self.services[e as usize].get(i) {
-        //                         (s)(&mut self.#cfoo, &mut self.#gfoo, &mut self.#efoo);
-        //                     }
-        //                     // If this is the last system, remove the event
-        //                     if i + 1 >= n {
-        //                         self.#efoo.pop(e);
-        //                     }
-        //                     // Add new #efoo
-        //                     let #efoo = std::mem::replace(&mut self.#gfoo.#g_efoo, #efoo_ident::new());
-        //                     self.add_events(#efoo);
-        //                 } else {
-        //                     // We're done with this event
-        //                     self.pop();
-        //                 }
-        //             }
-        //             // Display the screen
-        //             self.#gfoo.#g_render_system.r.present();
+            fn pop(&mut self) {
+                // Remove top element and empty queue
+                if self.stack.last_mut().is_some_and(|queue| {
+                    queue.pop_front();
+                    queue.is_empty()
+                }) {
+                    self.stack.pop();
+                }
+            }
+        );
+        let sfoo_def = quote!(
+            #sfoo_struct
 
-        //             self.post_tick();
-        //         }
+            impl #sfoo_ident {
+                #sfoo_new
 
-        //         fn post_tick(&mut self) {
-        //             // Remove marked entities
-        //             self.#cfoo.remove(&mut self.#gfoo.#g_entity_trash);
-        //             // Add new entities
-        //             self.#cfoo.append(&mut self.#gfoo.#g_cfoo);
-        //         }
+                #sfoo_init
 
-        //         fn init_events(&self, ts: u32) -> #efoo_ident {
-        //             let mut #efoo = #efoo_ident::new();
-        //             #add_event_tr::new_event(&mut #efoo, #engine_cr_path::#core_events);
-        //             #add_event_tr::new_event(&mut #efoo, #engine_cr_path::#core_update(ts));
-        //             #add_event_tr::new_event(&mut #efoo, #engine_cr_path::#core_render);
-        //             #efoo
-        //         }
+                #sfoo_run
 
-        //         fn add_events(&mut self, mut em: #efoo_ident) {
-        //             if em.has_events() {
-        //                 self.#efoo.append(&mut em);
-        //                 self.stack.push(em.get_events());
-        //             }
-        //         }
+                #sfoo_tick
 
-        //         fn pop(&mut self) {
-        //             // Remove top element and empty queue
-        //             if self.stack.last_mut().is_some_and(|queue| {
-        //                 queue.pop_front();
-        //                 queue.is_empty()
-        //             }) {
-        //                 self.stack.pop();
-        //             }
-        //         }
-        //     }
-        // );
+                #sfoo_events
+            }
+        );
 
         quote!(
             #deps_code

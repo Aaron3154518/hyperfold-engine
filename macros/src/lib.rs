@@ -1,11 +1,11 @@
-use std::{env, path::PathBuf};
+use std::{env, fs, path::PathBuf};
 
-use parser::{codegen::codegen::Decoder, util::format_code};
+use parser::codegen::ast_codegen::INDEX;
 use proc_macro::TokenStream;
 use quote::quote;
 use shared::{
-    file::Out,
     parse_args::{ComponentMacroArgs, GlobalMacroArgs},
+    util::Catch,
 };
 use syn::{parse_macro_input, parse_quote};
 
@@ -53,15 +53,24 @@ pub fn event(_input: TokenStream, item: TokenStream) -> TokenStream {
 
 #[proc_macro]
 pub fn game_crate(_input: TokenStream) -> TokenStream {
-    let decoder = Decoder::new();
-    let (cr_idx, code) = decoder.codegen(PathBuf::from(
+    let dir = fs::canonicalize(PathBuf::from(
         env::var("CARGO_MANIFEST_DIR").expect("No manifest directory specified"),
-    ));
+    ))
+    .expect("Could not canonicalize manifest directory");
 
-    if cr_idx == 0 {
-        let mut f = Out::new("out2.rs", false);
-        f.write(format!("{}\n", format_code(code.to_string())));
-    }
+    let data = fs::read_to_string(
+        PathBuf::from(std::env::var("OUT_DIR").expect("No out directory")).join(INDEX),
+    )
+    .expect("Could not read index file");
+    let file = format!(
+        "/{}.rs",
+        data.split("\n")
+            .position(|path| dir == PathBuf::from(path))
+            .catch(format!(
+                "Could not find directory in index: {}",
+                dir.display()
+            ))
+    );
 
-    code.into()
+    quote!(include!(concat!(env!("OUT_DIR"), #file));).into()
 }

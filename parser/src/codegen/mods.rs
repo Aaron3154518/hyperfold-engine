@@ -8,7 +8,7 @@ use crate::{
         ast_mod::{MarkType, MarkedItem, Mod, ModType, Symbol},
     },
     resolve::{
-        ast_items::{Global, ItemsCrate},
+        ast_items::{Global, ItemsCrate, Trait},
         ast_paths::{
             EngineGlobals, EngineTraits, ExpandEnum, GetPaths, MacroPaths, NamespaceTraits,
         },
@@ -23,6 +23,15 @@ use super::idents::Idents;
 
 pub fn entry_namespace_items(items: &mut ItemsCrate) {
     for tr in NamespaceTraits::VARIANTS.iter() {
+        // Add trait
+        items.traits.push(Trait {
+            path: Path {
+                cr_idx: items.cr_idx,
+                path: tr.full_path(),
+            },
+            g_idx: items.globals.len(),
+        });
+        // Add trait global
         items.globals.push(Global {
             path: Path {
                 cr_idx: items.cr_idx,

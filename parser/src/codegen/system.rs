@@ -13,7 +13,14 @@ use crate::{
         idents::Idents,
         util::{arr_to_path, string_to_type, type_to_type, vec_to_path},
     },
-    resolve::ast_paths::{EngineGlobals, EngineIdents, EngineTraits, ExpandEnum, GetPaths},
+    resolve::{
+        ast_items::{self, ItemsCrate},
+        ast_paths::{EngineGlobals, EngineIdents, EngineTraits, ExpandEnum, GetPaths, Paths},
+    },
+    validate::{
+        ast_system::SystemValidate,
+        constants::{component_var, event_variant, global_var, EID},
+    },
 };
 use shared::util::{Call, Catch, Flatten, JoinMap, JoinMapInto, SplitCollect};
 
@@ -45,7 +52,7 @@ impl From<&str> for LabelType {
 #[derive(Clone, Debug)]
 pub enum ContainerArg {
     EntityId,
-    Component(syn::Ident, bool),
+    Component(usize, usize, bool),
 }
 
 pub enum FnArg {
@@ -57,225 +64,218 @@ pub enum FnArg {
     Container(Vec<ContainerArg>),
 }
 
-#[derive(Debug)]
-pub struct SystemRegexes {
-    id: Regex,
-    component: Regex,
-    global: Regex,
-    event: Regex,
-    label: Regex,
-    vec_comp: Regex,
-    vector: Regex,
-    system: Regex,
-}
-
-impl SystemRegexes {
-    pub fn new() -> Self {
-        let id = r"id";
-        let c = r"c\d+_\d+";
-        let g = r"g\d+_\d+";
-        let e = r"E\d+_\d+";
-        let l = format!(r"l(!)?[\|&]{c}(-{c})*");
-        let v_c = format!(r"(m)?{c}");
-        let v_i = format!(r"{v_c}|{id}");
-        let v = format!(r"v({v_i})(-({v_i}))*");
-        let arg = format!(r"{id}|{c}|{g}|{e}|{l}|{v}");
-
-        let [id, component, global, event, label, vec_comp, vector, system] = [
-            id,
-            c,
-            g,
-            e,
-            &l,
-            &v_c,
-            &v,
-            &format!(r"(?P<name>\w+(::\w+)*)\((?P<args>(({arg})(:({arg}))*)?)\)(?P<init>(i)?)"),
-        ]
-        .map(|r_str| {
-            Regex::new(format!(r"^{r_str}$").as_str())
-                .catch(format!("Could not create regex: \"^{r_str}$\""))
-        });
-
-        Self {
-            id,
-            component,
-            global,
-            event,
-            label,
-            vec_comp,
-            vector,
-            system,
-        }
-    }
-
-    pub fn parse_data(&self, sys_str: &str) -> Option<(Vec<String>, String, bool)> {
-        self.system
-            .captures(sys_str)
-            .and_then(|c| c.name("name").zip(c.name("args")).zip(c.name("init")))
-            .map(|((name, args), init)| {
-                (
-                    name.as_str().split_collect("::"),
-                    args.as_str().to_string(),
-                    init.as_str() == "i",
-                )
-            })
-    }
-
-    pub fn parse_arg(&self, arg_str: &str) -> Option<FnArg> {
-        // Entity id
-        self.id
-            .find(arg_str)
-            .map(|_| FnArg::EntityId)
-            // Component
-            .or_else(|| {
-                self.component
-                    .find(arg_str)
-                    .map(|_| FnArg::Component(format_ident!("{arg_str}")))
-            })
-            // Global
-            .or_else(|| {
-                self.global
-                    .find(arg_str)
-                    .map(|_| FnArg::Global(format_ident!("{arg_str}")))
-            })
-            // Event
-            .or_else(|| {
-                self.event
-                    .find(arg_str)
-                    .map(|_| FnArg::Event(format_ident!("{arg_str}")))
-            })
-            // Label
-            .or_else(|| {
-                self.label.find(arg_str).map(|_| {
-                    FnArg::Label(
-                        LabelType::from(arg_str),
-                        arg_str
-                            .trim_start_matches(['l', '!', '&', '|'])
-                            .split_map("-", |a| {
-                                self.component
-                                    .find(a)
-                                    .map(|_| format_ident!("{a}"))
-                                    .catch(format!("Could not parse label type: {a}"))
-                            }),
-                    )
-                })
-            })
-            // Container
-            .or_else(|| {
-                self.vector.find(arg_str).map(|_| {
-                    FnArg::Container(arg_str.split_at(1).call_into(|(_, args)| {
-                        args.split_map("-", |a| {
-                            self.id
-                                .find(a)
-                                .map(|_| ContainerArg::EntityId)
-                                .or_else(|| {
-                                    self.vec_comp.find(a).map(|_| {
-                                        ContainerArg::Component(
-                                            format_ident!("{}", a.trim_start_matches("m")),
-                                            a.starts_with("m"),
-                                        )
-                                    })
-                                })
-                                .catch(format!("Could not parse container item: {a}"))
-                        })
-                    }))
-                })
-            })
-    }
-}
-
 pub struct System {
     pub name: TokenStream,
     args: Vec<TokenStream>,
     c_args: Vec<syn::Ident>,
+    g_args: Vec<syn::Ident>,
+    event: syn::Ident,
     and_labels: HashSet<syn::Ident>,
     or_labels: Vec<HashSet<syn::Ident>>,
     nor_labels: HashSet<syn::Ident>,
     nand_labels: Vec<HashSet<syn::Ident>>,
     // Includes reference and mutability
     v_types: Vec<ContainerArg>,
-    g_args: Vec<syn::Ident>,
-    event: TokenStream,
     is_vec: bool,
     pub is_init: bool,
 }
 
 impl System {
-    pub fn parse(cr_path: &syn::Path, data: &str, regexes: &SystemRegexes) -> Self {
-        let (name, args, is_init) = regexes
-            .parse_data(data)
-            .catch(format!("Could not parse system: {data}"));
-        let name = vec_to_path(name);
-        let mut s = Self {
-            name: quote!(#cr_path::#name),
+    pub fn new() -> Self {
+        Self {
+            name: quote!(),
             args: Vec::new(),
             c_args: Vec::new(),
+            g_args: Vec::new(),
+            event: format_ident!("_"),
             and_labels: HashSet::new(),
             or_labels: Vec::new(),
             nor_labels: HashSet::new(),
             nand_labels: Vec::new(),
             v_types: Vec::new(),
-            g_args: Vec::new(),
-            event: quote!(),
             is_vec: false,
-            is_init,
-        };
+            is_init: false,
+        }
+    }
 
-        let [gfoo, e_ident, eid] =
-            [Idents::GenGFoo, Idents::GenE, Idents::GenEid].map(|i| i.to_ident());
+    pub fn from(system: &ast_items::System, paths: &Paths, crates: &Vec<ItemsCrate>) -> Self {
+        let mut sys = System::new();
 
-        s.args = match args.as_str() {
-            "" => Vec::new(),
-            args => args
-                .split(":")
-                .map(|a| {
-                    match regexes
-                        .parse_arg(a)
-                        .catch(format!("Could not parse system argument: {a}"))
-                    {
-                        FnArg::EntityId => quote!(#eid),
-                        FnArg::Component(c) => {
-                            let tt = quote!(#c);
-                            s.c_args.push(c);
-                            tt
-                        }
-                        FnArg::Global(g) => {
-                            let tt = quote!(&mut #gfoo.#g);
-                            s.g_args.push(g);
-                            tt
-                        }
-                        FnArg::Event(e) => {
-                            s.event = quote!(#e);
-                            quote!(#e_ident)
-                        }
-                        FnArg::Label(ty, args) => {
-                            match ty {
-                                LabelType::And => s.and_labels.extend(args.into_iter()),
-                                LabelType::Or => s.or_labels.push(args),
-                                LabelType::Nand => s.nand_labels.push(args),
-                                LabelType::Nor => s.nor_labels.extend(args.into_iter()),
-                            }
-                            quote!(std::marker::PhantomData)
-                        }
-                        FnArg::Container(args) => {
-                            s.is_vec = true;
-                            (s.c_args, s.v_types) = args
-                                .into_iter()
-                                .map(|a| match &a {
-                                    ContainerArg::EntityId => (Idents::GenEids.to_ident(), a),
-                                    ContainerArg::Component(c, m) => (c.to_owned(), a),
-                                })
-                                .unzip();
-                            quote!(v)
-                        }
-                    }
+        let [gfoo, e_ident, v_ident, eid] =
+            [Idents::GenGFoo, Idents::GenE, Idents::GenV, Idents::GenEid].map(|i| i.to_ident());
+
+        let mut validate = SystemValidate::new();
+        let path = vec_to_path(system.path.path.to_vec());
+        sys.name = quote!(#path);
+        sys.is_init = system.attr_args.is_init;
+        sys.args = system.args.map_vec(|arg| {
+            match arg
+                // Entity ID
+                .to_eid(paths)
+                .map(|_| {
+                    arg.validate_ref(1, &mut validate.errs);
+                    arg.validate_mut(false, &mut validate.errs);
+                    validate.add_eid();
+                    quote!(#eid)
                 })
-                .collect(),
-        };
-
-        s.check_labels();
-
-        s
+                // Component
+                .or_else(|| {
+                    arg.to_component(crates).map(|(cr_i, c_i, _)| {
+                        arg.validate_ref(1, &mut validate.errs);
+                        validate.add_component(arg, (cr_i, c_i));
+                        let var = format_ident!("{}", component_var(cr_i, c_i));
+                        let tt = quote!(#var);
+                        sys.c_args.push(var);
+                        tt
+                    })
+                })
+                // Global
+                .or_else(|| {
+                    arg.to_global(crates).map(|(cr_i, g_i, g_args)| {
+                        arg.validate_ref(1, &mut validate.errs);
+                        if g_args.is_const {
+                            arg.validate_mut(false, &mut validate.errs);
+                        }
+                        validate.add_global(arg, (cr_i, g_i));
+                        let var = format_ident!("{}", global_var(cr_i, g_i));
+                        let tt = quote!(&mut #gfoo.#var);
+                        sys.g_args.push(var);
+                        tt
+                    })
+                })
+                // Event
+                .or_else(|| {
+                    arg.to_event(crates).map(|(cr_i, e_i)| {
+                        arg.validate_ref(1, &mut validate.errs);
+                        arg.validate_mut(false, &mut validate.errs);
+                        validate.add_event(arg);
+                        sys.event = format_ident!("{}", event_variant(cr_i, e_i));
+                        quote!(#e_ident)
+                    })
+                })
+                // Trait
+                .or_else(|| {
+                    // This assumes the traits are all at the beginning of the globals list
+                    arg.to_trait(crates).map(|(cr_i, g_i)| {
+                        arg.validate_ref(1, &mut validate.errs);
+                        validate.add_global(arg, (cr_i, g_i));
+                        let var = format_ident!("{}", global_var(cr_i, g_i));
+                        let tt = quote!(&mut #gfoo.#var);
+                        sys.g_args.push(var);
+                        tt
+                    })
+                })
+                // Label
+                .or_else(|| {
+                    arg.to_label(paths).map(|(l_ty, args)| {
+                        arg.validate_ref(0, &mut validate.errs);
+                        let args = args
+                            .iter()
+                            .map(|a| {
+                                a.to_component(crates).map_or_else(
+                                    || {
+                                        &mut validate.errs.push(format!(
+                                            "Label expects Component type, found: {}",
+                                            a
+                                        ));
+                                        format_ident!("_")
+                                    },
+                                    |(cr_i, c_i, _)| format_ident!("{}", component_var(cr_i, c_i)),
+                                )
+                            })
+                            .collect::<HashSet<_>>();
+                        match l_ty {
+                            LabelType::And => sys.and_labels.extend(args.into_iter()),
+                            LabelType::Or => sys.or_labels.push(args),
+                            LabelType::Nand => sys.nand_labels.push(args),
+                            LabelType::Nor => sys.nor_labels.extend(args.into_iter()),
+                        }
+                        quote!(std::marker::PhantomData)
+                    })
+                })
+                // Container
+                .or_else(|| {
+                    arg.to_container(paths).map(|args| {
+                        arg.validate_ref(0, &mut validate.errs);
+                        validate.add_container(arg);
+                        args.join_map(
+                            |a| {
+                                a.to_eid(paths)
+                                    .map(|_| {
+                                        a.validate_ref(1, &mut validate.errs);
+                                        a.validate_mut(false, &mut validate.errs);
+                                        EID.to_string()
+                                    })
+                                    .or_else(|| {
+                                        a.to_component(crates).map(|(cr_i, c_i, _)| {
+                                            a.validate_ref(1, &mut validate.errs);
+                                            format!(
+                                                "{}{}",
+                                                if a.mutable { "m" } else { "" },
+                                                component_var(cr_i, c_i)
+                                            )
+                                        })
+                                    })
+                                    .map_or_else(
+                                        || {
+                                            &mut validate.errs.push(format!(
+                                        "Container expects Component or Entity ID type, found: {}",
+                                        a
+                                    ));
+                                            String::new()
+                                        },
+                                        |s| s,
+                                    )
+                            },
+                            "-",
+                        );
+                        sys.is_vec = true;
+                        (sys.c_args, sys.v_types) = args.unzip_vec(|a| {
+                            a.to_eid(paths)
+                                .map(|_| {
+                                    a.validate_ref(1, &mut validate.errs);
+                                    a.validate_mut(false, &mut validate.errs);
+                                    (Idents::GenEids.to_ident(), ContainerArg::EntityId)
+                                })
+                                .or_else(|| {
+                                    a.to_component(crates).map(|(cr_i, c_i, _)| {
+                                        a.validate_ref(1, &mut validate.errs);
+                                        let var = format_ident!("{}", component_var(cr_i, c_i));
+                                        (var, ContainerArg::Component(cr_i, c_i, a.mutable))
+                                    })
+                                })
+                                .map_or_else(
+                                    || {
+                                        validate.errs.push(format!(
+                                            "Container expects Component or Entity ID type, found: {}",
+                                            a
+                                        ));
+                                        (format_ident!("_"), ContainerArg::EntityId)
+                                    },
+                                    |t| t,
+                                )
+                        });
+                        quote!(#v_ident)
+                    })
+                }) {
+                Some(a) => a,
+                None => {
+                    validate
+                        .errs
+                        .push(format!("Argument: \"{}\" is not a known type", arg));
+                    quote!()
+                }
+            }
+        });
+        validate.validate(&system.attr_args);
+        if !validate.errs.is_empty() {
+            panic!(
+                "\n\nIn system: \"{}()\"\n{}\n\n",
+                system.path.path.join("::"),
+                validate.errs.join("\n")
+            )
+        }
+        sys
     }
 
     fn check_labels(&mut self) {
@@ -392,30 +392,11 @@ impl System {
                 .iter()
                 .map(|a| match a {
                     ContainerArg::EntityId => quote!(&#engine_crate_path::#eid),
-                    ContainerArg::Component(i, m) => i
-                        .to_string()
-                        .trim_start_matches("c")
-                        .split_once("_")
-                        .map(|(cr_idx, c_idx)| {
-                            (
-                                cr_idx
-                                    .parse::<usize>()
-                                    .catch(format!("Could not parse crate index: {cr_idx}")),
-                                c_idx
-                                    .parse::<usize>()
-                                    .catch(format!("Could not parse component index: {c_idx}")),
-                            )
-                        })
-                        .map(|(cr_idx, c_idx)| {
-                            let c_ty = components
-                                .get(cr_idx)
-                                .catch(format!("Invalid crate index: {cr_idx}"))
-                                .get(c_idx)
-                                .catch(format!("Invalid component index: {c_idx}"));
-                            let mut_tok = if *m { quote!(mut) } else { quote!() };
-                            quote!(&#mut_tok #c_ty)
-                        })
-                        .catch(format!("Could not split component variable: {i}")),
+                    ContainerArg::Component(cr_idx, c_idx, m) => {
+                        let c_ty = &components[*cr_idx][*c_idx];
+                        let mut_tok = if *m { quote!(mut) } else { quote!() };
+                        quote!(&#mut_tok #c_ty)
+                    }
                 })
                 .collect::<Vec<_>>();
             // Get first argument to initialize the result hashmap
@@ -423,7 +404,7 @@ impl System {
             let nones = ["None"].repeat(self.v_types.len() - 1).join(",");
             let (iter, tuple_init) = match self.v_types.first().expect("No first vector types") {
                 ContainerArg::EntityId => ("iter", format!("|k| (k, (None, {}))", nones)),
-                ContainerArg::Component(_, m) => (
+                ContainerArg::Component(_, _, m) => (
                     if *m { "iter_mut" } else { "iter" },
                     format!("|(k, v)| (k, (Some(v), {}))", nones),
                 ),
@@ -442,7 +423,7 @@ impl System {
                 .enumerate()
                 .filter_map(|(mut i, (a, ty))| match ty {
                     ContainerArg::EntityId => None,
-                    ContainerArg::Component(_, m) => {
+                    ContainerArg::Component(_, _, m) => {
                         let intersect = vec_to_path(
                             if *m {
                                 EngineIdents::IntersectMut
@@ -475,7 +456,7 @@ impl System {
                     let v_i = format_ident!("v{}", i);
                     match ty {
                         ContainerArg::EntityId => (v_i, eid.to_owned()),
-                        ContainerArg::Component(_, _) => {
+                        ContainerArg::Component(_, _, _) => {
                             c_vars.push(v_i.to_owned());
                             (v_i.to_owned(), v_i)
                         }

@@ -86,12 +86,6 @@ macro_rules! unzip {
                 )
             }
         }
-
-        // impl<$t $(,$ts)*> $tr<$t $(,$ts)*> for alloc::vec::IntoIter<($t $(,$ts)*)> {
-        //     fn unzip_vec(self) -> (Vec<$t> $(,Vec<$ts>)*) {
-
-        //     }
-        // }
     };
 }
 

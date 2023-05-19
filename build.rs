@@ -2,8 +2,11 @@ use bindgen::callbacks::{DeriveInfo, ParseCallbacks};
 use std::{env, path::PathBuf};
 
 use parser::{
-    parse::ast_crate::Crate, resolve::ast_items::ItemsCrate, util::end,
-    validate::ast_validate::ItemData,
+    codegen::ast_codegen,
+    parse::ast_crate::Crate,
+    resolve::ast_items::ItemsCrate,
+    util::end,
+    // validate::ast_validate::ItemData,
 };
 
 #[derive(Default, Debug)]
@@ -20,7 +23,8 @@ impl ParseCallbacks for MyCallbacks {
     }
 }
 
-const ENGINE_CRATE: &str = "hyperfold-engine";
+// TODO: hardcoded
+const ENGINE_CRATE: &str = "."; //"hyperfold-engine";
 const SDL2_PATH: &str = "sdl/SDL2-2.26.5";
 const SDL2_IMAGE_PATH: &str = "sdl/SDL2_image-2.6.3";
 const SDL2_TTF_PATH: &str = "sdl/SDL2_ttf-2.20.2";
@@ -141,7 +145,7 @@ pub fn main() {
     //     .collect::<Vec<_>>();
 
     // TODO: hardcoded
-    let (crates, paths) = Crate::parse(PathBuf::from("../"));
+    let (crates, paths) = Crate::parse(PathBuf::from("."));
 
     let mut items = crates[..end(&crates, 1)]
         .iter()
@@ -160,9 +164,5 @@ pub fn main() {
         })
         .collect::<Vec<_>>();
 
-    let data = ItemData::validate(&paths, &mut items);
-
-    eprintln!("{data:#?}");
-
-    data.write_to_file();
+    ast_codegen::codegen(&paths, &mut items);
 }
