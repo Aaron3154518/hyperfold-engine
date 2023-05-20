@@ -3,18 +3,18 @@ use std::ptr::null;
 use crate::utils::rect::Rect;
 
 use super::{
-    texture::{TextureAccess, TextureTrait},
-    texture_builder::Drawable,
+    drawable::Drawable,
+    texture::{Texture, TextureTrait},
 };
 
 #[macros::component]
-pub struct RenderData {
-    tex: TextureAccess,
+pub struct RenderData<'a> {
+    tex: &'a Texture,
     pos: Rect,
 }
 
-impl RenderData {
-    pub fn new(tex: TextureAccess) -> Self {
+impl<'a> RenderData<'a> {
+    pub fn from(tex: &'a Texture) -> Self {
         let dim = tex.get_size();
         Self {
             tex,
@@ -33,8 +33,8 @@ impl RenderData {
     }
 }
 
-impl Drawable for RenderData {
+impl<'a> Drawable for RenderData<'a> {
     fn draw(&self, r: &impl super::renderer::RendererTrait) {
-        r.draw(&self.tex, null(), &self.pos.to_sdl_rect())
+        r.draw(self.tex, null(), &self.pos.to_sdl_rect())
     }
 }

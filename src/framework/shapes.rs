@@ -12,7 +12,7 @@ use crate::{
     },
 };
 
-use super::{renderer::RendererTrait, texture_builder::Drawable};
+use super::{drawable::Drawable, renderer::RendererTrait};
 
 // Shape data
 pub trait ShapeTrait {
@@ -572,5 +572,35 @@ impl Drawable for Circle {
                 return;
             }
         }
+    }
+}
+
+// Brighten
+#[derive(Clone, Copy)]
+pub struct Brighten {
+    strength: u8,
+}
+
+impl Brighten {
+    pub fn new(strength: u8) -> Self {
+        Self { strength }
+    }
+
+    pub fn get_strength(&self) -> u8 {
+        self.strength
+    }
+}
+
+impl Drawable for Brighten {
+    fn draw(&self, r: &impl RendererTrait) {
+        Rectangle::new()
+            .set_color(sdl2::SDL_Color {
+                r: self.strength,
+                g: self.strength,
+                b: self.strength,
+                a: 255,
+            })
+            .set_blendmode(sdl2::SDL_BlendMode::SDL_BLENDMODE_ADD)
+            .draw(r)
     }
 }

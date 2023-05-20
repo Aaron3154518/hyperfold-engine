@@ -1,3 +1,4 @@
+pub mod drawable;
 pub mod event_system;
 pub mod font;
 pub mod physics;
@@ -8,4 +9,3 @@ pub mod shapes;
 pub mod surface;
 pub mod text;
 pub mod texture;
-pub mod texture_builder;

@@ -2,17 +2,19 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 
 use shared::util::NoneOr;
+use uuid::Uuid;
 
 use super::font::{Font, FontAccess, FontData, FontTrait};
 use super::physics;
 use super::renderer::{RendererAccess, RendererTrait};
-use super::texture::SharedTexture;
+use super::texture::TextureTrait;
+// use super::texture::SharedTexture;
 use crate::ecs::components::Container;
 use crate::ecs::entities::Entity;
 use crate::ecs::events;
 use crate::framework::{
     renderer::{Renderer, Window},
-    texture::{Texture, TextureAccess},
+    texture::Texture,
 };
 
 use crate::sdl2;
@@ -21,28 +23,43 @@ use crate::utils::rect::{Align, Dimensions, Rect};
 const W: u32 = 960;
 const H: u32 = 720;
 
+#[derive(Clone, Hash, Eq, PartialEq)]
+pub enum Asset {
+    File(String),
+    Texture(Uuid),
+}
+
 pub struct AssetManager {
-    file_imgs: HashMap<&'static str, Texture>,
+    assets: HashMap<Asset, Texture>,
     fonts: HashMap<FontData, Font>,
 }
 
 impl AssetManager {
     pub fn new() -> Self {
         AssetManager {
-            file_imgs: HashMap::new(),
+            assets: HashMap::new(),
             fonts: HashMap::new(),
         }
     }
 
-    pub fn get_image(&self, file: &'static str) -> Option<TextureAccess> {
-        match self.file_imgs.get(file) {
-            Some(tex) => Some(tex.access()),
-            None => None,
-        }
+    pub fn get_asset<'a>(&'a self, asset: Asset) -> Option<&'a Texture> {
+        self.assets.get(&asset)
     }
 
-    pub fn add_image(&mut self, file: &'static str, tex: Texture) {
-        self.file_imgs.insert(file, tex);
+    pub fn add_asset(&mut self, tex: Texture) -> Asset {
+        let asset = Asset::Texture(Uuid::new_v4());
+        self.assets.insert(asset.clone(), tex);
+        asset
+    }
+
+    fn load_image<'a>(
+        &'a mut self,
+        r: &impl RendererTrait,
+        file: &'static str,
+    ) -> Option<&'a Texture> {
+        let asset = Asset::File(file.to_string());
+        self.assets.insert(asset, Texture::from_file(r, file));
+        self.get_asset(asset)
     }
 
     pub fn get_font(&mut self, data: FontData) -> Option<FontAccess> {
@@ -111,29 +128,23 @@ impl RenderSystem {
         self.r.access()
     }
 
-    pub fn get_image(&mut self, file: &'static str) -> Option<TextureAccess> {
-        match self.am.get_image(file) {
+    pub fn get_asset<'a>(&'a mut self, asset: Asset) -> Option<&'a Texture> {
+        match self.am.get_asset(asset) {
             Some(tex) => Some(tex),
-            None => {
-                self.am.add_image(file, Texture::from_file(&self.r, file));
-                match self.am.get_image(file) {
-                    Some(tex) => Some(tex),
-                    None => {
-                        println!("RenderSystem::get_image() - Unable to open file {}", file);
-                        None
-                    }
-                }
-            }
+            None => match asset {
+                Asset::File(f) => self.am.load_image(&self.r, f.as_str()),
+                Asset::Texture(id) => None,
+            },
         }
     }
 
     pub fn draw(
         &self,
-        tex: TextureAccess,
+        tex: &impl TextureTrait,
         src: *const sdl2::SDL_Rect,
         dest: *const sdl2::SDL_Rect,
     ) {
-        self.r.draw(&tex, src, dest);
+        self.r.draw(tex, src, dest);
     }
 }
 
@@ -191,19 +202,7 @@ pub fn rect_to_camera_coords(rect: &Rect, screen: &Screen, camera: &Camera) -> R
 struct Elevation(pub u8);
 
 #[macros::component]
-struct Image(pub SharedTexture);
-
-impl From<Option<Texture>> for Image {
-    fn from(value: Option<Texture>) -> Self {
-        Self(SharedTexture::from(value))
-    }
-}
-
-impl From<Option<TextureAccess>> for Image {
-    fn from(value: Option<TextureAccess>) -> Self {
-        Self(SharedTexture::from(value))
-    }
-}
+struct Image(pub Asset);
 
 #[macros::system]
 fn render(
@@ -222,9 +221,9 @@ fn render(
         }
     });
     for (_, _, pos, img) in comps {
-        if let Some(tex) = img.0.access() {
+        if let Some(img) = rs.get_asset(img.0) {
             rs.draw(
-                tex,
+                img,
                 std::ptr::null(),
                 &rect_to_camera_coords(&pos.0, screen, camera).to_sdl_rect(),
             )

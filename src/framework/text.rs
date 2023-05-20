@@ -9,9 +9,8 @@ use crate::utils::{
 use super::{
     font::FontTrait,
     render_data::RenderData,
-    renderer::{RendererAccess, RendererTrait},
+    renderer::RendererTrait,
     texture::{Texture, TextureTrait},
-    texture_builder::TextureBuilder,
 };
 
 // Text
@@ -25,14 +24,14 @@ impl Text {
     pub fn draw(
         &self,
         r: &impl RendererTrait,
-        tex: &TextureBuilder,
+        tex: &Texture,
         rect: Rect,
         font: &impl FontTrait,
         text: &str,
     ) {
         let text_tex = Texture::from_surface(r, font.render(&text[self.start..self.end], BLACK));
         let text_rect = text_tex.min_rect_align(rect, Align::Center, Align::Center);
-        tex.draw(RenderData::new(text_tex.access()).set_pos(text_rect));
+        tex.draw(r, RenderData::from(&text_tex).set_pos(text_rect));
     }
 }
 
@@ -194,13 +193,13 @@ pub fn split_text(text: &str, font: &impl FontTrait, max_w: u32) -> Vec<Line> {
 }
 
 pub fn render_text(
-    r: RendererAccess,
+    r: &impl RendererTrait,
     text: &str,
     font: &impl FontTrait,
     rect: Rect,
     ax: Align,
     ay: Align,
-) -> Option<Texture> {
+) -> Texture {
     let Dimensions { h: line_h, .. } = font.size();
     let lines = split_text(text, font, rect.w_i32() as u32);
     let mut text_r = Rect {
@@ -210,7 +209,7 @@ pub fn render_text(
         h: line_h as f32 * lines.len() as f32,
     };
     text_r.copy_pos(rect, ax, ay);
-    let (tb, tex) = TextureBuilder::new(r, text_r.w_i32(), text_r.h_i32(), GRAY);
+    let tex = Texture::new(r, text_r.w_i32(), text_r.h_i32(), GRAY);
 
     let num_imgs = lines.iter().fold(0, |s, l| s + l.img_cnt);
 
@@ -240,7 +239,7 @@ pub fn render_text(
                         w: t.w as f32,
                         h: line_r.h,
                     };
-                    t.draw(&r, &tb, rect, font, text);
+                    t.draw(r, &tex, rect, font, text);
                     x += t.w;
                 }
                 LineItem::Image => {

@@ -60,11 +60,13 @@ pub trait RendererTrait {
     fn get(&self) -> *mut sdl2::SDL_Renderer;
 
     // Managing render state
+
+    // TODO: dangling pointer here
     fn set_target_ptr(&self, target: *mut sdl2::SDL_Texture) {
         unsafe { sdl2::SDL_SetRenderTarget(self.get(), target) };
     }
 
-    fn set_target(&self, target: Option<impl TextureTrait>) {
+    fn set_target(&self, target: Option<&impl TextureTrait>) {
         self.set_target_ptr(target.as_ptr())
     }
 
@@ -99,7 +101,7 @@ pub trait RendererTrait {
             )
         })
         .map(|tex| {
-            let tex = Texture::new(tex.as_ptr());
+            let tex = Texture::from(tex.as_ptr());
             tex.set_blendmode(sdl2::SDL_BlendMode::SDL_BLENDMODE_BLEND);
             tex
         })
