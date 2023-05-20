@@ -269,11 +269,20 @@ impl Mod {
         path: &mut Vec<String>,
         mut items: Vec<Symbol>,
     ) -> Vec<Symbol> {
-        items.push(Symbol {
-            ident: i.ident.to_string(),
-            path: [path.to_owned(), vec![i.ident.to_string()]].concat(),
-            public: false,
-        });
+        let sym = if i.ident == "self" {
+            Symbol {
+                ident: path.last().expect("Empty use path with 'self'").to_string(),
+                path: path.to_vec(),
+                public: false,
+            }
+        } else {
+            Symbol {
+                ident: i.ident.to_string(),
+                path: [path.to_vec(), vec![i.ident.to_string()]].concat(),
+                public: false,
+            }
+        };
+        items.push(sym);
         items
     }
 
