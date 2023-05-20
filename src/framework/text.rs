@@ -8,7 +8,7 @@ use crate::utils::{
 
 use super::{
     font::FontTrait,
-    render_data::RenderTexture,
+    render_data::RenderData,
     render_system::RenderSystem,
     texture::{Texture, TextureTrait},
 };
@@ -31,7 +31,7 @@ impl Text {
     ) {
         let text_tex = Texture::from_surface(rs, font.render(&text[self.start..self.end], BLACK));
         let text_rect = text_tex.min_rect_align(rect, Align::Center, Align::Center);
-        tex.draw(rs, RenderTexture::new(text_tex).set_pos(text_rect));
+        tex.draw(rs, RenderData::from(text_tex).set_pos(text_rect));
     }
 }
 

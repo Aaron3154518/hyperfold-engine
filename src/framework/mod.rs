@@ -1,3 +1,4 @@
+pub mod asset_manager;
 pub mod drawable;
 pub mod event_system;
 pub mod font;
