@@ -55,17 +55,13 @@ impl Texture {
 
     pub fn from_file(r: &impl RendererTrait, file: &str) -> Self {
         let cstr = CString::new(file).expect("Failed to create CString");
-        let t_ptr = unsafe { sdl2_image::IMG_LoadTexture(r.get(), cstr.as_ptr()) };
+        let t_ptr = unsafe { sdl2_image::IMG_LoadTexture(r.renderer(), cstr.as_ptr()) };
         Self::from(t_ptr)
     }
 
     pub fn from_surface(r: &impl RendererTrait, surf: Surface) -> Self {
-        Self::from(unsafe { sdl2::SDL_CreateTextureFromSurface(r.get(), surf.get()) })
+        Self::from(unsafe { sdl2::SDL_CreateTextureFromSurface(r.renderer(), surf.get()) })
     }
-
-    // pub fn access(&self) -> TextureAccess {
-    //     TextureAccess { tex: self.tex }
-    // }
 }
 
 impl TextureTrait for Texture {
@@ -79,19 +75,6 @@ impl Drop for Texture {
         unsafe { sdl2::SDL_DestroyTexture(self.get()) }
     }
 }
-
-// TextureAccess
-// Non-owning, doesn't destroy
-// #[derive(Copy, Clone, Debug)]
-// pub struct TextureAccess {
-//     pub tex: NonNull<sdl2::SDL_Texture>,
-// }
-
-// impl TextureTrait for TextureAccess {
-//     fn get(&self) -> *mut sdl2::SDL_Texture {
-//         self.tex.as_ptr()
-//     }
-// }
 
 // Helper traits
 pub trait GetTexture {
@@ -109,32 +92,3 @@ where
         }
     }
 }
-
-// Track ownership
-// pub enum SharedTexture {
-//     Owned(Texture),
-//     Shared(TextureAccess),
-//     None,
-// }
-
-// impl SharedTexture {
-//     pub fn access(&self) -> Option<TextureAccess> {
-//         match self {
-//             SharedTexture::Owned(t) => Some(t.access()),
-//             SharedTexture::Shared(t) => Some(*t),
-//             SharedTexture::None => None,
-//         }
-//     }
-// }
-
-// impl From<Option<Texture>> for SharedTexture {
-//     fn from(value: Option<Texture>) -> Self {
-//         value.map_or(SharedTexture::None, |t| SharedTexture::Owned(t))
-//     }
-// }
-
-// impl From<Option<TextureAccess>> for SharedTexture {
-//     fn from(value: Option<TextureAccess>) -> Self {
-//         value.map_or(SharedTexture::None, |t| SharedTexture::Shared(t))
-//     }
-// }

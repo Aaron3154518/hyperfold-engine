@@ -1,6 +1,5 @@
 use crate::framework::texture::Texture;
 use crate::sdl2;
-use crate::utils::colors::BLACK;
 use crate::utils::rect::Dimensions;
 use crate::utils::rect::Rect;
 
@@ -57,13 +56,13 @@ impl Drop for Window {
 
 // Renderer
 pub trait RendererTrait {
-    fn get(&self) -> *mut sdl2::SDL_Renderer;
+    fn renderer(&self) -> *mut sdl2::SDL_Renderer;
 
     // Managing render state
 
     // TODO: dangling pointer here
     fn set_target_ptr(&self, target: *mut sdl2::SDL_Texture) {
-        unsafe { sdl2::SDL_SetRenderTarget(self.get(), target) };
+        unsafe { sdl2::SDL_SetRenderTarget(self.renderer(), target) };
     }
 
     fn set_target(&self, target: Option<&impl TextureTrait>) {
@@ -75,17 +74,19 @@ pub trait RendererTrait {
     }
 
     fn set_color(&self, color: sdl2::SDL_Color) {
-        unsafe { sdl2::SDL_SetRenderDrawColor(self.get(), color.r, color.g, color.b, color.a) };
+        unsafe {
+            sdl2::SDL_SetRenderDrawColor(self.renderer(), color.r, color.g, color.b, color.a)
+        };
     }
 
     fn set_blendmode(&self, mode: sdl2::SDL_BlendMode) {
-        unsafe { sdl2::SDL_SetRenderDrawBlendMode(self.get(), mode) };
+        unsafe { sdl2::SDL_SetRenderDrawBlendMode(self.renderer(), mode) };
     }
 
     // Get draw window size
     fn output_size(&self) -> Dimensions<i32> {
         let mut dim = Dimensions::<i32>::new();
-        unsafe { sdl2::SDL_GetRendererOutputSize(self.get(), &mut dim.w, &mut dim.h) };
+        unsafe { sdl2::SDL_GetRendererOutputSize(self.renderer(), &mut dim.w, &mut dim.h) };
         dim
     }
 
@@ -93,7 +94,7 @@ pub trait RendererTrait {
     fn create_texture(&self, w: i32, h: i32) -> Option<Texture> {
         NonNull::new(unsafe {
             sdl2::SDL_CreateTexture(
-                self.get(),
+                self.renderer(),
                 sdl2::SDL_PixelFormatEnum::SDL_PIXELFORMAT_RGBA8888 as u32,
                 sdl2::SDL_TextureAccess::SDL_TEXTUREACCESS_TARGET as i32,
                 w,
@@ -109,23 +110,23 @@ pub trait RendererTrait {
 
     // Drawing
     fn fill_rect(&self, rect: Rect) {
-        unsafe { sdl2::SDL_RenderFillRect(self.get(), &rect.to_sdl_rect()) };
+        unsafe { sdl2::SDL_RenderFillRect(self.renderer(), &rect.to_sdl_rect()) };
     }
 
-    fn draw(
+    fn draw_texture(
         &self,
         tex: &impl TextureTrait,
         src: *const sdl2::SDL_Rect,
         dest: *const sdl2::SDL_Rect,
     ) {
         unsafe {
-            sdl2::SDL_RenderCopy(self.get(), tex.get(), src, dest);
+            sdl2::SDL_RenderCopy(self.renderer(), tex.get(), src, dest);
         }
     }
 }
 
 pub struct Renderer {
-    r: NonNull<sdl2::SDL_Renderer>,
+    pub r: NonNull<sdl2::SDL_Renderer>,
 }
 
 impl Renderer {
@@ -135,45 +136,16 @@ impl Renderer {
             r: NonNull::new(r_ptr).expect("Failed to create renderer"),
         }
     }
-
-    pub fn access(&self) -> RendererAccess {
-        RendererAccess { r: self.r }
-    }
-
-    pub fn clear(&self) {
-        self.set_color(BLACK);
-        unsafe {
-            sdl2::SDL_RenderClear(self.r.as_ptr());
-        }
-    }
-
-    pub fn present(&self) {
-        unsafe {
-            sdl2::SDL_RenderPresent(self.r.as_ptr());
-        }
-    }
 }
 
 impl RendererTrait for Renderer {
-    fn get(&self) -> *mut sdl2::SDL_Renderer {
+    fn renderer(&self) -> *mut sdl2::SDL_Renderer {
         self.r.as_ptr()
     }
 }
 
 impl Drop for Renderer {
     fn drop(&mut self) {
-        unsafe { sdl2::SDL_DestroyRenderer(self.get()) }
-    }
-}
-
-// Non-owning Renderer
-#[derive(Copy, Clone, Debug)]
-pub struct RendererAccess {
-    pub r: NonNull<sdl2::SDL_Renderer>,
-}
-
-impl RendererTrait for RendererAccess {
-    fn get(&self) -> *mut sdl2::SDL_Renderer {
-        self.r.as_ptr()
+        unsafe { sdl2::SDL_DestroyRenderer(self.r.as_ptr()) }
     }
 }

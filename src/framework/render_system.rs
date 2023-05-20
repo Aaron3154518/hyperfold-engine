@@ -4,66 +4,102 @@ use std::collections::HashMap;
 use shared::util::NoneOr;
 use uuid::Uuid;
 
-use super::font::{Font, FontAccess, FontData, FontTrait};
-use super::physics;
-use super::renderer::{RendererAccess, RendererTrait};
-use super::texture::TextureTrait;
-// use super::texture::SharedTexture;
-use crate::ecs::components::Container;
-use crate::ecs::entities::Entity;
-use crate::ecs::events;
-use crate::framework::{
-    renderer::{Renderer, Window},
-    texture::Texture,
+use super::{
+    font::{Font, FontAccess, FontData, FontTrait},
+    physics,
+    renderer::RendererTrait,
 };
-
-use crate::sdl2;
-use crate::utils::rect::{Align, Dimensions, Rect};
+// use super::texture::SharedTexture;
+use crate::{
+    ecs::{components::Container, entities::Entity, events},
+    framework::{
+        renderer::{Renderer, Window},
+        texture::Texture,
+    },
+    sdl2,
+    utils::{
+        colors::BLACK,
+        rect::{Align, Dimensions, Rect},
+    },
+};
 
 const W: u32 = 960;
 const H: u32 = 720;
 
-#[derive(Clone, Hash, Eq, PartialEq)]
 pub enum Asset {
     File(String),
-    Texture(Uuid),
+    Id(Uuid),
+    Texture(Texture),
 }
 
 pub struct AssetManager {
-    assets: HashMap<Asset, Texture>,
+    file_assets: HashMap<String, Texture>,
+    id_assets: HashMap<Uuid, Texture>,
     fonts: HashMap<FontData, Font>,
 }
 
 impl AssetManager {
     pub fn new() -> Self {
         AssetManager {
-            assets: HashMap::new(),
+            file_assets: HashMap::new(),
+            id_assets: HashMap::new(),
             fonts: HashMap::new(),
         }
     }
+}
 
-    pub fn get_asset<'a>(&'a self, asset: Asset) -> Option<&'a Texture> {
-        self.assets.get(&asset)
+impl AssetManagerTrait for AssetManager {
+    fn asset_manager<'a>(&'a self) -> &'a AssetManager {
+        self
     }
 
-    pub fn add_asset(&mut self, tex: Texture) -> Asset {
-        let asset = Asset::Texture(Uuid::new_v4());
-        self.assets.insert(asset.clone(), tex);
-        asset
+    fn asset_manager_mut<'a>(&'a mut self) -> &'a mut AssetManager {
+        self
+    }
+}
+
+pub trait AssetManagerTrait {
+    fn asset_manager<'a>(&'a self) -> &'a AssetManager;
+    fn asset_manager_mut<'a>(&'a mut self) -> &'a mut AssetManager;
+
+    fn get_asset_by_file<'a>(&'a self, file: &String) -> Option<&'a Texture> {
+        self.asset_manager().file_assets.get(file)
     }
 
-    fn load_image<'a>(
+    fn get_or_load_asset_by_file<'a>(
         &'a mut self,
+        file: &String,
         r: &impl RendererTrait,
-        file: &'static str,
-    ) -> Option<&'a Texture> {
-        let asset = Asset::File(file.to_string());
-        self.assets.insert(asset, Texture::from_file(r, file));
-        self.get_asset(asset)
+    ) -> &'a Texture {
+        if self.get_asset_by_file(file).is_none() {
+            let am = self.asset_manager_mut();
+            am.file_assets
+                .insert(file.to_string(), Texture::from_file(r, file));
+            self.get_asset_by_file(file).expect("Failed to load asset")
+        } else {
+            self.get_asset_by_file(file).expect("File to get asset")
+        }
     }
 
-    pub fn get_font(&mut self, data: FontData) -> Option<FontAccess> {
-        match self.fonts.get(&data) {
+    fn get_asset_by_id<'a>(&'a self, id: Uuid) -> Option<&'a Texture> {
+        self.asset_manager().id_assets.get(&id)
+    }
+
+    fn add_texture(&mut self, tex: Texture) -> Asset {
+        let id = Uuid::new_v4();
+        self.asset_manager_mut().id_assets.insert(id, tex);
+        Asset::Id(id)
+    }
+
+    fn add_image<'a>(&'a mut self, file: &str, tex: Texture) -> Option<&'a Texture> {
+        let am = self.asset_manager_mut();
+        am.file_assets.insert(file.to_string(), tex);
+        am.file_assets.get(&file.to_string())
+    }
+
+    fn get_font(&mut self, data: FontData) -> Option<FontAccess> {
+        let am = self.asset_manager_mut();
+        match am.fonts.get(&data) {
             Some(f) => Some(f.access()),
             None => {
                 // Min is always too small or just right, max is too big
@@ -97,7 +133,7 @@ impl AssetManager {
                 }
 
                 let file = data.file.to_string();
-                self.fonts
+                am.fonts
                     .try_insert(data, Font::from_file(&file, min_size))
                     .ok()
                     .map(|f| f.access())
@@ -106,11 +142,53 @@ impl AssetManager {
     }
 }
 
+// RenderSystem
+pub trait RenderSystemTrait {
+    fn render_system_mut<'a>(&'a mut self) -> &'a mut RenderSystem;
+
+    fn load_file<'a>(&'a mut self, file: &String) -> &'a Texture {
+        let rs = self.render_system_mut();
+        rs.am.get_or_load_asset_by_file(file, &rs.r)
+    }
+
+    fn load_asset<'a>(&'a mut self, asset: &'a Asset) -> Option<&'a Texture> {
+        self.load_asset_then(asset, |t, _| t)
+    }
+
+    fn load_asset_then<'a, F, T>(&'a mut self, asset: &'a Asset, f: F) -> T
+    where
+        F: FnOnce(Option<&'a Texture>, &'a Renderer) -> T,
+    {
+        let rs = self.render_system_mut();
+        f(
+            match asset {
+                Asset::File(file) => Some(rs.am.get_or_load_asset_by_file(file, &rs.r)),
+                Asset::Id(id) => rs.am.get_asset_by_id(*id),
+                Asset::Texture(tex) => Some(tex),
+            },
+            &rs.r,
+        )
+    }
+
+    fn draw_asset(
+        &mut self,
+        asset: &Asset,
+        src: *const sdl2::SDL_Rect,
+        dest: *const sdl2::SDL_Rect,
+    ) {
+        self.load_asset_then(asset, |tex, r| {
+            if let Some(tex) = tex {
+                r.draw_texture(tex, src, dest)
+            }
+        })
+    }
+}
+
 #[macros::global]
 pub struct RenderSystem {
     win: Window,
-    pub r: Renderer,
-    pub am: AssetManager,
+    r: Renderer,
+    am: AssetManager,
 }
 
 impl RenderSystem {
@@ -124,37 +202,40 @@ impl RenderSystem {
         }
     }
 
-    pub fn renderer(&self) -> RendererAccess {
-        self.r.access()
-    }
-
-    pub fn get_asset<'a>(&'a mut self, asset: Asset) -> Option<&'a Texture> {
-        match self.am.get_asset(asset) {
-            Some(tex) => Some(tex),
-            None => match asset {
-                Asset::File(f) => self.am.load_image(&self.r, f.as_str()),
-                Asset::Texture(id) => None,
-            },
+    pub fn clear(&self) {
+        self.set_color(BLACK);
+        unsafe {
+            sdl2::SDL_RenderClear(self.renderer());
         }
     }
 
-    pub fn draw(
-        &self,
-        tex: &impl TextureTrait,
-        src: *const sdl2::SDL_Rect,
-        dest: *const sdl2::SDL_Rect,
-    ) {
-        self.r.draw(tex, src, dest);
+    pub fn present(&self) {
+        unsafe {
+            sdl2::SDL_RenderPresent(self.renderer());
+        }
     }
 }
 
-#[macro_export]
-macro_rules! draw {
-    ($rs: expr, $tex: ident, $src: expr, $dest: expr) => {
-        if Some(tex) = $tex {
-            $rs.draw(&tex, $src, $dest);
-        }
-    };
+impl RendererTrait for RenderSystem {
+    fn renderer(&self) -> *mut sdl2::SDL_Renderer {
+        self.r.r.as_ptr()
+    }
+}
+
+impl AssetManagerTrait for RenderSystem {
+    fn asset_manager<'a>(&'a self) -> &'a AssetManager {
+        &self.am
+    }
+
+    fn asset_manager_mut<'a>(&'a mut self) -> &'a mut AssetManager {
+        &mut self.am
+    }
+}
+
+impl RenderSystemTrait for RenderSystem {
+    fn render_system_mut<'a>(&'a mut self) -> &'a mut RenderSystem {
+        self
+    }
 }
 
 #[macros::global(Const)]
@@ -208,7 +289,7 @@ struct Image(pub Asset);
 fn render(
     _e: &events::core::Render,
     mut comps: Container<(&Entity, &mut Elevation, &physics::Position, &Image)>,
-    rs: &RenderSystem,
+    rs: &mut RenderSystem,
     screen: &Screen,
     camera: &Camera,
 ) {
@@ -221,12 +302,10 @@ fn render(
         }
     });
     for (_, _, pos, img) in comps {
-        if let Some(img) = rs.get_asset(img.0) {
-            rs.draw(
-                img,
-                std::ptr::null(),
-                &rect_to_camera_coords(&pos.0, screen, camera).to_sdl_rect(),
-            )
-        }
+        rs.draw_asset(
+            &img.0,
+            std::ptr::null(),
+            &rect_to_camera_coords(&pos.0, screen, camera).to_sdl_rect(),
+        )
     }
 }

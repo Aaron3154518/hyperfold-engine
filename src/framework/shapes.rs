@@ -3,6 +3,7 @@ use std::f32::consts::{PI, TAU};
 use num_traits::Pow;
 use shared::util::Call;
 
+use crate::framework::render_system::RenderSystem;
 use crate::{
     sdl2,
     utils::{
@@ -181,10 +182,10 @@ impl ShapeTrait for Rectangle {
 }
 
 impl Drawable for Rectangle {
-    fn draw(&self, r: &impl RendererTrait) {
-        self.set_draw_state(r);
+    fn draw(&self, rs: &mut RenderSystem) {
+        self.set_draw_state(rs);
 
-        let fill_r = match self.get_boundary(r) {
+        let fill_r = match self.get_boundary(rs) {
             Some(r) => r,
             None => return,
         };
@@ -193,7 +194,7 @@ impl Drawable for Rectangle {
             Some(r) => r,
             None => {
                 // Fill entire boundary
-                r.fill_rect(fill_r);
+                rs.fill_rect(fill_r);
                 return;
             }
         };
@@ -209,7 +210,7 @@ impl Drawable for Rectangle {
             Some(r) => r,
             None => {
                 // Fill r2
-                r.fill_rect(fill_r);
+                rs.fill_rect(fill_r);
                 return;
             }
         };
@@ -246,7 +247,7 @@ impl Drawable for Rectangle {
                 Rectangle::new()
                     .set_shape_data(self.shape)
                     .fill(side)
-                    .draw(r);
+                    .draw(rs);
             }
         }
     }
@@ -392,7 +393,7 @@ impl Circle {
                         let y2 = bounds.y2_i32().min(self.data.c.y + dy2);
                         // Make sure at least one y is in bounds
                         if y1 <= bounds.y2_i32() && y2 >= bounds.y_i32() {
-                            unsafe { sdl2::SDL_RenderDrawLine(r.get(), x, y1, x, y2) };
+                            unsafe { sdl2::SDL_RenderDrawLine(r.renderer(), x, y1, x, y2) };
                         }
                     }
                 }
@@ -505,7 +506,7 @@ impl Circle {
 
                 unsafe {
                     sdl2::SDL_RenderDrawLine(
-                        r.get(),
+                        r.renderer(),
                         x1.max(bounds.x_i32()),
                         y1.max(bounds.y_i32()),
                         x2.min(bounds.x2_i32()),
@@ -547,10 +548,10 @@ impl ShapeTrait for Circle {
 }
 
 impl Drawable for Circle {
-    fn draw(&self, r: &impl RendererTrait) {
-        self.set_draw_state(r);
+    fn draw(&self, rs: &mut RenderSystem) {
+        self.set_draw_state(rs);
 
-        let bounds = match self.get_boundary(r) {
+        let bounds = match self.get_boundary(rs) {
             Some(r) => r,
             None => return,
         };
@@ -562,13 +563,13 @@ impl Drawable for Circle {
                     da += TAU
                 }
                 if (da - TAU).abs() < F32_ERR {
-                    self.draw_circle(bounds, r)
+                    self.draw_circle(bounds, rs)
                 } else {
-                    self.draw_sectors(bounds, r)
+                    self.draw_sectors(bounds, rs)
                 }
             }
             _ => {
-                self.draw_dashed(bounds, r);
+                self.draw_dashed(bounds, rs);
                 return;
             }
         }
@@ -592,7 +593,7 @@ impl Brighten {
 }
 
 impl Drawable for Brighten {
-    fn draw(&self, r: &impl RendererTrait) {
+    fn draw(&self, rs: &mut RenderSystem) {
         Rectangle::new()
             .set_color(sdl2::SDL_Color {
                 r: self.strength,
@@ -601,6 +602,6 @@ impl Drawable for Brighten {
                 a: 255,
             })
             .set_blendmode(sdl2::SDL_BlendMode::SDL_BLENDMODE_ADD)
-            .draw(r)
+            .draw(rs)
     }
 }

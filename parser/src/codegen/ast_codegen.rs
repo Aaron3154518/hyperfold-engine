@@ -513,7 +513,7 @@ impl ItemsCrate {
                 // Update #efoo
                 self.#gfoo.#g_event.update(ts, &self.#gfoo.#g_camera.0, &self.#gfoo.#g_screen.0);
                 // Clear the screen
-                self.#gfoo.#g_render_system.r.clear();
+                self.#gfoo.#g_render_system.clear();
                 // Add initial #efoo
                 self.add_events(self.init_events(ts));
                 while !self.stack.is_empty() {
@@ -558,7 +558,7 @@ impl ItemsCrate {
                     }
                 }
                 // Display the screen
-                self.#gfoo.#g_render_system.r.present();
+                self.#gfoo.#g_render_system.present();
 
                 self.post_tick();
             }

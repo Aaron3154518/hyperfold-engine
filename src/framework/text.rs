@@ -8,8 +8,8 @@ use crate::utils::{
 
 use super::{
     font::FontTrait,
-    render_data::RenderData,
-    renderer::RendererTrait,
+    render_data::RenderTexture,
+    render_system::RenderSystem,
     texture::{Texture, TextureTrait},
 };
 
@@ -23,15 +23,15 @@ pub struct Text {
 impl Text {
     pub fn draw(
         &self,
-        r: &impl RendererTrait,
+        rs: &mut RenderSystem,
         tex: &Texture,
         rect: Rect,
         font: &impl FontTrait,
         text: &str,
     ) {
-        let text_tex = Texture::from_surface(r, font.render(&text[self.start..self.end], BLACK));
+        let text_tex = Texture::from_surface(rs, font.render(&text[self.start..self.end], BLACK));
         let text_rect = text_tex.min_rect_align(rect, Align::Center, Align::Center);
-        tex.draw(r, RenderData::from(&text_tex).set_pos(text_rect));
+        tex.draw(rs, RenderTexture::new(text_tex).set_pos(text_rect));
     }
 }
 
@@ -193,7 +193,7 @@ pub fn split_text(text: &str, font: &impl FontTrait, max_w: u32) -> Vec<Line> {
 }
 
 pub fn render_text(
-    r: &impl RendererTrait,
+    rs: &mut RenderSystem,
     text: &str,
     font: &impl FontTrait,
     rect: Rect,
@@ -209,7 +209,7 @@ pub fn render_text(
         h: line_h as f32 * lines.len() as f32,
     };
     text_r.copy_pos(rect, ax, ay);
-    let tex = Texture::new(r, text_r.w_i32(), text_r.h_i32(), GRAY);
+    let tex = Texture::new(rs, text_r.w_i32(), text_r.h_i32(), GRAY);
 
     let num_imgs = lines.iter().fold(0, |s, l| s + l.img_cnt);
 
@@ -239,7 +239,7 @@ pub fn render_text(
                         w: t.w as f32,
                         h: line_r.h,
                     };
-                    t.draw(r, &tex, rect, font, text);
+                    t.draw(rs, &tex, rect, font, text);
                     x += t.w;
                 }
                 LineItem::Image => {
@@ -255,74 +255,3 @@ pub fn render_text(
 
     tex
 }
-
-// void TextData::draw() {
-//     if (updateText) {
-//         int lineH = TTF_FontHeight(mFont.get());
-//         mLines = splitText(mText, mFont, mRect.W());
-//         TextureBuilder tex(mRect.W(), lineH * mLines.size());
-
-//         Rect r = Rect(0, 0, mRect.W(), lineH * mLines.size());
-//         DimensionsF scale{r.w() / mRect.w(), r.h() / lineH / mLines.size()};
-//         r.setPos(mRect, mAlignX, mAlignY);
-
-//         size_t numImgs = 0;
-//         for (auto& line : mLines) {
-//             numImgs += line.numImgs();
-//         }
-// TODO:
-//         size_t currSize = mImgEntities.size();
-//         mImgEntities.resize(numImgs);
-//         for (size_t i = currSize; i < mImgEntities.size(); i++) {
-//             mImgEntities.at(i) = GameObjects::New<ImageEntity>();
-//             mImgEntities.at(i)->setElevation(
-//                 getComponent<ElevationComponent>().get());
-//         }
-//         auto imgEntIt = mImgEntities.begin();
-
-//         Rect lineR(0, 0, mRect.W(), lineH);
-//         float imgW = lineR.h() * scale.h;
-//         for (auto& line : mLines) {
-//             lineR.setWidth(line.w(), mAlignX);
-//             float x = lineR.x();
-//             auto textIt = line.mText.begin();
-//             for (auto type : line.mTypes) {
-//                 switch (type) {
-//                     case Line::Type::TEXT: {
-//                         Text& t = *(textIt++);
-//                         t.draw(tex, Rect(x, lineR.y(), t.w, lineR.h()), mFont,
-//                                mText);
-//                         x += t.w;
-//                     } break;
-//                     case Line::Type::IMAGE: {
-// TODO:
-//                         (*(imgEntIt++))
-//                             ->setRect(Rect(x * scale.w + r.x(),
-//                                            lineR.y() * scale.h + r.y(), imgW,
-//                                            imgW));
-//                         x += imgW;
-//                     } break;
-//                 };
-//             }
-//             lineR.move(0, lineR.h());
-//         }
-
-//         getComponent<PositionComponent>().set(r);
-//         getComponent<SpriteComponent>().setTexture(tex.getTexture());
-
-//         updateText = false;
-//     }
-//     if (updateImgs) {
-// TODO:
-//         auto imgIt = mImgs.begin();
-//         for (auto it = mImgEntities.begin(); it != mImgEntities.end(); ++it) {
-//             if (imgIt != mImgs.end()) {
-//                 (*it)->setImg(*imgIt);
-//             } else {
-//                 (*it)->setImg(SpriteData());
-//             }
-//         }
-
-//         updateImgs = false;
-//     }
-// }
