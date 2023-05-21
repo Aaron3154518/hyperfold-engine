@@ -7,7 +7,7 @@ use crate::utils::{
 };
 
 use super::{
-    font::{FontData, FontTrait},
+    font::{Font, FontData},
     render_data::{RenderDataTrait, RenderTexture},
     render_system::{AssetManager, Renderer, Texture},
 };
@@ -20,7 +20,7 @@ pub struct Text {
 }
 
 impl Text {
-    pub fn draw(&self, r: &Renderer, tex: &Texture, rect: Rect, font: &impl FontTrait, text: &str) {
+    pub fn draw(&self, r: &Renderer, tex: &Texture, rect: Rect, font: &Font, text: &str) {
         let text_tex =
             r.create_texture_from_surface(font.render(&text[self.start..self.end], BLACK));
         let text_rect = text_tex.min_rect_align(rect, Align::Center, Align::Center);
@@ -72,7 +72,7 @@ impl Line {
 // split text
 fn add_text(
     lines: &mut Vec<Line>,
-    font: &impl FontTrait,
+    font: &Font,
     text: &str,
     max_w: u32,
     space_w: u32,
@@ -138,7 +138,7 @@ fn add_text(
     }
 }
 
-pub fn split_text(text: &str, font: &impl FontTrait, max_w: u32) -> Vec<Line> {
+pub fn split_text(text: &str, font: &Font, max_w: u32) -> Vec<Line> {
     let mut lines = vec![Line::new()];
 
     let (space_w, line_h) = font

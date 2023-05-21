@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use shared::util::NoneOr;
 use uuid::Uuid;
 
-use crate::framework::font::{Font, FontData, FontTrait};
+use crate::framework::font::{Font, FontData};
 
 use super::{Asset, AssetManager, Renderer, Texture};
 

@@ -17,37 +17,6 @@ pub struct FontData {
     pub file: String,
 }
 
-pub trait FontTrait {
-    fn get(&self) -> *mut sdl2_ttf::TTF_Font;
-
-    fn size(&self) -> Dimensions<i32> {
-        let mut d = self.size_text(" ");
-        d.h = unsafe { sdl2_ttf::TTF_FontHeight(self.get()) };
-        d
-    }
-
-    fn size_text(&self, text: &str) -> Dimensions<i32> {
-        let cstr = CString::new(text).expect("Failed to create CString");
-        let mut d = Dimensions::<i32>::new();
-        unsafe { sdl2_ttf::TTF_SizeUTF8(self.get(), cstr.as_ptr(), &mut d.w, &mut d.h) };
-        d
-    }
-
-    fn measure(&self, text: &str, w: u32) -> (i32, i32) {
-        let cstr = CString::new(text).expect("Failed to create CString");
-        let (mut width, mut count) = (0, 0);
-        unsafe {
-            sdl2_ttf::TTF_MeasureUTF8(self.get(), cstr.as_ptr(), w as i32, &mut width, &mut count)
-        };
-        (width, count)
-    }
-
-    fn render(&self, text: &str, color: sdl2::SDL_Color) -> Surface {
-        let cstr = CString::new(text).expect("Failed to crate CString");
-        Surface::new(unsafe { sdl2_ttf::TTF_RenderText_Blended(self.get(), cstr.as_ptr(), color) })
-    }
-}
-
 pub struct Font {
     font: NonNull<sdl2_ttf::TTF_Font>,
 }
@@ -64,11 +33,40 @@ impl Font {
             font: NonNull::new(f_ptr).expect("Failed to create Font"),
         }
     }
-}
 
-impl FontTrait for Font {
-    fn get(&self) -> *mut sdl2_ttf::TTF_Font {
-        self.font.as_ptr()
+    pub fn size(&self) -> Dimensions<i32> {
+        let mut d = self.size_text(" ");
+        d.h = unsafe { sdl2_ttf::TTF_FontHeight(self.font.as_ptr()) };
+        d
+    }
+
+    pub fn size_text(&self, text: &str) -> Dimensions<i32> {
+        let cstr = CString::new(text).expect("Failed to create CString");
+        let mut d = Dimensions::<i32>::new();
+        unsafe { sdl2_ttf::TTF_SizeUTF8(self.font.as_ptr(), cstr.as_ptr(), &mut d.w, &mut d.h) };
+        d
+    }
+
+    pub fn measure(&self, text: &str, w: u32) -> (i32, i32) {
+        let cstr = CString::new(text).expect("Failed to create CString");
+        let (mut width, mut count) = (0, 0);
+        unsafe {
+            sdl2_ttf::TTF_MeasureUTF8(
+                self.font.as_ptr(),
+                cstr.as_ptr(),
+                w as i32,
+                &mut width,
+                &mut count,
+            )
+        };
+        (width, count)
+    }
+
+    pub fn render(&self, text: &str, color: sdl2::SDL_Color) -> Surface {
+        let cstr = CString::new(text).expect("Failed to crate CString");
+        Surface::new(unsafe {
+            sdl2_ttf::TTF_RenderText_Blended(self.font.as_ptr(), cstr.as_ptr(), color)
+        })
     }
 }
 
