@@ -410,7 +410,7 @@ impl ItemsCrate {
         let engine_globals =
             engine_globals.map(|(cr_idx, g_i)| format_ident!("{}", global_var(cr_idx, g_i)));
         let g_event = &engine_globals[EngineGlobals::Event as usize];
-        let g_render_system = &engine_globals[EngineGlobals::RenderSystem as usize];
+        let g_renderer = &engine_globals[EngineGlobals::Renderer as usize];
         let g_entity_trash = &engine_globals[EngineGlobals::EntityTrash as usize];
         let g_screen = &engine_globals[EngineGlobals::Screen as usize];
         let g_camera = &engine_globals[EngineGlobals::Camera as usize];
@@ -513,7 +513,7 @@ impl ItemsCrate {
                 // Update #efoo
                 self.#gfoo.#g_event.update(ts, &self.#gfoo.#g_camera.0, &self.#gfoo.#g_screen.0);
                 // Clear the screen
-                self.#gfoo.#g_render_system.clear();
+                self.#gfoo.#g_renderer.clear();
                 // Add initial #efoo
                 self.add_events(self.init_events(ts));
                 while !self.stack.is_empty() {
@@ -558,7 +558,7 @@ impl ItemsCrate {
                     }
                 }
                 // Display the screen
-                self.#gfoo.#g_render_system.present();
+                self.#gfoo.#g_renderer.present();
 
                 self.post_tick();
             }

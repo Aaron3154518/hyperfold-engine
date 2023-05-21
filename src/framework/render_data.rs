@@ -3,56 +3,100 @@ use std::ptr::null;
 use crate::utils::rect::{Dimensions, Rect};
 
 use super::{
-    asset_manager::Asset,
-    drawable::Drawable,
-    render_system::{RenderSystem, RenderSystemTrait},
-    texture::{Texture, TextureTrait},
+    drawable::{AssetDrawable, Drawable},
+    render_system::{Asset, Texture, TextureRendererTrait},
+    render_system::{AssetManager, RenderSystemTrait, Renderer},
 };
-#[macros::component]
-pub struct RenderData {
-    asset: Asset,
-    pos: Rect,
-}
 
-impl RenderData {
-    pub fn new(asset: Asset, rs: &mut RenderSystem) -> Self {
-        let dim = rs
-            .load_asset(&asset)
-            .map_or(Dimensions { w: 0, h: 0 }, |t| t.get_size());
-        Self {
-            asset,
-            pos: Rect {
-                x: 0.0,
-                y: 0.0,
-                w: dim.w as f32,
-                h: dim.h as f32,
-            },
-        }
-    }
+// RenderData
+pub trait RenderDataTrait
+where
+    Self: Sized,
+{
+    fn render_data(&mut self) -> &mut RenderData;
 
-    pub fn set_pos(mut self, pos: Rect) -> Self {
-        self.pos = pos;
+    fn set_pos(mut self, pos: Rect) -> Self {
+        self.render_data().pos = pos;
         self
     }
 }
 
-impl From<Texture> for RenderData {
-    fn from(tex: Texture) -> Self {
-        let dim = tex.get_size();
-        Self {
-            asset: Asset::Texture(tex),
-            pos: Rect {
-                x: 0.0,
-                y: 0.0,
-                w: dim.w as f32,
-                h: dim.h as f32,
-            },
-        }
+pub struct RenderData {
+    pos: Rect,
+}
+
+impl RenderData {
+    pub fn new() -> Self {
+        Self { pos: Rect::new() }
     }
 }
 
-impl Drawable for RenderData {
-    fn draw(&self, rs: &mut RenderSystem) {
-        rs.draw_asset(&self.asset, null(), &self.pos.to_sdl_rect())
+// RenderTexture
+pub struct RenderTexture {
+    tex: Texture,
+    data: RenderData,
+}
+
+impl RenderTexture {
+    pub fn new(tex: Texture) -> Self {
+        let dim = tex.get_size();
+        Self {
+            tex,
+            data: RenderData::new(),
+        }
+        .set_pos(Rect {
+            x: 0.0,
+            y: 0.0,
+            w: dim.w as f32,
+            h: dim.h as f32,
+        })
+    }
+}
+
+impl RenderDataTrait for RenderTexture {
+    fn render_data(&mut self) -> &mut RenderData {
+        &mut self.data
+    }
+}
+
+impl Drawable for RenderTexture {
+    fn draw(&self, r: &Renderer) {
+        (r, &self.tex).draw_texture(null(), &self.data.pos.to_sdl_rect())
+    }
+}
+
+// RenderAsset
+pub struct RenderAsset {
+    asset: Asset,
+    data: RenderData,
+}
+
+impl RenderAsset {
+    pub fn new(asset: Asset, r: &Renderer, am: &mut AssetManager) -> Self {
+        let dim = (r, am)
+            .load_asset(&asset)
+            .map_or(Dimensions { w: 0, h: 0 }, |t| t.get_size());
+        Self {
+            asset,
+            data: RenderData::new(),
+        }
+        .set_pos(Rect {
+            x: 0.0,
+            y: 0.0,
+            w: dim.w as f32,
+            h: dim.h as f32,
+        })
+    }
+}
+
+impl RenderDataTrait for RenderAsset {
+    fn render_data(&mut self) -> &mut RenderData {
+        &mut self.data
+    }
+}
+
+impl AssetDrawable for RenderAsset {
+    fn draw(&self, r: &Renderer, am: &mut AssetManager) {
+        (r, am).draw_asset(&self.asset, null(), &self.data.pos.to_sdl_rect())
     }
 }

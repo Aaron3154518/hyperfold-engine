@@ -110,7 +110,7 @@ pub enum EngineGlobals {
     EFoo,
     EntityTrash,
     Event,
-    RenderSystem,
+    Renderer,
     Camera,
     Screen,
 }
@@ -122,7 +122,7 @@ impl GetPaths<{ Self::LEN }> for EngineGlobals {
             EngineGlobals::EFoo => "EFoo",
             EngineGlobals::EntityTrash => "EntityTrash",
             EngineGlobals::Event => "Event",
-            EngineGlobals::RenderSystem => "RenderSystem",
+            EngineGlobals::Renderer => "Renderer",
             EngineGlobals::Camera => "Camera",
             EngineGlobals::Screen => "Screen",
         }
@@ -132,7 +132,7 @@ impl GetPaths<{ Self::LEN }> for EngineGlobals {
         match self {
             EngineGlobals::CFoo | EngineGlobals::EFoo => vec![NAMESPACE],
             EngineGlobals::EntityTrash => vec![ECS, "entities"],
-            EngineGlobals::RenderSystem | EngineGlobals::Screen | EngineGlobals::Camera => {
+            EngineGlobals::Renderer | EngineGlobals::Screen | EngineGlobals::Camera => {
                 vec!["framework", "render_system"]
             }
             EngineGlobals::Event => vec!["utils", "event"],

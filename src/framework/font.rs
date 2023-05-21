@@ -64,10 +64,6 @@ impl Font {
             font: NonNull::new(f_ptr).expect("Failed to create Font"),
         }
     }
-
-    pub fn access(&self) -> FontAccess {
-        FontAccess { font: self.font }
-    }
 }
 
 impl FontTrait for Font {
@@ -79,16 +75,5 @@ impl FontTrait for Font {
 impl Drop for Font {
     fn drop(&mut self) {
         unsafe { sdl2_ttf::TTF_CloseFont(self.font.as_ptr()) };
-    }
-}
-
-// Access
-pub struct FontAccess {
-    pub font: NonNull<sdl2_ttf::TTF_Font>,
-}
-
-impl FontTrait for FontAccess {
-    fn get(&self) -> *mut sdl2_ttf::TTF_Font {
-        self.font.as_ptr()
     }
 }

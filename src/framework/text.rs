@@ -7,10 +7,9 @@ use crate::utils::{
 };
 
 use super::{
-    font::FontTrait,
-    render_data::RenderData,
-    render_system::RenderSystem,
-    texture::{Texture, TextureTrait},
+    font::{FontData, FontTrait},
+    render_data::{RenderDataTrait, RenderTexture},
+    render_system::{AssetManager, Renderer, Texture},
 };
 
 // Text
@@ -21,17 +20,11 @@ pub struct Text {
 }
 
 impl Text {
-    pub fn draw(
-        &self,
-        rs: &mut RenderSystem,
-        tex: &Texture,
-        rect: Rect,
-        font: &impl FontTrait,
-        text: &str,
-    ) {
-        let text_tex = Texture::from_surface(rs, font.render(&text[self.start..self.end], BLACK));
+    pub fn draw(&self, r: &Renderer, tex: &Texture, rect: Rect, font: &impl FontTrait, text: &str) {
+        let text_tex =
+            r.create_texture_from_surface(font.render(&text[self.start..self.end], BLACK));
         let text_rect = text_tex.min_rect_align(rect, Align::Center, Align::Center);
-        tex.draw(rs, RenderData::from(text_tex).set_pos(text_rect));
+        tex.draw(r, RenderTexture::new(text_tex).set_pos(text_rect));
     }
 }
 
@@ -193,13 +186,15 @@ pub fn split_text(text: &str, font: &impl FontTrait, max_w: u32) -> Vec<Line> {
 }
 
 pub fn render_text(
-    rs: &mut RenderSystem,
+    r: &Renderer,
+    am: &mut AssetManager,
     text: &str,
-    font: &impl FontTrait,
+    font_data: FontData,
     rect: Rect,
     ax: Align,
     ay: Align,
 ) -> Texture {
+    let font = am.get_font(font_data);
     let Dimensions { h: line_h, .. } = font.size();
     let lines = split_text(text, font, rect.w_i32() as u32);
     let mut text_r = Rect {
@@ -209,9 +204,9 @@ pub fn render_text(
         h: line_h as f32 * lines.len() as f32,
     };
     text_r.copy_pos(rect, ax, ay);
-    let tex = Texture::new(rs, text_r.w_i32(), text_r.h_i32(), GRAY);
+    let tex = Texture::new(r, text_r.w_i32(), text_r.h_i32(), GRAY);
 
-    let num_imgs = lines.iter().fold(0, |s, l| s + l.img_cnt);
+    // let num_imgs = lines.iter().fold(0, |s, l| s + l.img_cnt);
 
     // TODO: get images
 
@@ -239,7 +234,7 @@ pub fn render_text(
                         w: t.w as f32,
                         h: line_r.h,
                     };
-                    t.draw(rs, &tex, rect, font, text);
+                    t.draw(r, &tex, rect, font, text);
                     x += t.w;
                 }
                 LineItem::Image => {
