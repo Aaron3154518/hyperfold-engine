@@ -6,10 +6,8 @@ use std::{
 
 use uuid::Uuid;
 
-use super::{
-    font::{Font, FontData},
-    physics,
-};
+use super::physics;
+use font::{Font, FontData};
 
 use crate::{
     ecs::{components::Container, entities::Entity, events},
@@ -18,7 +16,13 @@ use crate::{
 };
 
 pub mod asset_manager;
+pub mod drawable;
+pub mod font;
+pub mod render_data;
 pub mod renderer;
+pub mod shapes;
+pub mod surface;
+pub mod text;
 pub mod texture;
 pub mod window;
 

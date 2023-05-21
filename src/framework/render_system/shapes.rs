@@ -12,7 +12,7 @@ use crate::{
     },
 };
 
-use super::{drawable::Drawable, render_system::Renderer};
+use super::{drawable::Drawable, Renderer};
 
 // Shape data
 pub trait ShapeTrait {

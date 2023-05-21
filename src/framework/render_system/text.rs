@@ -9,7 +9,7 @@ use crate::utils::{
 use super::{
     font::{Font, FontData},
     render_data::{RenderDataTrait, RenderTexture},
-    render_system::{AssetManager, Renderer, Texture},
+    AssetManager, Renderer, Texture,
 };
 
 // Text

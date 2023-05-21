@@ -1,8 +1,8 @@
 use crate::sdl2;
 
 use super::{
-    render_system::{AssetManager, Renderer, Texture, TextureRendererTrait},
     shapes::{Rectangle, ShapeTrait},
+    AssetManager, Renderer, Texture, TextureRendererTrait,
 };
 
 // Trait for anything that wants to draw on a texture builder

@@ -1,11 +1,12 @@
 use crate::{
-    framework::surface::Surface,
     sdl2, sdl2_image,
     utils::{
         colors::BLACK,
         rect::{Dimensions, Rect},
     },
 };
+
+use super::surface::Surface;
 
 use std::ptr::NonNull;
 use std::{ffi::CString, ptr::null_mut};

@@ -4,8 +4,7 @@ use crate::utils::rect::{Dimensions, Rect};
 
 use super::{
     drawable::{AssetDrawable, Drawable},
-    render_system::{Asset, Texture, TextureRendererTrait},
-    render_system::{AssetManager, RenderSystemTrait, Renderer},
+    Asset, AssetManager, RenderSystemTrait, Renderer, Texture, TextureRendererTrait,
 };
 
 // RenderData
