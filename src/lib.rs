@@ -1,6 +1,7 @@
 #![feature(hash_drain_filter)]
 #![feature(pattern)]
 #![feature(map_try_insert)]
+#![feature(lazy_cell)]
 
 mod sdl2_bindings;
 pub use sdl2_bindings::sdl2;

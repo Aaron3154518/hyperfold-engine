@@ -2,7 +2,7 @@ use crate::sdl2;
 
 use super::{
     shapes::{Rectangle, ShapeTrait},
-    AssetManager, Renderer, Texture, TextureRendererTrait,
+    AssetManager, Renderer, Texture,
 };
 
 // Trait for anything that wants to draw on a texture builder
@@ -30,13 +30,13 @@ impl Texture {
 
     // Draw textures/text
     pub fn draw(&self, r: &Renderer, drawable: impl Drawable) {
-        (r, self).set_target();
+        r.set_target(self);
         drawable.draw(r);
         r.clear_target();
     }
 
     pub fn draw_asset(&self, r: &Renderer, am: &mut AssetManager, drawable: impl AssetDrawable) {
-        (r, self).set_target();
+        r.set_target(self);
         drawable.draw(r, am);
         r.clear_target();
     }

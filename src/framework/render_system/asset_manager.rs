@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::LazyLock;
 
 use shared::util::NoneOr;
 use uuid::Uuid;
@@ -16,6 +17,18 @@ impl AssetManager {
         }
     }
 
+    pub const fn reserve_id() -> LazyLock<Uuid> {
+        LazyLock::new(|| Uuid::new_v4())
+    }
+
+    // File
+    fn add_image_for_file<'a>(&'a mut self, file: &str, tex: Texture) -> &'a Texture {
+        self.file_assets.insert(file.to_string(), tex);
+        self.file_assets
+            .get(&file.to_string())
+            .expect("Failed to add texture")
+    }
+
     pub fn get_asset_by_file<'a>(&'a self, file: &String) -> Option<&'a Texture> {
         self.file_assets.get(file)
     }
@@ -28,23 +41,30 @@ impl AssetManager {
         self.get_asset_by_file(file).expect("File to load asset")
     }
 
+    // Id
     pub fn get_asset_by_id<'a>(&'a self, id: Uuid) -> Option<&'a Texture> {
         self.id_assets.get(&id)
     }
 
-    pub fn add_texture(&mut self, tex: Texture) -> Asset {
+    pub fn new_texture(&mut self, tex: Texture) -> Uuid {
         let id = Uuid::new_v4();
         self.id_assets.insert(id, tex);
-        Asset::Id(id)
+        id
     }
 
-    pub fn add_image<'a>(&'a mut self, file: &str, tex: Texture) -> &'a Texture {
-        self.file_assets.insert(file.to_string(), tex);
-        self.file_assets
-            .get(&file.to_string())
-            .expect("Failed to add texture")
+    pub fn add_texture_for_id(&mut self, id: Uuid, tex: Texture) {
+        self.id_assets.insert(id, tex);
     }
 
+    // Asset
+    pub fn load_asset<'a>(&'a mut self, r: &Renderer, asset: &'a Asset) -> Option<&'a Texture> {
+        match asset {
+            Asset::File(file) => Some(self.get_or_load_asset_by_file(file, r)),
+            Asset::Id(id) => self.get_asset_by_id(*id),
+        }
+    }
+
+    // Font
     pub fn get_font<'a>(&'a mut self, data: FontData) -> &'a Font {
         if self.fonts.get(&data).is_none() {
             // Min is always too small or just right, max is too big

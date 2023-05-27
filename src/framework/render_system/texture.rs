@@ -42,9 +42,7 @@ impl Texture {
     }
 
     pub fn min_rect_align(&self, rect: Rect, ax: Align, ay: Align) -> Rect {
-        let mut r = self.min_rect(rect);
-        r.copy_pos(rect, ax, ay);
-        r
+        self.min_rect(rect).from_rect_pos(rect, ax, ay)
     }
 }
 

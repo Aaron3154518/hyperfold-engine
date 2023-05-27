@@ -197,13 +197,14 @@ pub fn render_text(
     let font = am.get_font(font_data);
     let Dimensions { h: line_h, .. } = font.size();
     let lines = split_text(text, font, rect.w_i32() as u32);
-    let mut text_r = Rect {
-        x: 0.0,
-        y: 0.0,
-        w: rect.w,
-        h: line_h as f32 * lines.len() as f32,
-    };
-    text_r.copy_pos(rect, ax, ay);
+    let mut text_r = Rect::new()
+        .from_dim(
+            rect.w,
+            line_h as f32 * lines.len() as f32,
+            Align::TopLeft,
+            Align::TopLeft,
+        )
+        .from_rect_pos(rect, ax, ay);
     let tex = Texture::new(r, text_r.w_i32(), text_r.h_i32(), GRAY);
 
     // let num_imgs = lines.iter().fold(0, |s, l| s + l.img_cnt);

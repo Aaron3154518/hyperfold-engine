@@ -6,17 +6,15 @@ use crate::{
     },
 };
 
-use super::surface::Surface;
-
-use std::ptr::NonNull;
+use std::ptr::{null, NonNull};
 use std::{ffi::CString, ptr::null_mut};
 
-use super::{Renderer, Texture, Window};
+use super::{surface::Surface, Asset, AssetManager, Renderer, Texture, Window};
+
+pub const W: u32 = 960;
+pub const H: u32 = 720;
 
 // Renderer
-const W: u32 = 960;
-const H: u32 = 720;
-
 impl Renderer {
     pub fn new() -> Self {
         let win = Window::new().title("Game Engine").dimensions(W, H);
@@ -38,8 +36,12 @@ impl Renderer {
 
     // Managing render state
     // TODO: dangling pointer here
-    pub fn set_target_ptr(&self, target: *mut sdl2::SDL_Texture) {
+    fn set_target_ptr(&self, target: *mut sdl2::SDL_Texture) {
         unsafe { sdl2::SDL_SetRenderTarget(self.r.as_ptr(), target) };
+    }
+
+    pub fn set_target(&self, tex: &Texture) {
+        self.set_target_ptr(tex.tex.as_ptr())
     }
 
     pub fn clear_target(&self) {
@@ -98,6 +100,37 @@ impl Renderer {
 
     pub fn draw_line(&self, x1: i32, y1: i32, x2: i32, y2: i32) {
         unsafe { sdl2::SDL_RenderDrawLine(self.r.as_ptr(), x1, y1, x2, y2) };
+    }
+
+    pub fn draw_texture(&self, tex: &Texture, src: Option<Rect>, dest: Option<Rect>) {
+        unsafe {
+            sdl2::SDL_RenderCopy(
+                self.r.as_ptr(),
+                tex.tex.as_ptr(),
+                src.map_or(null(), |r| &r.to_sdl_rect()),
+                dest.map_or(null(), |r| &r.to_sdl_rect()),
+            )
+        };
+    }
+
+    pub fn draw_asset(
+        &self,
+        am: &mut AssetManager,
+        asset: &Asset,
+        src: Option<Rect>,
+        dest: Option<Rect>,
+    ) {
+        self.draw_texture(
+            match asset {
+                Asset::File(file) => am.get_or_load_asset_by_file(file, self),
+                Asset::Id(id) => match am.get_asset_by_id(*id) {
+                    Some(t) => t,
+                    None => return,
+                },
+            },
+            src,
+            dest,
+        );
     }
 }
 

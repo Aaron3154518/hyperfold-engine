@@ -89,15 +89,10 @@ impl Rect {
 
     // Don't force normalize (e.g. intersect needs negative widths)
     pub fn from(x: f32, y: f32, w: f32, h: f32, ax: Align, ay: Align) -> Self {
-        let mut r = Rect {
-            x: 0.0,
-            y: 0.0,
-            w,
-            h,
-        };
-        r.set_x(x, ax);
-        r.set_y(y, ay);
-        r
+        Self::new()
+            .from_dim(w, h, Align::TopLeft, Align::TopLeft)
+            .from_x(x, ax)
+            .from_y(y, ay)
     }
 
     pub fn from_corners(x1: f32, y1: f32, x2: f32, y2: f32) -> Self {
@@ -111,16 +106,18 @@ impl Rect {
         } else {
             (y2, y1 - y2)
         };
-        Rect { x, y, w, h }
+        Self::from(x, y, w, h, Align::TopLeft, Align::TopLeft)
     }
 
     pub fn from_sdl_rect(r: sdl2::SDL_Rect) -> Self {
-        Rect {
-            x: r.x as f32,
-            y: r.y as f32,
-            w: r.w as f32,
-            h: r.h as f32,
-        }
+        Self::from(
+            r.x as f32,
+            r.y as f32,
+            r.w as f32,
+            r.h as f32,
+            Align::TopLeft,
+            Align::TopLeft,
+        )
     }
 
     pub fn to_sdl_rect(&self) -> sdl2::SDL_Rect {
@@ -289,12 +286,22 @@ impl Rect {
     }
 
     // setters
+    pub fn from_x(mut self, val: f32, a: Align) -> Self {
+        self.set_x(val, a);
+        self
+    }
+
     pub fn set_x(&mut self, val: f32, a: Align) {
         match a {
             Align::TopLeft => self.x = val,
             Align::Center => self.x = val - self.w / 2.0,
             Align::BotRight => self.x = val - self.w,
         }
+    }
+
+    pub fn from_y(mut self, val: f32, a: Align) -> Self {
+        self.set_y(val, a);
+        self
     }
 
     pub fn set_y(&mut self, val: f32, a: Align) {
@@ -305,14 +312,29 @@ impl Rect {
         }
     }
 
+    pub fn from_pos(mut self, x: f32, y: f32, ax: Align, ay: Align) -> Self {
+        self.set_pos(x, y, ax, ay);
+        self
+    }
+
     pub fn set_pos(&mut self, x: f32, y: f32, ax: Align, ay: Align) {
         self.set_x(x, ax);
         self.set_y(y, ay);
     }
 
-    pub fn copy_pos(&mut self, rect: Self, ax: Align, ay: Align) {
+    pub fn from_rect_pos(mut self, rect: Self, ax: Align, ay: Align) -> Self {
+        self.copy_rect_pos(rect, ax, ay);
+        self
+    }
+
+    pub fn copy_rect_pos(&mut self, rect: Self, ax: Align, ay: Align) {
         self.set_x(rect.get_x(ax), ax);
         self.set_y(rect.get_y(ay), ay);
+    }
+
+    pub fn from_w(mut self, w: f32, a: Align) -> Self {
+        self.set_w(w, a);
+        self
     }
 
     pub fn set_w(&mut self, w: f32, a: Align) {
@@ -332,6 +354,11 @@ impl Rect {
         self.normalize();
     }
 
+    pub fn from_h(mut self, h: f32, a: Align) -> Self {
+        self.set_h(h, a);
+        self
+    }
+
     pub fn set_h(&mut self, h: f32, a: Align) {
         match a {
             Align::TopLeft => {
@@ -347,6 +374,11 @@ impl Rect {
             }
         }
         self.normalize();
+    }
+
+    pub fn from_dim(mut self, w: f32, h: f32, ax: Align, ay: Align) -> Self {
+        self.set_dim(w, h, ax, ay);
+        self
     }
 
     pub fn set_dim(&mut self, w: f32, h: f32, ax: Align, ay: Align) {
@@ -390,11 +422,11 @@ impl Rect {
     }
 
     pub fn resize(&mut self, factor: f32, ax: Align, ay: Align) {
-        self.set_dim(self.w * factor, self.h * factor, ax, ay)
+        self.set_dim(self.w * factor, self.h * factor, ax, ay);
     }
 
     pub fn expand(&mut self, dw: f32, dh: f32, ax: Align, ay: Align) {
-        self.set_dim(self.w + dw, self.h + dh, ax, ay)
+        self.set_dim(self.w + dw, self.h + dh, ax, ay);
     }
 
     pub fn move_within(&mut self, r: &Rect) {
@@ -425,12 +457,12 @@ impl Rect {
         Self::min_rect(w, h, Some(self.w), Some(self.h))
     }
 
-    pub fn intersects(&self, r: &Rect) -> bool {
+    pub fn intersects(&self, r: &Self) -> bool {
         (self.x <= r.x2() && self.x2() >= r.x) && (self.y <= r.y2() && self.y2() >= r.y)
     }
 
-    pub fn intersect(&self, r: &Rect) -> Option<Rect> {
-        let i = Rect::from_corners(
+    pub fn intersect(&self, r: &Self) -> Option<Self> {
+        let i = Self::from_corners(
             self.x.max(r.x),
             self.y.max(r.y),
             self.x2().min(r.x2()),
@@ -439,7 +471,7 @@ impl Rect {
         (i.w > 0.0 && i.h > 0.0).then_some(i)
     }
 
-    pub fn get_min_rect(w: f32, h: f32, max_w: f32, max_h: f32) -> Rect {
+    pub fn get_min_rect(w: f32, h: f32, max_w: f32, max_h: f32) -> Self {
         let w_ratio = w / max_w;
         let h_ratio = h / max_h;
         let ratio = w_ratio.min(h_ratio);
@@ -447,7 +479,7 @@ impl Rect {
         let h = h / ratio;
         let x = (max_w - w) / 2.0;
         let y = (max_h - h) / 2.0;
-        Rect::from(x, y, w, h, Align::TopLeft, Align::TopLeft)
+        Self::from(x, y, w, h, Align::TopLeft, Align::TopLeft)
     }
 }
 

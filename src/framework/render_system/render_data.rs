@@ -1,10 +1,8 @@
-use std::ptr::null;
-
 use crate::utils::rect::{Dimensions, Rect};
 
 use super::{
     drawable::{AssetDrawable, Drawable},
-    Asset, AssetManager, RenderSystemTrait, Renderer, Texture, TextureRendererTrait,
+    Asset, AssetManager, Renderer, Texture,
 };
 
 // RenderData
@@ -18,15 +16,24 @@ where
         self.render_data().pos = pos;
         self
     }
+
+    fn set_area(mut self, area: Rect) -> Self {
+        self.render_data().area = area;
+        self
+    }
 }
 
 pub struct RenderData {
     pos: Rect,
+    area: Rect,
 }
 
 impl RenderData {
     pub fn new() -> Self {
-        Self { pos: Rect::new() }
+        Self {
+            pos: Rect::new(),
+            area: Rect::new(),
+        }
     }
 }
 
@@ -60,7 +67,7 @@ impl RenderDataTrait for RenderTexture {
 
 impl Drawable for RenderTexture {
     fn draw(&self, r: &Renderer) {
-        (r, &self.tex).draw_texture(null(), &self.data.pos.to_sdl_rect())
+        r.draw_texture(&self.tex, None, Some(self.data.pos))
     }
 }
 
@@ -72,8 +79,8 @@ pub struct RenderAsset {
 
 impl RenderAsset {
     pub fn new(asset: Asset, r: &Renderer, am: &mut AssetManager) -> Self {
-        let dim = (r, am)
-            .load_asset(&asset)
+        let dim = am
+            .load_asset(r, &asset)
             .map_or(Dimensions { w: 0, h: 0 }, |t| t.get_size());
         Self {
             asset,
@@ -96,6 +103,12 @@ impl RenderDataTrait for RenderAsset {
 
 impl AssetDrawable for RenderAsset {
     fn draw(&self, r: &Renderer, am: &mut AssetManager) {
-        (r, am).draw_asset(&self.asset, null(), &self.data.pos.to_sdl_rect())
+        r.draw_asset(am, &self.asset, None, Some(self.data.pos))
     }
+}
+
+// Animation
+struct Animation {
+    num_frames: usize,
+    frame: usize,
 }
