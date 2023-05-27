@@ -13,6 +13,7 @@ use super::ast_fn_arg::FnArg;
 #[derive(Debug)]
 pub enum MarkType {
     Struct,
+    Enum,
     Fn { args: Vec<FnArg> },
 }
 
@@ -91,6 +92,23 @@ impl Mod {
             path.display()
         ));
         self.visit_file(&ast);
+
+        // Post processing
+        self.resolve_local_use_paths();
+    }
+
+    // E.g. mod Foo; use Foo::Bar;
+    pub fn resolve_local_use_paths(&mut self) {
+        for use_path in self.uses.iter_mut() {
+            let first = use_path.path.first().expect("Empty use path");
+            if let Some(m) = self
+                .mods
+                .iter()
+                .find(|m| m.path.last().expect("Empty mod path") == first)
+            {
+                use_path.path = [m.path.to_vec(), use_path.path[1..].to_vec()].concat();
+            }
+        }
     }
 }
 
@@ -143,6 +161,7 @@ impl Mod {
             syn::Item::Mod(i) => self.visit_item_mod(i),
             syn::Item::Use(i) => self.visit_item_use(i),
             syn::Item::Fn(i) => self.visit_item_fn(i),
+            syn::Item::Enum(i) => self.visit_item_enum(i),
             syn::Item::Struct(i) => self.visit_item_struct(i),
             _ => (),
         }
@@ -179,6 +198,18 @@ impl Mod {
             if !attrs.is_empty() {
                 self.marked.push(MarkedItem {
                     ty: MarkType::Struct,
+                    sym: Symbol::from(self.path.to_vec(), &i.ident, &i.vis),
+                    attrs,
+                });
+            }
+        }
+    }
+
+    fn visit_item_enum(&mut self, i: &syn::ItemEnum) {
+        if let Some(attrs) = get_attributes_if_active(&i.attrs, &self.path, &Vec::new()) {
+            if !attrs.is_empty() {
+                self.marked.push(MarkedItem {
+                    ty: MarkType::Enum,
                     sym: Symbol::from(self.path.to_vec(), &i.ident, &i.vis),
                     attrs,
                 });

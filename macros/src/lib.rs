@@ -20,8 +20,12 @@ pub fn component(input: TokenStream, item: TokenStream) -> TokenStream {
         return quote!().into();
     }
 
-    let mut input = parse_macro_input!(item as syn::ItemStruct);
-    input.vis = syn::parse_quote!(pub);
+    let mut input = parse_macro_input!(item as syn::Item);
+    match &mut input {
+        syn::Item::Struct(syn::ItemStruct { vis, .. })
+        | syn::Item::Enum(syn::ItemEnum { vis, .. }) => *vis = syn::parse_quote!(pub),
+        _ => panic!("Invalid component item: {input:#?}"),
+    };
 
     quote!(#input).into()
 }

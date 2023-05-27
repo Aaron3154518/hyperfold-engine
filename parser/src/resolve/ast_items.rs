@@ -126,7 +126,7 @@ impl ItemsCrate {
             for (path, args) in mi.attrs.iter() {
                 let match_path = resolve_path(path.to_vec(), cr, m, crates).get();
                 match &mi.ty {
-                    MarkType::Struct => {
+                    MarkType::Enum | MarkType::Struct => {
                         if &match_path == paths.get_macro(MacroPaths::Component) {
                             self.components.push(Component {
                                 path: Path {

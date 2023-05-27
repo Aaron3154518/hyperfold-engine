@@ -141,7 +141,11 @@ pub fn main() {
     // TODO: hardcoded
     let (crates, paths) = Crate::parse(PathBuf::from("../"));
 
+    // eprintln!("{crates:#?}");
+
     let mut items = ItemsCrate::parse(&paths, &crates);
+
+    // eprintln!("{items:#?}");
 
     ast_codegen::codegen(&paths, &mut items);
 }
