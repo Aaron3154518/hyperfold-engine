@@ -1,4 +1,7 @@
-use std::fmt::Display;
+use std::{
+    fmt::Display,
+    ops::{Add, Sub},
+};
 
 use crate::sdl2;
 
@@ -46,8 +49,34 @@ impl Point {
         Self { x: 0, y: 0 }
     }
 
-    pub fn dist(&self, p: &Point) -> f32 {
-        (((self.x - p.x).pow(2) + (self.y - p.y).pow(2)) as f32).sqrt()
+    pub fn dist(&self, p: Self) -> f32 {
+        self.sub(p).mag()
+    }
+
+    pub fn mag(&self) -> f32 {
+        ((self.x.pow(2) + self.y.pow(2)) as f32).sqrt()
+    }
+}
+
+impl Add for Point {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self {
+            x: self.x + rhs.x,
+            y: self.y + rhs.y,
+        }
+    }
+}
+
+impl Sub for Point {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self {
+            x: self.x - rhs.x,
+            y: self.y - rhs.y,
+        }
     }
 }
 
@@ -56,8 +85,34 @@ impl PointF {
         Self { x: 0.0, y: 0.0 }
     }
 
-    pub fn dist(&self, p: &PointF) -> f32 {
-        (((self.x - p.x).powf(2.0) + (self.y - p.y).powf(2.0)) as f32).sqrt()
+    pub fn dist(&self, p: Self) -> f32 {
+        self.sub(p).mag()
+    }
+
+    pub fn mag(&self) -> f32 {
+        (self.x.powf(2.0) + self.y.powf(2.0)).sqrt()
+    }
+}
+
+impl Add for PointF {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self {
+            x: self.x + rhs.x,
+            y: self.y + rhs.y,
+        }
+    }
+}
+
+impl Sub for PointF {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self {
+            x: self.x - rhs.x,
+            y: self.y - rhs.y,
+        }
     }
 }
 

@@ -9,7 +9,7 @@ use crate::{
 use std::ptr::{null, NonNull};
 use std::{ffi::CString, ptr::null_mut};
 
-use super::{surface::Surface, Asset, AssetManager, Renderer, Texture, Window};
+use super::{surface::Surface, Renderer, Texture, Window};
 
 pub const W: u32 = 960;
 pub const H: u32 = 720;
@@ -59,21 +59,24 @@ impl Renderer {
     }
 
     // Get draw window size
-    pub fn output_size(&self) -> Dimensions<i32> {
-        let mut dim = Dimensions::<i32>::new();
-        unsafe { sdl2::SDL_GetRendererOutputSize(self.r.as_ptr(), &mut dim.w, &mut dim.h) };
-        dim
+    pub fn output_size(&self) -> Dimensions<u32> {
+        let (mut w, mut h) = (0, 0);
+        unsafe { sdl2::SDL_GetRendererOutputSize(self.r.as_ptr(), &mut w, &mut h) };
+        Dimensions {
+            w: w as u32,
+            h: h as u32,
+        }
     }
 
     // Create new texture
-    pub fn create_texture(&self, w: i32, h: i32) -> Option<Texture> {
+    pub fn create_texture(&self, w: u32, h: u32) -> Option<Texture> {
         NonNull::new(unsafe {
             sdl2::SDL_CreateTexture(
                 self.r.as_ptr(),
                 sdl2::SDL_PixelFormatEnum::SDL_PIXELFORMAT_RGBA8888 as u32,
                 sdl2::SDL_TextureAccess::SDL_TEXTUREACCESS_TARGET as i32,
-                w,
-                h,
+                w as i32,
+                h as i32,
             )
         })
         .map(|tex| {
@@ -103,34 +106,17 @@ impl Renderer {
     }
 
     pub fn draw_texture(&self, tex: &Texture, src: Option<Rect>, dest: Option<Rect>) {
+        let src = src.map(|r| r.to_sdl_rect());
+        let dest = dest.map(|r| r.to_sdl_rect());
+
         unsafe {
             sdl2::SDL_RenderCopy(
                 self.r.as_ptr(),
                 tex.tex.as_ptr(),
-                src.map_or(null(), |r| &r.to_sdl_rect()),
-                dest.map_or(null(), |r| &r.to_sdl_rect()),
+                src.as_ref().map_or(null(), |r| r),
+                dest.as_ref().map_or(null(), |r| r),
             )
         };
-    }
-
-    pub fn draw_asset(
-        &self,
-        am: &mut AssetManager,
-        asset: &Asset,
-        src: Option<Rect>,
-        dest: Option<Rect>,
-    ) {
-        self.draw_texture(
-            match asset {
-                Asset::File(file) => am.get_or_load_asset_by_file(file, self),
-                Asset::Id(id) => match am.get_asset_by_id(*id) {
-                    Some(t) => t,
-                    None => return,
-                },
-            },
-            src,
-            dest,
-        );
     }
 }
 

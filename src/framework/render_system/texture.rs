@@ -20,24 +20,21 @@ impl Texture {
         }
     }
 
-    pub fn get_size(&self) -> Dimensions<i32> {
-        let mut d = Dimensions::<i32>::new();
+    pub fn get_size(&self) -> Dimensions<u32> {
+        let (mut w, mut h) = (0, 0);
         if unsafe {
-            sdl2::SDL_QueryTexture(
-                self.tex.as_ptr(),
-                null_mut(),
-                null_mut(),
-                &mut d.w,
-                &mut d.h,
-            ) != 0
+            sdl2::SDL_QueryTexture(self.tex.as_ptr(), null_mut(), null_mut(), &mut w, &mut h) != 0
         } {
             eprintln!("Failed to query texture")
         }
-        d
+        Dimensions {
+            w: w as u32,
+            h: h as u32,
+        }
     }
 
     pub fn min_rect(&self, rect: Rect) -> Rect {
-        let Dimensions::<i32> { w, h } = self.get_size();
+        let Dimensions::<u32> { w, h } = self.get_size();
         rect.get_fit_within(w as f32, h as f32)
     }
 

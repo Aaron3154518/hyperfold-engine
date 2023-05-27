@@ -2,6 +2,8 @@ use std::{cmp::Ordering, collections::HashMap, ptr::NonNull};
 
 use uuid::Uuid;
 
+use self::render_data::RenderDataTrait;
+
 use super::physics;
 
 use font::{Font, FontData};
@@ -104,9 +106,9 @@ fn render(
     _e: &events::core::Render,
     mut comps: Container<(
         &Entity,
-        &mut Elevation,
+        &Elevation,
         &physics::Position,
-        &RenderComponent,
+        &mut RenderComponent,
     )>,
     r: &Renderer,
     am: &mut AssetManager,
@@ -122,10 +124,7 @@ fn render(
         }
     });
     for (_, _, pos, rc) in comps {
-        let pos = Some(rect_to_camera_coords(&pos.0, screen, camera));
-        match &rc {
-            RenderComponent::Asset(a) => r.draw_asset(&mut *am, &a, None, pos),
-            RenderComponent::Texture(t) => r.draw_texture(t, None, pos),
-        }
+        rc.set_pos(rect_to_camera_coords(&pos.0, screen, camera));
+        r.draw_asset(am, rc);
     }
 }

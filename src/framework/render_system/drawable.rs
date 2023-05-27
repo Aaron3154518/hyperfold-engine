@@ -15,9 +15,9 @@ pub trait AssetDrawable {
 }
 
 impl Texture {
-    pub fn new(r: &Renderer, w: i32, h: i32, bkgrnd: sdl2::SDL_Color) -> Self {
+    pub fn new(r: &Renderer, w: u32, h: u32, bkgrnd: sdl2::SDL_Color) -> Self {
         let s = r.create_texture(w, h).expect("Failed to create texture");
-        s.draw(r, Rectangle::new().set_color(bkgrnd));
+        s.draw(r, &Rectangle::new().set_color(bkgrnd));
         s
     }
 
@@ -28,16 +28,28 @@ impl Texture {
         // TODO: Copy src
     }
 
-    // Draw textures/text
-    pub fn draw(&self, r: &Renderer, drawable: impl Drawable) {
+    // Draw drawables
+    pub fn draw(&self, r: &Renderer, drawable: &dyn Drawable) {
         r.set_target(self);
         drawable.draw(r);
         r.clear_target();
     }
 
-    pub fn draw_asset(&self, r: &Renderer, am: &mut AssetManager, drawable: impl AssetDrawable) {
+    pub fn draw_asset(&self, r: &Renderer, am: &mut AssetManager, drawable: &dyn AssetDrawable) {
         r.set_target(self);
         drawable.draw(r, am);
         r.clear_target();
+    }
+}
+
+impl Renderer {
+    pub fn draw(&self, drawable: &dyn Drawable) {
+        self.clear_target();
+        drawable.draw(self);
+    }
+
+    pub fn draw_asset(&self, am: &mut AssetManager, drawable: &dyn AssetDrawable) {
+        self.clear_target();
+        drawable.draw(self, am);
     }
 }

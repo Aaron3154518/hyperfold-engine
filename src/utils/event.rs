@@ -262,7 +262,7 @@ impl Event {
                     Some(b) => {
                         let button = &mut self.mouse_buttons[b as usize];
                         let max_click_diff = MAX_CLICK_DIFF;
-                        button.status = if button.click_pos.dist(&self.mouse) < max_click_diff {
+                        button.status = if button.click_pos.dist(self.mouse) < max_click_diff {
                             Status::Pressed as u8 | Status::Up as u8
                         } else {
                             Status::Up as u8
