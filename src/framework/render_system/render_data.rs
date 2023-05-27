@@ -1,4 +1,9 @@
-use crate::utils::rect::{Dimensions, Rect};
+use uuid::Uuid;
+
+use crate::{
+    ecs::entities::Entity,
+    utils::rect::{Dimensions, Rect},
+};
 
 use super::{
     drawable::{AssetDrawable, Drawable},
@@ -39,6 +44,7 @@ impl RenderData {
 
 // RenderTexture
 pub struct RenderTexture {
+    anim_eid: Option<Entity>,
     tex: Texture,
     data: RenderData,
 }
@@ -47,6 +53,7 @@ impl RenderTexture {
     pub fn new(tex: Texture) -> Self {
         let dim = tex.get_size();
         Self {
+            anim_eid: None,
             tex,
             data: RenderData::new(),
         }
@@ -73,6 +80,7 @@ impl Drawable for RenderTexture {
 
 // RenderAsset
 pub struct RenderAsset {
+    anim_eid: Option<Entity>,
     asset: Asset,
     data: RenderData,
 }
@@ -83,6 +91,7 @@ impl RenderAsset {
             .load_asset(r, &asset)
             .map_or(Dimensions { w: 0, h: 0 }, |t| t.get_size());
         Self {
+            anim_eid: None,
             asset,
             data: RenderData::new(),
         }
@@ -107,7 +116,41 @@ impl AssetDrawable for RenderAsset {
     }
 }
 
+// RenderComponent
+#[macros::component]
+enum RenderComponent {
+    Asset(Asset),
+    Texture(Texture),
+}
+
+impl RenderComponent {
+    pub fn from_file(file: String) -> Self {
+        Self::Asset(Asset::File(file))
+    }
+
+    pub fn from_id(id: Uuid) -> Self {
+        Self::Asset(Asset::Id(id))
+    }
+
+    pub fn from_texture(tex: Texture) -> Self {
+        Self::Texture(tex)
+    }
+}
+
 // Animation
+pub trait AnimationTrait {
+    fn get_data(&mut self) -> (&mut Option<Entity>, &mut RenderData);
+
+    fn animate(&mut self) {
+        let (eid, rd) = self.get_data();
+        if let Some(eid) = eid {
+            // TODO: deregister existing entity
+        }
+        let new_id = Entity::new_v4();
+        *eid = Some(new_id);
+    }
+}
+
 struct Animation {
     num_frames: usize,
     frame: usize,

@@ -1,13 +1,11 @@
-use std::{
-    cmp::Ordering,
-    collections::HashMap,
-    ptr::{null, NonNull},
-};
+use std::{cmp::Ordering, collections::HashMap, ptr::NonNull};
 
 use uuid::Uuid;
 
 use super::physics;
+
 use font::{Font, FontData};
+pub use render_data::RenderComponent;
 
 use crate::{
     ecs::{components::Container, entities::Entity, events},
@@ -101,32 +99,15 @@ pub fn rect_to_camera_coords(rect: &Rect, screen: &Screen, camera: &Camera) -> R
 #[macros::component]
 struct Elevation(pub u8);
 
-pub enum TextureAccess {
-    Asset(Asset),
-    Texture(Texture),
-}
-
-#[macros::component]
-struct Image(pub TextureAccess);
-
-impl Image {
-    pub fn from_file(file: String) -> Self {
-        Self(TextureAccess::Asset(Asset::File(file)))
-    }
-
-    pub fn from_id(id: Uuid) -> Self {
-        Self(TextureAccess::Asset(Asset::Id(id)))
-    }
-
-    pub fn from_texture(tex: Texture) -> Self {
-        Self(TextureAccess::Texture(tex))
-    }
-}
-
 #[macros::system]
 fn render(
     _e: &events::core::Render,
-    mut comps: Container<(&Entity, &mut Elevation, &physics::Position, &Image)>,
+    mut comps: Container<(
+        &Entity,
+        &mut Elevation,
+        &physics::Position,
+        &RenderComponent,
+    )>,
     r: &Renderer,
     am: &mut AssetManager,
     screen: &Screen,
@@ -140,11 +121,11 @@ fn render(
             cmp
         }
     });
-    for (_, _, pos, img) in comps {
+    for (_, _, pos, rc) in comps {
         let pos = Some(rect_to_camera_coords(&pos.0, screen, camera));
-        match &img.0 {
-            TextureAccess::Asset(a) => r.draw_asset(&mut *am, &a, None, pos),
-            TextureAccess::Texture(t) => r.draw_texture(t, None, pos),
+        match &rc {
+            RenderComponent::Asset(a) => r.draw_asset(&mut *am, &a, None, pos),
+            RenderComponent::Texture(t) => r.draw_texture(t, None, pos),
         }
     }
 }
