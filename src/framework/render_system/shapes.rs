@@ -181,7 +181,7 @@ impl ShapeTrait for Rectangle {
 }
 
 impl Drawable for Rectangle {
-    fn draw(&self, r: &Renderer) {
+    fn draw(&mut self, r: &Renderer) {
         self.set_draw_state(r);
 
         let fill_r = match self.get_boundary(r) {
@@ -544,7 +544,7 @@ impl ShapeTrait for Circle {
 }
 
 impl Drawable for Circle {
-    fn draw(&self, r: &Renderer) {
+    fn draw(&mut self, r: &Renderer) {
         self.set_draw_state(r);
 
         let bounds = match self.get_boundary(r) {
@@ -589,7 +589,7 @@ impl Brighten {
 }
 
 impl Drawable for Brighten {
-    fn draw(&self, r: &Renderer) {
+    fn draw(&mut self, r: &Renderer) {
         Rectangle::new()
             .set_color(sdl2::SDL_Color {
                 r: self.strength,

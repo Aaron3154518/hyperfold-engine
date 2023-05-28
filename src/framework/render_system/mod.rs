@@ -54,6 +54,7 @@ pub enum Asset {
 pub struct AssetManager {
     file_assets: HashMap<String, Texture>,
     id_assets: HashMap<Uuid, Texture>,
+    renders: HashMap<Uuid, RenderComponent>,
     fonts: HashMap<FontData, Font>,
 }
 

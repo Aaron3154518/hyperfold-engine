@@ -3,16 +3,17 @@ use shared::util::Call;
 use crate::utils::{
     colors::{BLACK, GRAY},
     rect::{Align, Dimensions, Rect},
-    util::{FindFrom, FloatMath},
+    util::FindFrom,
 };
 
 use super::{
     font::{Font, FontData},
-    render_data::{FitMode, RectMode, RenderDataTrait, RenderTexture},
+    render_data::{FitMode, RectMode, RenderDataBuilderTrait, RenderTexture},
     AssetManager, Renderer, Texture,
 };
 
 // Text
+#[derive(Debug)]
 pub struct Text {
     start: usize,
     end: usize,
@@ -25,7 +26,7 @@ impl Text {
             r.create_texture_from_surface(font.render(&text[self.start..self.end], BLACK));
         tex.draw(
             r,
-            &RenderTexture::new(text_tex).with_dest(
+            &mut RenderTexture::new(Some(text_tex)).with_dest(
                 rect,
                 RectMode::Absolute,
                 FitMode::FitWithin(Align::Center, Align::Center),
@@ -35,11 +36,13 @@ impl Text {
 }
 
 // Line
+#[derive(Debug)]
 enum LineItem {
     Text(Text),
     Image,
 }
 
+#[derive(Debug)]
 pub struct Line {
     w: u32,
     img_cnt: usize,
@@ -153,13 +156,13 @@ pub fn split_text(text: &str, font: &Font, max_w: u32) -> Vec<Line> {
 
     let delims = ['\n', '{'];
     let mut pos = 0;
-    while let Some(idx) = text.find_from(delims, pos) {
+    while let Some(mut idx) = text.find_from(delims, pos) {
         add_text(&mut lines, font, text, max_w, space_w, pos, idx);
         match text.chars().nth(idx) {
             Some('\n') => lines.push(Line::new()),
             Some('{') => {
                 pos = idx + 1;
-                let idx = match text.find_from('}', pos) {
+                idx = match text.find_from('}', pos) {
                     Some(idx) => idx,
                     None => panic!("split_text(): Unterminated '{{'"),
                 };
@@ -191,64 +194,67 @@ pub fn split_text(text: &str, font: &Font, max_w: u32) -> Vec<Line> {
     lines
 }
 
+// TODO: crashes if any text is empty
+// TODO: doesn't work with spaces
 pub fn render_text(
     r: &Renderer,
     am: &mut AssetManager,
     text: &str,
-    font_data: FontData,
+    font_data: &FontData,
     rect: Rect,
     ax: Align,
     ay: Align,
-) -> Texture {
+) -> (Texture, Vec<Rect>) {
     let font = am.get_font(font_data);
-    let Dimensions { h: line_h, .. } = font.size();
+    let line_h = font.size().h as f32;
     let lines = split_text(text, font, rect.w_i32() as u32);
+    println!("{lines:#?}");
     let text_r = Rect::new()
         .with_dim(
             lines.iter().max_by_key(|l| l.w).expect("No lines").w as f32,
-            line_h as f32 * lines.len() as f32,
+            line_h * lines.len() as f32,
             Align::TopLeft,
             Align::TopLeft,
         )
         .with_rect_pos(rect, ax, ay);
     let tex = Texture::new(r, text_r.w_i32() as u32, text_r.h_i32() as u32, GRAY);
 
-    // let num_imgs = lines.iter().fold(0, |s, l| s + l.img_cnt);
-
-    // TODO: get images
-
+    let mut imgs = Vec::new();
     let mut line_r = Rect {
         x: 0.0,
         y: 0.0,
         w: text_r.w,
-        h: line_h as f32,
+        h: 0.0,
     };
-    let img_w = line_r.h.round_i32() as u32;
+    let mut y = 0.0;
     for line in lines.iter() {
         line_r.set_w(line.w as f32, ax);
-        let mut x = line_r.x_i32() as u32;
+        let mut x = line_r.x;
         for item in line.items.iter() {
             match item {
                 LineItem::Text(t) => {
                     let rect = Rect {
-                        x: x as f32,
-                        y: line_r.y,
+                        x,
+                        y,
                         w: t.w as f32,
-                        h: line_r.h,
+                        h: line_h,
                     };
                     t.draw(r, &tex, rect, font, text);
-                    x += t.w;
+                    x += t.w as f32;
                 }
                 LineItem::Image => {
-                    // TODO: Update image width
-                    x += img_w;
+                    imgs.push(Rect {
+                        x,
+                        y,
+                        w: line_h,
+                        h: line_h,
+                    });
+                    x += line_h;
                 }
             }
         }
-        line_r.move_by(0.0, line_r.h);
+        y += line_h;
     }
 
-    // TODO: update images
-
-    tex
+    (tex, imgs)
 }

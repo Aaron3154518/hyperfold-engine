@@ -26,9 +26,9 @@ pub enum FitMode {
 
 #[derive(Copy, Clone, Debug)]
 pub struct Destination {
-    rect: Rect,
-    mode: RectMode,
-    fit: FitMode,
+    pub(super) rect: Rect,
+    pub(super) mode: RectMode,
+    pub(super) fit: FitMode,
 }
 
 impl Destination {
@@ -52,9 +52,9 @@ impl Destination {
 
 #[derive(Debug)]
 pub struct RenderData {
-    dest: Destination,
-    dest_rect: Rect,
-    area: Option<Rect>,
+    pub(super) dest: Destination,
+    pub(super) dest_rect: Rect,
+    pub(super) area: Option<Rect>,
     dim: Dimensions<u32>,
 }
 
@@ -79,17 +79,15 @@ impl RenderData {
     }
 }
 
-pub trait RenderDataTrait
-where
-    Self: Sized,
-{
+pub trait RenderDataTrait {
     fn get_render_data<'a>(&'a self) -> &'a RenderData;
 
     fn get_render_data_mut<'a>(&'a mut self) -> &'a mut RenderData;
 
-    fn with_dest(mut self, rect: Rect, mode: RectMode, fit: FitMode) -> Self {
-        self.set_dest(rect, mode, fit);
-        self
+    fn set_dim(&mut self, dim: Dimensions<u32>) {
+        let rd = self.get_render_data_mut();
+        rd.dim = dim;
+        rd.dest_rect = rd.dest.to_rect(dim);
     }
 
     fn set_dest(&mut self, rect: Rect, mode: RectMode, fit: FitMode) {
@@ -98,20 +96,10 @@ where
         rd.dest_rect = rd.dest.to_rect(rd.dim);
     }
 
-    fn with_dest_rect(mut self, rect: Rect) -> Self {
-        self.set_dest_rect(rect);
-        self
-    }
-
     fn set_dest_rect(&mut self, rect: Rect) {
         let rd = self.get_render_data_mut();
         rd.dest.rect = rect;
         rd.dest_rect = rd.dest.to_rect(rd.dim);
-    }
-
-    fn with_dest_mode(mut self, mode: RectMode) -> Self {
-        self.set_dest_mode(mode);
-        self
     }
 
     fn set_dest_mode(&mut self, mode: RectMode) {
@@ -120,20 +108,10 @@ where
         rd.dest_rect = rd.dest.to_rect(rd.dim);
     }
 
-    fn with_dest_fit(mut self, fit: FitMode) -> Self {
-        self.set_dest_fit(fit);
-        self
-    }
-
     fn set_dest_fit(&mut self, fit: FitMode) {
         let rd = self.get_render_data_mut();
         rd.dest.fit = fit;
         rd.dest_rect = rd.dest.to_rect(rd.dim);
-    }
-
-    fn with_area(mut self, area: Option<Rect>) -> Self {
-        self.set_area(area);
-        self
     }
 
     fn set_area(&mut self, area: Option<Rect>) {
@@ -141,11 +119,11 @@ where
     }
 
     fn animate(
-        mut self,
+        &mut self,
         entities: &mut dyn crate::_engine::AddComponent,
         eid: Entity,
         anim: Animation,
-    ) -> Self {
+    ) {
         let rd = self.get_render_data_mut();
         if rd.dim.w % anim.num_frames != 0 {
             eprintln!(
@@ -162,9 +140,60 @@ where
             });
         }
         entities.add_component(eid, anim);
+    }
+}
+
+pub trait RenderDataBuilderTrait
+where
+    Self: Sized + RenderDataTrait,
+{
+    fn fill_dest(self) -> Self {
+        self.with_dest_rect(Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 1.0,
+            h: 1.0,
+        })
+        .with_dest_mode(RectMode::Percent)
+    }
+
+    fn with_dest(mut self, rect: Rect, mode: RectMode, fit: FitMode) -> Self {
+        self.set_dest(rect, mode, fit);
+        self
+    }
+
+    fn with_dest_rect(mut self, rect: Rect) -> Self {
+        self.set_dest_rect(rect);
+        self
+    }
+
+    fn with_dest_mode(mut self, mode: RectMode) -> Self {
+        self.set_dest_mode(mode);
+        self
+    }
+
+    fn with_dest_fit(mut self, fit: FitMode) -> Self {
+        self.set_dest_fit(fit);
+        self
+    }
+
+    fn with_area(mut self, area: Option<Rect>) -> Self {
+        self.set_area(area);
+        self
+    }
+
+    fn with_animation(
+        mut self,
+        entities: &mut dyn crate::_engine::AddComponent,
+        eid: Entity,
+        anim: Animation,
+    ) -> Self {
+        self.animate(entities, eid, anim);
         self
     }
 }
+
+impl<T> RenderDataBuilderTrait for T where T: RenderDataTrait {}
 
 impl RenderDataTrait for RenderData {
     fn get_render_data<'a>(&'a self) -> &'a RenderData {
@@ -179,17 +208,44 @@ impl RenderDataTrait for RenderData {
 // RenderTexture
 // Keep this separate from RenderAsset so we can call draw() without needing an AssetManager
 pub struct RenderTexture {
-    tex: Texture,
+    tex: Option<Texture>,
     data: RenderData,
 }
 
 impl RenderTexture {
-    pub fn new(tex: Texture) -> Self {
-        let dim = tex.get_size();
+    pub fn new(tex: Option<Texture>) -> Self {
         Self {
-            tex,
-            data: RenderData::new(dim),
+            tex: None,
+            data: RenderData::new(Dimensions::<u32>::new()),
         }
+        .with_texture(tex)
+    }
+
+    pub fn get_texture<'a>(&'a self) -> Option<&'a Texture> {
+        self.tex.as_ref()
+    }
+
+    pub fn get_or_insert_texture<'a, F>(&'a mut self, f: F) -> &'a Texture
+    where
+        F: FnOnce() -> Texture,
+    {
+        let tex = self.tex.get_or_insert_with(f);
+        self.data.set_dim(tex.get_size());
+        tex
+    }
+
+    pub fn with_texture(mut self, tex: Option<Texture>) -> Self {
+        self.set_texture(tex);
+        self
+    }
+
+    pub fn set_texture(&mut self, tex: Option<Texture>) {
+        self.tex = tex;
+        self.data.set_dim(
+            self.tex
+                .as_ref()
+                .map_or(Dimensions::<u32>::new(), |t| t.get_size()),
+        );
     }
 }
 
@@ -204,8 +260,10 @@ impl RenderDataTrait for RenderTexture {
 }
 
 impl Drawable for RenderTexture {
-    fn draw(&self, r: &Renderer) {
-        r.draw_texture(&self.tex, self.data.area, Some(self.data.dest_rect))
+    fn draw(&mut self, r: &Renderer) {
+        if let Some(tex) = &self.tex {
+            r.draw_texture(tex, self.data.area, Some(self.data.dest_rect))
+        }
     }
 }
 
@@ -217,13 +275,36 @@ pub struct RenderAsset {
 
 impl RenderAsset {
     pub fn new(asset: Asset, r: &Renderer, am: &mut AssetManager) -> Self {
-        let dim = am
-            .load_asset(r, &asset)
-            .map_or(Dimensions { w: 0, h: 0 }, |t| t.get_size());
         Self {
-            asset,
-            data: RenderData::new(dim),
+            asset: Asset::File(String::new()),
+            data: RenderData::new(Dimensions::<u32>::new()),
         }
+        .with_asset(asset, r, am)
+    }
+
+    pub fn from_file(file: String, r: &Renderer, am: &mut AssetManager) -> Self {
+        Self::new(Asset::File(file), r, am)
+    }
+
+    pub fn from_id(id: Uuid, r: &Renderer, am: &mut AssetManager) -> Self {
+        Self::new(Asset::Id(id), r, am)
+    }
+
+    pub fn get_asset<'a>(&'a self) -> &'a Asset {
+        &self.asset
+    }
+
+    pub fn with_asset(mut self, asset: Asset, r: &Renderer, am: &mut AssetManager) -> Self {
+        self.set_asset(asset, r, am);
+        self
+    }
+
+    pub fn set_asset(&mut self, asset: Asset, r: &Renderer, am: &mut AssetManager) {
+        self.asset = asset;
+        self.data.set_dim(
+            am.load_asset(r, &self.asset)
+                .map_or(Dimensions::<u32>::new(), |t| t.get_size()),
+        );
     }
 }
 
@@ -238,7 +319,7 @@ impl RenderDataTrait for RenderAsset {
 }
 
 impl AssetDrawable for RenderAsset {
-    fn draw(&self, r: &Renderer, am: &mut AssetManager) {
+    fn draw(&mut self, r: &Renderer, am: &mut AssetManager) {
         if let Some(tex) = am.load_asset(r, &self.asset) {
             r.draw_texture(tex, self.data.area, Some(self.data.dest_rect));
         }
@@ -246,48 +327,32 @@ impl AssetDrawable for RenderAsset {
 }
 
 // RenderComponent
+pub trait RenderComponentTrait: AssetDrawable + RenderDataTrait {}
+
+impl<T> RenderComponentTrait for T where T: AssetDrawable + RenderDataTrait {}
+
 #[macros::component]
-enum RenderComponent {
-    Asset(RenderAsset),
-    Texture(RenderTexture),
-}
+struct RenderComponent(Box<dyn RenderComponentTrait>);
 
 impl RenderComponent {
-    pub fn from_file(file: String, r: &Renderer, am: &mut AssetManager) -> Self {
-        Self::Asset(RenderAsset::new(Asset::File(file), r, am))
-    }
-
-    pub fn from_id(id: Uuid, r: &Renderer, am: &mut AssetManager) -> Self {
-        Self::Asset(RenderAsset::new(Asset::Id(id), r, am))
-    }
-
-    pub fn from_texture(tex: Texture) -> Self {
-        Self::Texture(RenderTexture::new(tex))
+    pub fn new(d: impl RenderComponentTrait + 'static) -> Self {
+        Self(Box::new(d))
     }
 }
 
 impl RenderDataTrait for RenderComponent {
     fn get_render_data<'a>(&'a self) -> &'a RenderData {
-        match self {
-            RenderComponent::Asset(a) => a.get_render_data(),
-            RenderComponent::Texture(t) => t.get_render_data(),
-        }
+        self.0.get_render_data()
     }
 
     fn get_render_data_mut<'a>(&'a mut self) -> &'a mut RenderData {
-        match self {
-            RenderComponent::Asset(a) => a.get_render_data_mut(),
-            RenderComponent::Texture(t) => t.get_render_data_mut(),
-        }
+        self.0.get_render_data_mut()
     }
 }
 
 impl AssetDrawable for RenderComponent {
-    fn draw(&self, r: &Renderer, am: &mut AssetManager) {
-        match self {
-            RenderComponent::Asset(a) => a.draw(r, am),
-            RenderComponent::Texture(t) => t.draw(r),
-        }
+    fn draw(&mut self, r: &Renderer, am: &mut AssetManager) {
+        self.0.draw(r, am);
     }
 }
 

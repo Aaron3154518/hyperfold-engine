@@ -6,13 +6,14 @@ use uuid::Uuid;
 
 use super::font::{Font, FontData};
 
-use super::{Asset, AssetManager, Renderer, Texture};
+use super::{Asset, AssetManager, RenderComponent, Renderer, Texture};
 
 impl AssetManager {
     pub fn new() -> Self {
         AssetManager {
             file_assets: HashMap::new(),
             id_assets: HashMap::new(),
+            renders: HashMap::new(),
             fonts: HashMap::new(),
         }
     }
@@ -64,9 +65,28 @@ impl AssetManager {
         }
     }
 
+    // Renders
+    pub fn get_render_by_id<'a>(&'a self, id: Uuid) -> Option<&'a RenderComponent> {
+        self.renders.get(&id)
+    }
+
+    pub fn get_render_by_id_mut<'a>(&'a mut self, id: Uuid) -> Option<&'a mut RenderComponent> {
+        self.renders.get_mut(&id)
+    }
+
+    pub fn new_render(&mut self, render: RenderComponent) -> Uuid {
+        let id = Uuid::new_v4();
+        self.renders.insert(id, render);
+        id
+    }
+
+    pub fn add_render_for_id(&mut self, id: Uuid, render: RenderComponent) {
+        self.renders.insert(id, render);
+    }
+
     // Font
-    pub fn get_font<'a>(&'a mut self, data: FontData) -> &'a Font {
-        if self.fonts.get(&data).is_none() {
+    pub fn get_font<'a>(&'a mut self, data: &FontData) -> &'a Font {
+        if self.fonts.get(data).is_none() {
             // Min is always too small or just right, max is too big
             let (mut min_size, mut max_size) = (1, 10);
             // If both dimensions are none, use smallest font
@@ -101,6 +121,6 @@ impl AssetManager {
             self.fonts
                 .insert(data.clone(), Font::from_file(&file, min_size));
         }
-        self.fonts.get(&data).expect("Failed to load font")
+        self.fonts.get(data).expect("Failed to load font")
     }
 }
