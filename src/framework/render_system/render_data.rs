@@ -2,7 +2,7 @@ use uuid::Uuid;
 
 use crate::{
     ecs::{entities::Entity, events::core::Update},
-    utils::rect::{Dimensions, Rect},
+    utils::rect::{Align, Dimensions, Rect},
 };
 
 use super::{
@@ -11,28 +11,133 @@ use super::{
 };
 
 // RenderData
+
+#[derive(Copy, Clone, Debug)]
+pub enum RectMode {
+    Absolute,
+    Percent,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub enum FitMode {
+    Exact,
+    FitWithin(Align, Align),
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct Destination {
+    rect: Rect,
+    mode: RectMode,
+    fit: FitMode,
+}
+
+impl Destination {
+    pub fn to_rect(&self, dim: Dimensions<u32>) -> Rect {
+        let (w, h) = (dim.w as f32, dim.h as f32);
+        let r = match self.mode {
+            RectMode::Absolute => self.rect,
+            RectMode::Percent => Rect {
+                x: self.rect.x * w,
+                y: self.rect.y * h,
+                w: self.rect.w * w,
+                h: self.rect.h * h,
+            },
+        };
+        match self.fit {
+            FitMode::Exact => r,
+            FitMode::FitWithin(ax, ay) => r.fit_dim_within(w, h).with_rect_pos(r, ax, ay),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct RenderData {
+    dest: Destination,
+    dest_rect: Rect,
+    area: Option<Rect>,
+    dim: Dimensions<u32>,
+}
+
+impl RenderData {
+    pub fn new(dim: Dimensions<u32>) -> Self {
+        let dest = Destination {
+            rect: Rect {
+                x: 0.0,
+                y: 0.0,
+                w: dim.w as f32,
+                h: dim.h as f32,
+            },
+            mode: RectMode::Absolute,
+            fit: FitMode::Exact,
+        };
+        Self {
+            dest,
+            dest_rect: dest.to_rect(dim),
+            area: None,
+            dim,
+        }
+    }
+}
+
 pub trait RenderDataTrait
 where
     Self: Sized,
 {
-    fn get_render_data<'a>(&'a mut self) -> &'a mut RenderData;
+    fn get_render_data<'a>(&'a self) -> &'a RenderData;
 
-    fn from_pos(mut self, pos: Rect) -> Self {
-        self.set_pos(pos);
+    fn get_render_data_mut<'a>(&'a mut self) -> &'a mut RenderData;
+
+    fn with_dest(mut self, rect: Rect, mode: RectMode, fit: FitMode) -> Self {
+        self.set_dest(rect, mode, fit);
         self
     }
 
-    fn set_pos(&mut self, pos: Rect) {
-        self.get_render_data().pos = pos;
+    fn set_dest(&mut self, rect: Rect, mode: RectMode, fit: FitMode) {
+        let rd = self.get_render_data_mut();
+        rd.dest = Destination { rect, mode, fit };
+        rd.dest_rect = rd.dest.to_rect(rd.dim);
     }
 
-    fn from_area(mut self, area: Option<Rect>) -> Self {
+    fn with_dest_rect(mut self, rect: Rect) -> Self {
+        self.set_dest_rect(rect);
+        self
+    }
+
+    fn set_dest_rect(&mut self, rect: Rect) {
+        let rd = self.get_render_data_mut();
+        rd.dest.rect = rect;
+        rd.dest_rect = rd.dest.to_rect(rd.dim);
+    }
+
+    fn with_dest_mode(mut self, mode: RectMode) -> Self {
+        self.set_dest_mode(mode);
+        self
+    }
+
+    fn set_dest_mode(&mut self, mode: RectMode) {
+        let rd = self.get_render_data_mut();
+        rd.dest.mode = mode;
+        rd.dest_rect = rd.dest.to_rect(rd.dim);
+    }
+
+    fn with_dest_fit(mut self, fit: FitMode) -> Self {
+        self.set_dest_fit(fit);
+        self
+    }
+
+    fn set_dest_fit(&mut self, fit: FitMode) {
+        let rd = self.get_render_data_mut();
+        rd.dest.fit = fit;
+        rd.dest_rect = rd.dest.to_rect(rd.dim);
+    }
+
+    fn with_area(mut self, area: Option<Rect>) -> Self {
         self.set_area(area);
         self
     }
 
     fn set_area(&mut self, area: Option<Rect>) {
-        self.get_render_data().area = area;
+        self.get_render_data_mut().area = area;
     }
 
     fn animate(
@@ -41,7 +146,7 @@ where
         eid: Entity,
         anim: Animation,
     ) -> Self {
-        let rd = self.get_render_data();
+        let rd = self.get_render_data_mut();
         if rd.dim.w % anim.num_frames != 0 {
             eprintln!(
                 "Spritesheet of length {} does not evenly divide into {} frames",
@@ -61,20 +166,13 @@ where
     }
 }
 
-#[derive(Debug)]
-pub struct RenderData {
-    pos: Rect,
-    area: Option<Rect>,
-    dim: Dimensions<u32>,
-}
+impl RenderDataTrait for RenderData {
+    fn get_render_data<'a>(&'a self) -> &'a RenderData {
+        self
+    }
 
-impl RenderData {
-    pub fn new(dim: Dimensions<u32>) -> Self {
-        Self {
-            pos: Rect::new(),
-            area: None,
-            dim,
-        }
+    fn get_render_data_mut<'a>(&'a mut self) -> &'a mut RenderData {
+        self
     }
 }
 
@@ -96,14 +194,18 @@ impl RenderTexture {
 }
 
 impl RenderDataTrait for RenderTexture {
-    fn get_render_data<'a>(&'a mut self) -> &'a mut RenderData {
+    fn get_render_data<'a>(&'a self) -> &'a RenderData {
+        &self.data
+    }
+
+    fn get_render_data_mut<'a>(&'a mut self) -> &'a mut RenderData {
         &mut self.data
     }
 }
 
 impl Drawable for RenderTexture {
     fn draw(&self, r: &Renderer) {
-        r.draw_texture(&self.tex, self.data.area, Some(self.data.pos))
+        r.draw_texture(&self.tex, self.data.area, Some(self.data.dest_rect))
     }
 }
 
@@ -126,7 +228,11 @@ impl RenderAsset {
 }
 
 impl RenderDataTrait for RenderAsset {
-    fn get_render_data<'a>(&'a mut self) -> &'a mut RenderData {
+    fn get_render_data<'a>(&'a self) -> &'a RenderData {
+        &self.data
+    }
+
+    fn get_render_data_mut<'a>(&'a mut self) -> &'a mut RenderData {
         &mut self.data
     }
 }
@@ -134,7 +240,7 @@ impl RenderDataTrait for RenderAsset {
 impl AssetDrawable for RenderAsset {
     fn draw(&self, r: &Renderer, am: &mut AssetManager) {
         if let Some(tex) = am.load_asset(r, &self.asset) {
-            r.draw_texture(tex, self.data.area, Some(self.data.pos));
+            r.draw_texture(tex, self.data.area, Some(self.data.dest_rect));
         }
     }
 }
@@ -161,10 +267,17 @@ impl RenderComponent {
 }
 
 impl RenderDataTrait for RenderComponent {
-    fn get_render_data<'a>(&'a mut self) -> &'a mut RenderData {
+    fn get_render_data<'a>(&'a self) -> &'a RenderData {
         match self {
             RenderComponent::Asset(a) => a.get_render_data(),
             RenderComponent::Texture(t) => t.get_render_data(),
+        }
+    }
+
+    fn get_render_data_mut<'a>(&'a mut self) -> &'a mut RenderData {
+        match self {
+            RenderComponent::Asset(a) => a.get_render_data_mut(),
+            RenderComponent::Texture(t) => t.get_render_data_mut(),
         }
     }
 }
@@ -205,7 +318,7 @@ pub fn update_animations(update: &Update, anim: &mut Animation, rc: &mut RenderC
         anim.frame = (anim.frame + anim.timer / anim.mspf) % anim.num_frames;
         anim.timer %= anim.mspf;
 
-        let rd = rc.get_render_data();
+        let rd = rc.get_render_data_mut();
         let frame_size = rd.dim.w / anim.num_frames;
         match &mut rd.area {
             Some(a) => {

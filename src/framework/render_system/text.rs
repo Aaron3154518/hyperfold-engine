@@ -8,7 +8,7 @@ use crate::utils::{
 
 use super::{
     font::{Font, FontData},
-    render_data::{RenderDataTrait, RenderTexture},
+    render_data::{FitMode, RectMode, RenderDataTrait, RenderTexture},
     AssetManager, Renderer, Texture,
 };
 
@@ -23,8 +23,14 @@ impl Text {
     pub fn draw(&self, r: &Renderer, tex: &Texture, rect: Rect, font: &Font, text: &str) {
         let text_tex =
             r.create_texture_from_surface(font.render(&text[self.start..self.end], BLACK));
-        let text_rect = text_tex.min_rect_align(rect, Align::Center, Align::Center);
-        tex.draw(r, &RenderTexture::new(text_tex).from_pos(text_rect));
+        tex.draw(
+            r,
+            &RenderTexture::new(text_tex).with_dest(
+                rect,
+                RectMode::Absolute,
+                FitMode::FitWithin(Align::Center, Align::Center),
+            ),
+        );
     }
 }
 
@@ -198,31 +204,26 @@ pub fn render_text(
     let Dimensions { h: line_h, .. } = font.size();
     let lines = split_text(text, font, rect.w_i32() as u32);
     let text_r = Rect::new()
-        .from_dim(
-            rect.w,
+        .with_dim(
+            lines.iter().max_by_key(|l| l.w).expect("No lines").w as f32,
             line_h as f32 * lines.len() as f32,
             Align::TopLeft,
             Align::TopLeft,
         )
-        .from_rect_pos(rect, ax, ay);
+        .with_rect_pos(rect, ax, ay);
     let tex = Texture::new(r, text_r.w_i32() as u32, text_r.h_i32() as u32, GRAY);
 
     // let num_imgs = lines.iter().fold(0, |s, l| s + l.img_cnt);
 
     // TODO: get images
 
-    // Set to 1 for now
-    let scale = Dimensions {
-        w: text_r.w / rect.w,
-        h: text_r.h / line_h as f32 / lines.len() as f32,
-    };
     let mut line_r = Rect {
         x: 0.0,
         y: 0.0,
-        w: rect.w,
+        w: text_r.w,
         h: line_h as f32,
     };
-    let img_w = (line_r.h * scale.h).round_i32() as u32;
+    let img_w = line_r.h.round_i32() as u32;
     for line in lines.iter() {
         line_r.set_w(line.w as f32, ax);
         let mut x = line_r.x_i32() as u32;

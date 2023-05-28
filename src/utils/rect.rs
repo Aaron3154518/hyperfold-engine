@@ -145,9 +145,9 @@ impl Rect {
     // Don't force normalize (e.g. intersect needs negative widths)
     pub fn from(x: f32, y: f32, w: f32, h: f32, ax: Align, ay: Align) -> Self {
         Self::new()
-            .from_dim(w, h, Align::TopLeft, Align::TopLeft)
-            .from_x(x, ax)
-            .from_y(y, ay)
+            .with_dim(w, h, Align::TopLeft, Align::TopLeft)
+            .with_x(x, ax)
+            .with_y(y, ay)
     }
 
     pub fn from_corners(x1: f32, y1: f32, x2: f32, y2: f32) -> Self {
@@ -341,7 +341,7 @@ impl Rect {
     }
 
     // setters
-    pub fn from_x(mut self, val: f32, a: Align) -> Self {
+    pub fn with_x(mut self, val: f32, a: Align) -> Self {
         self.set_x(val, a);
         self
     }
@@ -354,7 +354,7 @@ impl Rect {
         }
     }
 
-    pub fn from_y(mut self, val: f32, a: Align) -> Self {
+    pub fn with_y(mut self, val: f32, a: Align) -> Self {
         self.set_y(val, a);
         self
     }
@@ -367,7 +367,7 @@ impl Rect {
         }
     }
 
-    pub fn from_pos(mut self, x: f32, y: f32, ax: Align, ay: Align) -> Self {
+    pub fn with_pos(mut self, x: f32, y: f32, ax: Align, ay: Align) -> Self {
         self.set_pos(x, y, ax, ay);
         self
     }
@@ -377,7 +377,7 @@ impl Rect {
         self.set_y(y, ay);
     }
 
-    pub fn from_rect_pos(mut self, rect: Self, ax: Align, ay: Align) -> Self {
+    pub fn with_rect_pos(mut self, rect: Self, ax: Align, ay: Align) -> Self {
         self.copy_rect_pos(rect, ax, ay);
         self
     }
@@ -387,7 +387,7 @@ impl Rect {
         self.set_y(rect.get_y(ay), ay);
     }
 
-    pub fn from_w(mut self, w: f32, a: Align) -> Self {
+    pub fn with_w(mut self, w: f32, a: Align) -> Self {
         self.set_w(w, a);
         self
     }
@@ -409,7 +409,7 @@ impl Rect {
         self.normalize();
     }
 
-    pub fn from_h(mut self, h: f32, a: Align) -> Self {
+    pub fn with_h(mut self, h: f32, a: Align) -> Self {
         self.set_h(h, a);
         self
     }
@@ -431,7 +431,7 @@ impl Rect {
         self.normalize();
     }
 
-    pub fn from_dim(mut self, w: f32, h: f32, ax: Align, ay: Align) -> Self {
+    pub fn with_dim(mut self, w: f32, h: f32, ax: Align, ay: Align) -> Self {
         self.set_dim(w, h, ax, ay);
         self
     }
@@ -508,7 +508,7 @@ impl Rect {
         Self::min_rect(self.w, self.h, max_w, max_h)
     }
 
-    pub fn get_fit_within(&self, w: f32, h: f32) -> Self {
+    pub fn fit_dim_within(&self, w: f32, h: f32) -> Self {
         Self::min_rect(w, h, Some(self.w), Some(self.h))
     }
 

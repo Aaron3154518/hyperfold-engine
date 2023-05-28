@@ -19,6 +19,7 @@ pub mod asset_manager;
 pub mod drawable;
 pub mod font;
 pub mod render_data;
+pub mod render_text;
 pub mod renderer;
 pub mod shapes;
 pub mod surface;
@@ -124,7 +125,7 @@ fn render(
         }
     });
     for (_, _, pos, rc) in comps {
-        rc.set_pos(rect_to_camera_coords(&pos.0, screen, camera));
+        rc.set_dest_rect(rect_to_camera_coords(&pos.0, screen, camera));
         r.draw_asset(am, rc);
     }
 }

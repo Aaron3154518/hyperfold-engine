@@ -10,8 +10,20 @@ pub trait Drawable {
     fn draw(&self, r: &Renderer);
 }
 
+impl Drawable for Vec<&dyn Drawable> {
+    fn draw(&self, r: &Renderer) {
+        self.iter().for_each(|d| d.draw(r))
+    }
+}
+
 pub trait AssetDrawable {
     fn draw(&self, r: &Renderer, am: &mut AssetManager);
+}
+
+impl AssetDrawable for Vec<&dyn AssetDrawable> {
+    fn draw(&self, r: &Renderer, am: &mut AssetManager) {
+        self.iter().for_each(|d| d.draw(r, am))
+    }
 }
 
 impl Texture {

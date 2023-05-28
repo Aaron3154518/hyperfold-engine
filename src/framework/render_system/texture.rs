@@ -35,11 +35,11 @@ impl Texture {
 
     pub fn min_rect(&self, rect: Rect) -> Rect {
         let Dimensions::<u32> { w, h } = self.get_size();
-        rect.get_fit_within(w as f32, h as f32)
+        rect.fit_dim_within(w as f32, h as f32)
     }
 
     pub fn min_rect_align(&self, rect: Rect, ax: Align, ay: Align) -> Rect {
-        self.min_rect(rect).from_rect_pos(rect, ax, ay)
+        self.min_rect(rect).with_rect_pos(rect, ax, ay)
     }
 }
 
