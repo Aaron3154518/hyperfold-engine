@@ -3,7 +3,9 @@ use shared::util::Call;
 use crate::{
     ecs::{components::Container, entities::Entity, events::core::PreRender},
     framework::physics::Position,
+    sdl2,
     utils::{
+        colors::{BLACK, GRAY},
         rect::{Align, Rect},
         util::{AsType, SplitAround, TryAsType},
     },
@@ -14,6 +16,7 @@ use super::{
     font::FontData,
     rect_to_camera_coords,
     render_data::{RenderAsset, RenderDataTrait, RenderTexture},
+    shapes::{Rectangle, ShapeTrait},
     text::render_text,
     AssetManager, Camera, RenderComponent, Screen,
 };
@@ -30,6 +33,8 @@ pub struct RenderText {
     imgs: Vec<TextImage>,
     img_rects: Vec<Rect>,
     tex: RenderTexture,
+    color: sdl2::SDL_Color,
+    bkgrnd: sdl2::SDL_Color,
     align_x: Align,
     align_y: Align,
 }
@@ -42,14 +47,20 @@ impl RenderText {
             imgs: Vec::new(),
             img_rects: Vec::new(),
             tex: RenderTexture::new(None),
+            color: BLACK,
+            bkgrnd: GRAY,
             align_x: Align::Center,
             align_y: Align::Center,
         }
     }
 
+    fn clear_texture(&mut self) {
+        self.tex.set_texture(None);
+    }
+
     pub fn set_font_data(&mut self, font_data: FontData) {
         self.font_data = font_data;
-        self.tex.set_texture(None);
+        self.clear_texture();
     }
 
     pub fn with_text(mut self, text: String) -> Self {
@@ -59,7 +70,27 @@ impl RenderText {
 
     pub fn set_text(&mut self, text: String) {
         self.text = text;
-        self.tex.set_texture(None);
+        self.clear_texture();
+    }
+
+    pub fn with_text_color(mut self, color: sdl2::SDL_Color) -> Self {
+        self.set_text_color(color);
+        self
+    }
+
+    pub fn set_text_color(&mut self, color: sdl2::SDL_Color) {
+        self.color = color;
+        self.clear_texture();
+    }
+
+    pub fn with_background_color(mut self, bkgrnd: sdl2::SDL_Color) -> Self {
+        self.set_background_color(bkgrnd);
+        self
+    }
+
+    pub fn set_background_color(&mut self, bkgrnd: sdl2::SDL_Color) {
+        self.bkgrnd = bkgrnd;
+        self.clear_texture();
     }
 
     pub fn with_text_align(mut self, ax: Align, ay: Align) -> Self {
@@ -69,7 +100,7 @@ impl RenderText {
 
     pub fn set_text_align(&mut self, ax: Align, ay: Align) {
         (self.align_x, self.align_y) = (ax, ay);
-        self.tex.set_texture(None);
+        self.clear_texture();
     }
 
     pub fn with_images(mut self, imgs: Vec<TextImage>) -> Self {
@@ -102,8 +133,6 @@ impl Drawable for RenderText {
 fn update_render_text(
     _ev: &PreRender,
     mut rcs: Container<(&Entity, &Position, &mut RenderComponent)>,
-    // rc: &mut RenderComponent,
-    // pos: &Position,
     r: &super::Renderer,
     am: &mut AssetManager,
     screen: &Screen,
@@ -121,6 +150,8 @@ fn update_render_text(
                     &rt.text,
                     &rt.font_data,
                     pos.0,
+                    rt.color,
+                    rt.bkgrnd,
                     rt.align_x,
                     rt.align_y,
                 )
@@ -131,17 +162,18 @@ fn update_render_text(
             });
 
             // TODO: only if needed
+            // TODO: don't require position component -> Optional components
             // Redraw images
-            for (&rect, img) in rt.img_rects.iter().zip(rt.imgs.iter_mut()) {
-                let mut f = |rc: &mut RenderComponent| {
-                    rc.try_mut(|rt: &mut RenderTexture| {
-                        rt.get_render_data_mut().set_dest_rect(rect)
-                    })
+            let mut draw = |rc: &mut RenderComponent, rect: Rect| {
+                rc.try_mut(|rt: &mut RenderTexture| rt.get_render_data_mut().set_dest_rect(rect))
                     .try_mut(rc, |ra: &mut RenderAsset| {
                         ra.get_render_data_mut().set_dest_rect(rect)
                     });
-                    tex.draw_asset(r, am, rc);
-                };
+                tex.draw(r, &mut Rectangle::new().set_color(rt.bkgrnd).fill(rect));
+                tex.draw_asset(r, am, rc);
+            };
+
+            for (&rect, img) in rt.img_rects.iter().zip(rt.imgs.iter_mut()) {
                 match img {
                     TextImage::Reference(eid) => {
                         for j in 0..n {
@@ -152,12 +184,12 @@ fn update_render_text(
                                     &mut left[j]
                                 };
                                 if *id == eid {
-                                    f(*rc);
+                                    draw(*rc, rect);
                                 }
                             }
                         }
                     }
-                    TextImage::Render(rc) => f(rc),
+                    TextImage::Render(rc) => draw(rc, rect),
                 }
             }
 

@@ -1,9 +1,11 @@
 use shared::util::Call;
 
-use crate::utils::{
-    colors::{BLACK, GRAY},
-    rect::{Align, Dimensions, Rect},
-    util::FindFrom,
+use crate::{
+    sdl2,
+    utils::{
+        rect::{Align, Dimensions, Rect},
+        util::FindFrom,
+    },
 };
 
 use super::{
@@ -22,9 +24,17 @@ pub struct Text {
 }
 
 impl Text {
-    pub fn draw(&self, r: &Renderer, tex: &Texture, rect: Rect, font: &Font, text: &str) {
+    pub fn draw(
+        &self,
+        r: &Renderer,
+        tex: &Texture,
+        rect: Rect,
+        font: &Font,
+        text: &str,
+        color: sdl2::SDL_Color,
+    ) {
         let text_tex =
-            r.create_texture_from_surface(font.render(&text[self.start..self.end], BLACK));
+            r.create_texture_from_surface(font.render(&text[self.start..self.end], color));
         tex.draw(
             r,
             &mut RenderTexture::new(Some(text_tex)).with_dest(
@@ -203,6 +213,8 @@ pub fn render_text(
     text: &str,
     font_data: &FontData,
     bounds: Rect,
+    color: sdl2::SDL_Color,
+    bkgrnd: sdl2::SDL_Color,
     ax: Align,
     ay: Align,
 ) -> (Texture, Vec<Rect>) {
@@ -218,7 +230,7 @@ pub fn render_text(
             Align::TopLeft,
         )
         .with_rect_pos(bounds, ax, ay);
-    let tex = Texture::new(r, text_r.w_i32() as u32, text_r.h_i32() as u32, GRAY);
+    let tex = Texture::new(r, text_r.w_i32() as u32, text_r.h_i32() as u32, bkgrnd);
 
     let mut imgs = Vec::new();
     let mut line_r = Rect {
@@ -240,7 +252,7 @@ pub fn render_text(
                         w: t.w as f32,
                         h: line_h,
                     };
-                    t.draw(r, &tex, rect, font, text);
+                    t.draw(r, &tex, rect, font, text, color);
                     x += t.w as f32;
                 }
                 LineItem::Image => {
