@@ -5,6 +5,7 @@ use std::{
     sync::LazyLock,
 };
 
+use shared::util::Call;
 use uuid::Uuid;
 
 pub const HALF_PI: f32 = PI / 2.0;
@@ -205,5 +206,30 @@ impl UuidTrait for Uuid {
 
     fn create() -> LazyLock<Uuid> {
         LazyLock::new(|| Uuid::new_v4())
+    }
+}
+
+// Split a vector around an element
+pub trait SplitAround<T> {
+    fn split_around<'a>(&'a self, i: usize) -> (&'a [T], &'a T, &'a [T]);
+
+    fn split_around_mut<'a>(&'a mut self, i: usize) -> (&'a mut [T], &'a mut T, &'a mut [T]);
+}
+
+impl<T> SplitAround<T> for Vec<T> {
+    fn split_around<'a>(&'a self, i: usize) -> (&'a [T], &'a T, &'a [T]) {
+        self.split_at(i).call_into(|(left, mid_right)| {
+            mid_right
+                .split_at(1)
+                .call_into(|(mid, right)| (left, &mid[0], right))
+        })
+    }
+
+    fn split_around_mut<'a>(&'a mut self, i: usize) -> (&'a mut [T], &'a mut T, &'a mut [T]) {
+        self.split_at_mut(i).call_into(|(left, mid_right)| {
+            mid_right
+                .split_at_mut(1)
+                .call_into(|(mid, right)| (left, &mut mid[0], right))
+        })
     }
 }

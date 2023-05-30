@@ -1,11 +1,11 @@
 use shared::util::Call;
 
 use crate::{
-    ecs::{entities::Entity, events::core::PreRender},
+    ecs::{components::Container, entities::Entity, events::core::PreRender},
     framework::physics::Position,
     utils::{
         rect::{Align, Rect},
-        util::{AsType, TryAsType},
+        util::{AsType, SplitAround, TryAsType},
     },
 };
 
@@ -101,51 +101,68 @@ impl Drawable for RenderText {
 #[macros::system]
 fn update_render_text(
     _ev: &PreRender,
-    rc: &mut RenderComponent,
-    pos: &Position,
+    mut rcs: Container<(&Entity, &Position, &mut RenderComponent)>,
+    // rc: &mut RenderComponent,
+    // pos: &Position,
     r: &super::Renderer,
     am: &mut AssetManager,
     screen: &Screen,
     camera: &Camera,
 ) {
-    rc.try_mut(|rt: &mut RenderText| {
-        // Render text if no existing texture
-        let tex = rt.tex.get_or_insert_texture(|| {
-            render_text(
-                r,
-                am,
-                &rt.text,
-                &rt.font_data,
-                pos.0,
-                rt.align_x,
-                rt.align_y,
-            )
-            .call_into(|(t, rects)| {
-                rt.img_rects = rects;
-                t
-            })
-        });
+    let n = rcs.len();
+    for i in 0..n {
+        let (left, (.., pos, rc), right) = rcs.split_around_mut(i);
+        rc.try_mut(|rt: &mut RenderText| {
+            // Render text if no existing texture
+            let tex = rt.tex.get_or_insert_texture(|| {
+                render_text(
+                    r,
+                    am,
+                    &rt.text,
+                    &rt.font_data,
+                    pos.0,
+                    rt.align_x,
+                    rt.align_y,
+                )
+                .call_into(|(t, rects)| {
+                    rt.img_rects = rects;
+                    t
+                })
+            });
 
-        // TODO: only if needed
-        // Redraw images
-        for (&rect, img) in rt.img_rects.iter().zip(rt.imgs.iter_mut()) {
-            // if let Some(rc) = match img {
-            //     TextImage::Render(rc) => Some(rc),
-            //     TextImage::Reference(id) => am.get_render_by_id_mut(*id),
-            // } {
-            //     rc.set_dest_rect(rect);
-            //     tex.draw_asset(r, am, rc);
-            // }
-            if let TextImage::Render(rc) = img {
-                rc.try_mut(|rt: &mut RenderTexture| rt.get_render_data_mut().set_dest_rect(rect))
+            // TODO: only if needed
+            // Redraw images
+            for (&rect, img) in rt.img_rects.iter().zip(rt.imgs.iter_mut()) {
+                let mut f = |rc: &mut RenderComponent| {
+                    rc.try_mut(|rt: &mut RenderTexture| {
+                        rt.get_render_data_mut().set_dest_rect(rect)
+                    })
                     .try_mut(rc, |ra: &mut RenderAsset| {
                         ra.get_render_data_mut().set_dest_rect(rect)
                     });
-                tex.draw_asset(r, am, rc);
+                    tex.draw_asset(r, am, rc);
+                };
+                match img {
+                    TextImage::Reference(eid) => {
+                        for j in 0..n {
+                            if i != j {
+                                let (id, .., rc) = if j > i {
+                                    &mut right[j - i - 1]
+                                } else {
+                                    &mut left[j]
+                                };
+                                if *id == eid {
+                                    f(*rc);
+                                }
+                            }
+                        }
+                    }
+                    TextImage::Render(rc) => f(rc),
+                }
             }
-        }
 
-        rt.tex
-            .set_dest_rect(rect_to_camera_coords(&pos.0, screen, camera));
-    });
+            rt.tex
+                .set_dest_rect(rect_to_camera_coords(&pos.0, screen, camera));
+        });
+    }
 }
