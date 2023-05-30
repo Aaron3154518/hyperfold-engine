@@ -2,9 +2,7 @@ use std::{cmp::Ordering, collections::HashMap, ptr::NonNull};
 
 use uuid::Uuid;
 
-use self::render_data::RenderDataTrait;
-
-use super::physics;
+use self::drawable::Canvas;
 
 use font::{Font, FontData};
 pub use render_data::RenderComponent;
@@ -54,7 +52,6 @@ pub enum Asset {
 pub struct AssetManager {
     file_assets: HashMap<String, Texture>,
     id_assets: HashMap<Uuid, Texture>,
-    renders: HashMap<Uuid, RenderComponent>,
     fonts: HashMap<FontData, Font>,
 }
 
@@ -106,16 +103,9 @@ struct Elevation(pub u8);
 #[macros::system]
 fn render(
     _e: &events::core::Render,
-    mut comps: Container<(
-        &Entity,
-        &Elevation,
-        &physics::Position,
-        &mut RenderComponent,
-    )>,
+    mut comps: Container<(&Entity, &Elevation, &mut RenderComponent)>,
     r: &Renderer,
     am: &mut AssetManager,
-    screen: &Screen,
-    camera: &Camera,
 ) {
     comps.sort_by(|(id1, e1, ..), (id2, e2, ..)| {
         let cmp = e1.0.cmp(&e2.0);
@@ -125,8 +115,7 @@ fn render(
             cmp
         }
     });
-    for (_, _, pos, rc) in comps {
-        rc.set_dest_rect(rect_to_camera_coords(&pos.0, screen, camera));
-        r.draw_asset(am, rc);
-    }
+    comps
+        .into_iter()
+        .for_each(|(_, _, rc)| r.draw_asset(r, am, rc));
 }

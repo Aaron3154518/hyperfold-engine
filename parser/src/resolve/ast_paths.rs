@@ -167,6 +167,7 @@ pub enum EngineIdents {
     // Events
     CoreUpdate,
     CoreEvents,
+    CorePreRender,
     CoreRender,
     // Entities
     Entity,
@@ -190,6 +191,7 @@ impl GetPaths<{ Self::LEN }> for EngineIdents {
             EngineIdents::GetKeys => "get_keys",
             EngineIdents::CoreUpdate => "Update",
             EngineIdents::CoreEvents => "Events",
+            EngineIdents::CorePreRender => "PreRender",
             EngineIdents::CoreRender => "Render",
             EngineIdents::Entity => "Entity",
             EngineIdents::SDL2 => "sdl2",
@@ -209,7 +211,10 @@ impl GetPaths<{ Self::LEN }> for EngineIdents {
             | EngineIdents::IntersectMut
             | EngineIdents::IntersectKeys
             | EngineIdents::GetKeys => vec!["intersect"],
-            EngineIdents::CoreUpdate | EngineIdents::CoreEvents | EngineIdents::CoreRender => {
+            EngineIdents::CoreUpdate
+            | EngineIdents::CoreEvents
+            | EngineIdents::CorePreRender
+            | EngineIdents::CoreRender => {
                 vec![ECS, "events", "core"]
             }
             EngineIdents::Entity => vec![ECS, "entities"],

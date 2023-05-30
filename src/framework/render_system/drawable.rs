@@ -1,4 +1,4 @@
-use crate::sdl2;
+use crate::{impl_as_any_for_trait, sdl2, utils::util::AsAny};
 
 use super::{
     shapes::{Rectangle, ShapeTrait},
@@ -6,32 +6,55 @@ use super::{
 };
 
 // Trait for anything that wants to draw on a texture builder
-pub trait Drawable {
+pub trait Drawable: AsAny {
     fn draw(&mut self, r: &Renderer);
 }
 
-impl Drawable for Vec<&mut dyn Drawable> {
-    fn draw(&mut self, r: &Renderer) {
-        self.iter_mut().for_each(|d| d.draw(r))
-    }
-}
-
-pub trait AssetDrawable {
+pub trait AssetDrawable: AsAny {
     fn draw(&mut self, r: &Renderer, am: &mut AssetManager);
 }
 
-impl AssetDrawable for Vec<&mut dyn AssetDrawable> {
-    fn draw(&mut self, r: &Renderer, am: &mut AssetManager) {
-        self.iter_mut().for_each(|d| d.draw(r, am))
-    }
-}
+impl_as_any_for_trait!(AssetDrawable);
 
 impl<T> AssetDrawable for T
 where
     T: Drawable,
 {
-    fn draw(&mut self, r: &Renderer, am: &mut AssetManager) {
+    fn draw(&mut self, r: &Renderer, _am: &mut AssetManager) {
         self.draw(r);
+    }
+}
+
+pub trait Canvas {
+    fn set_target(&self, r: &Renderer);
+
+    fn draw(&self, r: &Renderer, drawable: &mut dyn Drawable) {
+        self.set_target(r);
+        drawable.draw(r);
+        r.clear_target();
+    }
+
+    fn draw_many(&self, r: &Renderer, mut drawables: Vec<&mut dyn Drawable>) {
+        self.set_target(r);
+        drawables.iter_mut().for_each(|d| d.draw(r));
+        r.clear_target();
+    }
+
+    fn draw_asset(&self, r: &Renderer, am: &mut AssetManager, drawable: &mut dyn AssetDrawable) {
+        self.set_target(r);
+        drawable.draw(r, am);
+        r.clear_target();
+    }
+
+    fn draw_asset_many(
+        &self,
+        r: &Renderer,
+        am: &mut AssetManager,
+        mut drawables: Vec<&mut dyn AssetDrawable>,
+    ) {
+        self.set_target(r);
+        drawables.iter_mut().for_each(|d| d.draw(r, am));
+        r.clear_target();
     }
 }
 
@@ -48,34 +71,16 @@ impl Texture {
             .expect("Failed to create texture")
         // TODO: Copy src
     }
+}
 
-    // Draw drawables
-    pub fn draw(&self, r: &Renderer, drawable: &mut dyn Drawable) {
+impl Canvas for Texture {
+    fn set_target(&self, r: &Renderer) {
         r.set_target(self);
-        drawable.draw(r);
-        r.clear_target();
-    }
-
-    pub fn draw_asset(
-        &self,
-        r: &Renderer,
-        am: &mut AssetManager,
-        drawable: &mut dyn AssetDrawable,
-    ) {
-        r.set_target(self);
-        drawable.draw(r, am);
-        r.clear_target();
     }
 }
 
-impl Renderer {
-    pub fn draw(&self, drawable: &mut dyn Drawable) {
-        self.clear_target();
-        drawable.draw(self);
-    }
-
-    pub fn draw_asset(&self, am: &mut AssetManager, drawable: &mut dyn AssetDrawable) {
-        self.clear_target();
-        drawable.draw(self, am);
+impl Canvas for Renderer {
+    fn set_target(&self, r: &Renderer) {
+        r.clear_target();
     }
 }

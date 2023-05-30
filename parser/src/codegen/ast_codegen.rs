@@ -432,9 +432,10 @@ impl ItemsCrate {
 
         let [cfoo, gfoo, efoo] =
             [Idents::GenCFoo, Idents::GenGFoo, Idents::GenEFoo].map(|i| i.to_ident());
-        let [core_update, core_events, core_render] = [
+        let [core_update, core_events, core_pre_render, core_render] = [
             EngineIdents::CoreUpdate,
             EngineIdents::CoreEvents,
+            EngineIdents::CorePreRender,
             EngineIdents::CoreRender,
         ]
         .map(|i| vec_to_path(i.path_stem()));
@@ -575,6 +576,7 @@ impl ItemsCrate {
                 let mut #efoo = #efoo_ident::new();
                 #add_event_tr::new_event(&mut #efoo, #engine_cr_path::#core_events);
                 #add_event_tr::new_event(&mut #efoo, #engine_cr_path::#core_update(ts));
+                #add_event_tr::new_event(&mut #efoo, #engine_cr_path::#core_pre_render);
                 #add_event_tr::new_event(&mut #efoo, #engine_cr_path::#core_render);
                 #efoo
             }

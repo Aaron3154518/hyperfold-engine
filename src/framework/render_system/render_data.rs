@@ -1,13 +1,20 @@
 use uuid::Uuid;
 
 use crate::{
-    ecs::{entities::Entity, events::core::Update},
-    utils::rect::{Align, Dimensions, Rect},
+    ecs::{
+        entities::Entity,
+        events::core::{PreRender, Update},
+    },
+    framework::physics::Position,
+    utils::{
+        rect::{Align, Dimensions, Rect},
+        util::{AsType, TryAsType},
+    },
 };
 
 use super::{
     drawable::{AssetDrawable, Drawable},
-    Asset, AssetManager, Renderer, Texture,
+    rect_to_camera_coords, Asset, AssetManager, Camera, Renderer, Screen, Texture,
 };
 
 // RenderData
@@ -326,27 +333,45 @@ impl AssetDrawable for RenderAsset {
     }
 }
 
+#[macros::system]
+fn set_render_pos(
+    _ev: &PreRender,
+    rc: &mut RenderComponent,
+    pos: &Position,
+    screen: &Screen,
+    camera: &Camera,
+) {
+    let dest = rect_to_camera_coords(&pos.0, screen, camera);
+    rc.try_mut(|rt: &mut RenderTexture| rt.get_render_data_mut().set_dest_rect(dest))
+        .try_mut(rc, |ra: &mut RenderAsset| {
+            ra.get_render_data_mut().set_dest_rect(dest)
+        });
+}
+
 // RenderComponent
 pub trait RenderComponentTrait: AssetDrawable + RenderDataTrait {}
 
 impl<T> RenderComponentTrait for T where T: AssetDrawable + RenderDataTrait {}
 
 #[macros::component]
-struct RenderComponent(Box<dyn RenderComponentTrait>);
+struct RenderComponent(pub(super) Box<dyn AssetDrawable>);
 
 impl RenderComponent {
-    pub fn new(d: impl RenderComponentTrait + 'static) -> Self {
+    pub fn new(d: impl AssetDrawable + 'static) -> Self {
         Self(Box::new(d))
     }
 }
 
-impl RenderDataTrait for RenderComponent {
-    fn get_render_data<'a>(&'a self) -> &'a RenderData {
-        self.0.get_render_data()
+impl<T> AsType<T> for RenderComponent
+where
+    T: AssetDrawable + 'static,
+{
+    fn as_type<'a>(&'a self) -> Option<&'a T> {
+        self.0.as_type()
     }
 
-    fn get_render_data_mut<'a>(&'a mut self) -> &'a mut RenderData {
-        self.0.get_render_data_mut()
+    fn as_type_mut<'a>(&'a mut self) -> Option<&'a mut T> {
+        self.0.as_type_mut()
     }
 }
 
@@ -383,20 +408,24 @@ pub fn update_animations(update: &Update, anim: &mut Animation, rc: &mut RenderC
         anim.frame = (anim.frame + anim.timer / anim.mspf) % anim.num_frames;
         anim.timer %= anim.mspf;
 
-        let rd = rc.get_render_data_mut();
-        let frame_size = rd.dim.w / anim.num_frames;
-        match &mut rd.area {
-            Some(a) => {
-                a.x = (a.x + frame_size as f32) % rd.dim.w as f32;
+        let f = |rd: &mut RenderData| {
+            let frame_size = rd.dim.w / anim.num_frames;
+            match &mut rd.area {
+                Some(a) => {
+                    a.x = (a.x + frame_size as f32) % rd.dim.w as f32;
+                }
+                None => {
+                    rd.area = Some(Rect {
+                        x: (rd.dim.w * anim.frame) as f32,
+                        y: 0.0,
+                        w: frame_size as f32,
+                        h: rd.dim.h as f32,
+                    })
+                }
             }
-            None => {
-                rd.area = Some(Rect {
-                    x: (rd.dim.w * anim.frame) as f32,
-                    y: 0.0,
-                    w: frame_size as f32,
-                    h: rd.dim.h as f32,
-                })
-            }
-        }
+        };
+
+        rc.try_mut(|rt: &mut RenderTexture| f(rt.get_render_data_mut()))
+            .try_mut(rc, |ra: &mut RenderAsset| f(ra.get_render_data_mut()));
     }
 }

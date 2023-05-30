@@ -2,7 +2,10 @@ use std::{
     array,
     f32::consts::{PI, TAU},
     str::pattern::Pattern,
+    sync::LazyLock,
 };
+
+use uuid::Uuid;
 
 pub const HALF_PI: f32 = PI / 2.0;
 pub const DEG_TO_RAD: f32 = PI / 180.0;
@@ -102,5 +105,105 @@ impl FindFrom for &str {
         P: Pattern<'a>,
     {
         self[pos..].find(pat).map(|idx| idx + pos)
+    }
+}
+
+// Traits for implementing downcasting
+pub trait AsAny {
+    fn as_any<'a>(&'a self) -> &'a dyn std::any::Any;
+
+    fn as_any_mut<'a>(&'a mut self) -> &'a mut dyn std::any::Any;
+}
+
+pub trait AsType<T: 'static>: AsAny {
+    fn as_type<'a>(&'a self) -> Option<&'a T> {
+        self.as_any().downcast_ref()
+    }
+
+    fn as_type_mut<'a>(&'a mut self) -> Option<&'a mut T> {
+        self.as_any_mut().downcast_mut()
+    }
+
+    fn try_mut<'a, F>(&'a mut self, f: F) -> bool
+    where
+        F: FnOnce(&'a mut T),
+    {
+        self.as_type_mut().map(|t| f(t)).is_some()
+    }
+}
+
+pub trait TryAsType<U, T>
+where
+    T: 'static,
+    U: AsType<T> + ?Sized,
+{
+    fn try_mut<'a, F>(self, t: &'a mut U, f: F) -> bool
+    where
+        F: FnOnce(&'a mut T);
+}
+
+impl<U, T> TryAsType<U, T> for bool
+where
+    T: 'static,
+    U: AsType<T> + ?Sized,
+{
+    fn try_mut<'a, F>(self, u: &'a mut U, f: F) -> bool
+    where
+        F: FnOnce(&'a mut T),
+    {
+        self || u.try_mut(f)
+    }
+}
+
+#[macro_export]
+macro_rules! impl_as_any_for_trait {
+    ($tr: ident) => {
+        impl<T> crate::utils::util::AsAny for T
+        where
+            T: $tr + 'static,
+        {
+            fn as_any<'a>(&'a self) -> &'a dyn std::any::Any {
+                self
+            }
+
+            fn as_any_mut<'a>(&'a mut self) -> &'a mut dyn std::any::Any {
+                self
+            }
+        }
+
+        impl<T> crate::utils::util::AsType<T> for dyn $tr where T: $tr + 'static {}
+    };
+}
+
+#[macro_export]
+macro_rules! impl_as_any_for_type {
+    ($ty: ident) => {
+        impl crate::utils::util::AsAny for $ty {
+            fn as_any<'a>(&'a self) -> &'a dyn std::any::Any {
+                self
+            }
+
+            fn as_any_mut<'a>(&'a mut self) -> &'a mut dyn std::any::Any {
+                self
+            }
+        }
+    };
+}
+
+// Function to create static uuids
+pub trait UuidTrait {
+    fn new() -> Uuid;
+
+    // TODO: const
+    fn create() -> LazyLock<Uuid>;
+}
+
+impl UuidTrait for Uuid {
+    fn new() -> Uuid {
+        Uuid::new_v4()
+    }
+
+    fn create() -> LazyLock<Uuid> {
+        LazyLock::new(|| Uuid::new_v4())
     }
 }

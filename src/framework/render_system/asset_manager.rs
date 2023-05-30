@@ -1,25 +1,21 @@
 use std::collections::HashMap;
-use std::sync::LazyLock;
 
 use shared::util::NoneOr;
 use uuid::Uuid;
 
+use crate::utils::util::UuidTrait;
+
 use super::font::{Font, FontData};
 
-use super::{Asset, AssetManager, RenderComponent, Renderer, Texture};
+use super::{Asset, AssetManager, Renderer, Texture};
 
 impl AssetManager {
     pub fn new() -> Self {
         AssetManager {
             file_assets: HashMap::new(),
             id_assets: HashMap::new(),
-            renders: HashMap::new(),
             fonts: HashMap::new(),
         }
-    }
-
-    pub const fn reserve_id() -> LazyLock<Uuid> {
-        LazyLock::new(|| Uuid::new_v4())
     }
 
     // File
@@ -48,7 +44,7 @@ impl AssetManager {
     }
 
     pub fn new_texture(&mut self, tex: Texture) -> Uuid {
-        let id = Uuid::new_v4();
+        let id = Uuid::new();
         self.id_assets.insert(id, tex);
         id
     }
@@ -63,25 +59,6 @@ impl AssetManager {
             Asset::File(file) => Some(self.get_or_load_asset_by_file(file, r)),
             Asset::Id(id) => self.get_asset_by_id(*id),
         }
-    }
-
-    // Renders
-    pub fn get_render_by_id<'a>(&'a self, id: Uuid) -> Option<&'a RenderComponent> {
-        self.renders.get(&id)
-    }
-
-    pub fn get_render_by_id_mut<'a>(&'a mut self, id: Uuid) -> Option<&'a mut RenderComponent> {
-        self.renders.get_mut(&id)
-    }
-
-    pub fn new_render(&mut self, render: RenderComponent) -> Uuid {
-        let id = Uuid::new_v4();
-        self.renders.insert(id, render);
-        id
-    }
-
-    pub fn add_render_for_id(&mut self, id: Uuid, render: RenderComponent) {
-        self.renders.insert(id, render);
     }
 
     // Font

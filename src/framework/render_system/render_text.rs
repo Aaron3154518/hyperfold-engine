@@ -1,16 +1,21 @@
 use shared::util::Call;
 
 use crate::{
-    ecs::entities::Entity,
-    utils::rect::{Align, Rect},
+    ecs::{entities::Entity, events::core::PreRender},
+    framework::physics::Position,
+    utils::{
+        rect::{Align, Rect},
+        util::{AsType, TryAsType},
+    },
 };
 
 use super::{
-    drawable::AssetDrawable,
+    drawable::{Canvas, Drawable},
     font::FontData,
-    render_data::{RenderData, RenderDataTrait, RenderTexture},
+    rect_to_camera_coords,
+    render_data::{RenderAsset, RenderDataTrait, RenderTexture},
     text::render_text,
-    AssetManager, RenderComponent,
+    AssetManager, Camera, RenderComponent, Screen,
 };
 
 pub enum TextImage {
@@ -18,6 +23,7 @@ pub enum TextImage {
     Reference(Entity),
 }
 
+#[macros::component]
 pub struct RenderText {
     font_data: FontData,
     text: String,
@@ -63,6 +69,7 @@ impl RenderText {
 
     pub fn set_text_align(&mut self, ax: Align, ay: Align) {
         (self.align_x, self.align_y) = (ax, ay);
+        self.tex.set_texture(None);
     }
 
     pub fn with_images(mut self, imgs: Vec<TextImage>) -> Self {
@@ -76,36 +83,52 @@ impl RenderText {
 }
 
 impl RenderDataTrait for RenderText {
-    fn get_render_data<'a>(&'a self) -> &'a RenderData {
+    fn get_render_data<'a>(&'a self) -> &'a super::render_data::RenderData {
         self.tex.get_render_data()
     }
 
-    fn get_render_data_mut<'a>(&'a mut self) -> &'a mut RenderData {
+    fn get_render_data_mut<'a>(&'a mut self) -> &'a mut super::render_data::RenderData {
         self.tex.get_render_data_mut()
     }
 }
 
-impl AssetDrawable for RenderText {
-    fn draw(&mut self, r: &super::Renderer, am: &mut AssetManager) {
-        // Render text
-        let dest = self.tex.get_render_data().dest.rect;
-        let tex = self.tex.get_or_insert_texture(|| {
+impl Drawable for RenderText {
+    fn draw(&mut self, r: &super::Renderer) {
+        self.tex.draw(r)
+    }
+}
+
+#[macros::system]
+fn update_render_text(
+    _ev: &PreRender,
+    rc: &mut RenderComponent,
+    pos: &Position,
+    r: &super::Renderer,
+    am: &mut AssetManager,
+    screen: &Screen,
+    camera: &Camera,
+) {
+    rc.try_mut(|rt: &mut RenderText| {
+        // Render text if no existing texture
+        let tex = rt.tex.get_or_insert_texture(|| {
             render_text(
                 r,
                 am,
-                &self.text,
-                &self.font_data,
-                dest,
-                self.align_x,
-                self.align_y,
+                &rt.text,
+                &rt.font_data,
+                pos.0,
+                rt.align_x,
+                rt.align_y,
             )
             .call_into(|(t, rects)| {
-                self.img_rects = rects;
+                rt.img_rects = rects;
                 t
             })
         });
-        // Draw images
-        for (&rect, img) in self.img_rects.iter().zip(self.imgs.iter_mut()) {
+
+        // TODO: only if needed
+        // Redraw images
+        for (&rect, img) in rt.img_rects.iter().zip(rt.imgs.iter_mut()) {
             // if let Some(rc) = match img {
             //     TextImage::Render(rc) => Some(rc),
             //     TextImage::Reference(id) => am.get_render_by_id_mut(*id),
@@ -114,11 +137,15 @@ impl AssetDrawable for RenderText {
             //     tex.draw_asset(r, am, rc);
             // }
             if let TextImage::Render(rc) = img {
-                rc.set_dest_rect(rect);
+                rc.try_mut(|rt: &mut RenderTexture| rt.get_render_data_mut().set_dest_rect(rect))
+                    .try_mut(rc, |ra: &mut RenderAsset| {
+                        ra.get_render_data_mut().set_dest_rect(rect)
+                    });
                 tex.draw_asset(r, am, rc);
             }
         }
-        // Draw final
-        self.tex.draw(r, am);
-    }
+
+        rt.tex
+            .set_dest_rect(rect_to_camera_coords(&pos.0, screen, camera));
+    });
 }

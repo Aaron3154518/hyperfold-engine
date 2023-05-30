@@ -12,5 +12,7 @@ pub mod core {
     #[macros::event]
     pub struct Events;
     #[macros::event]
+    pub struct PreRender;
+    #[macros::event]
     pub struct Render;
 }

@@ -7,6 +7,7 @@ use crate::utils::{
 };
 
 use super::{
+    drawable::Canvas,
     font::{Font, FontData},
     render_data::{FitMode, RectMode, RenderDataBuilderTrait, RenderTexture},
     AssetManager, Renderer, Texture,
@@ -201,14 +202,14 @@ pub fn render_text(
     am: &mut AssetManager,
     text: &str,
     font_data: &FontData,
-    rect: Rect,
+    bounds: Rect,
     ax: Align,
     ay: Align,
 ) -> (Texture, Vec<Rect>) {
     let font = am.get_font(font_data);
     let line_h = font.size().h as f32;
-    let lines = split_text(text, font, rect.w_i32() as u32);
-    println!("{lines:#?}");
+    let lines = split_text(text, font, bounds.w_i32() as u32);
+    // println!("{lines:#?}");
     let text_r = Rect::new()
         .with_dim(
             lines.iter().max_by_key(|l| l.w).expect("No lines").w as f32,
@@ -216,7 +217,7 @@ pub fn render_text(
             Align::TopLeft,
             Align::TopLeft,
         )
-        .with_rect_pos(rect, ax, ay);
+        .with_rect_pos(bounds, ax, ay);
     let tex = Texture::new(r, text_r.w_i32() as u32, text_r.h_i32() as u32, GRAY);
 
     let mut imgs = Vec::new();
