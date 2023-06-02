@@ -1,34 +1,20 @@
-use std::env::temp_dir;
-use std::{fs, path::PathBuf};
+use std::{array, env::temp_dir, fs, path::PathBuf};
 
 use proc_macro2::TokenStream;
-use quote::format_ident;
-use quote::quote;
-use shared::util::Call;
-use shared::util::Increment;
-use shared::util::JoinMapInto;
-use shared::util::Unzip3;
-use shared::util::Unzip7;
-use shared::util::{Catch, JoinMap};
+use quote::{format_ident, quote};
+use shared::{
+    let_mut_vecs,
+    util::{Call, Catch, FlattenMap, Increment, JoinMap, JoinMapInto, Unzip3, Unzip8},
+};
 
-use crate::codegen;
-use crate::codegen::idents::Idents;
-use crate::codegen::util::vec_to_path;
-use crate::resolve::ast_items::Dependency;
-use crate::resolve::ast_paths::EngineGlobals;
-use crate::resolve::ast_paths::EngineIdents;
-use crate::resolve::ast_paths::EngineTraits;
-use crate::resolve::ast_paths::ExpandEnum;
-use crate::resolve::ast_paths::GetPaths;
-use crate::resolve::ast_resolve::Path;
-// use crate::validate::ast_item_list::ItemList;
-use crate::validate::constants::component_var;
-use crate::validate::constants::event_var;
-use crate::validate::constants::event_variant;
-use crate::validate::constants::global_var;
 use crate::{
-    resolve::{ast_items::ItemsCrate, ast_paths::Paths},
-    validate::constants::NAMESPACE,
+    codegen::{self, idents::Idents, structs::Component, util::vec_to_path},
+    resolve::{
+        ast_items::{Dependency, ItemsCrate},
+        ast_paths::{EngineGlobals, EngineIdents, EngineTraits, ExpandEnum, GetPaths, Paths},
+        ast_resolve::Path,
+    },
+    validate::constants::{component_var, event_var, event_variant, global_var, NAMESPACE},
 };
 
 use super::util::string_to_type;
@@ -198,62 +184,65 @@ impl ItemsCrate {
         let crate_paths_post = deps_lrn.map_vec(|i| &crate_paths[*i]);
         let engine_cr_path = &crate_paths[paths.engine_cr_idx];
 
+        let singleton = EngineIdents::Singleton.construct_path(&engine_cr_path);
+        let entity_set = EngineIdents::EntitySet.construct_path(&engine_cr_path);
+        let entity_map = EngineIdents::EntityMap.construct_path(&engine_cr_path);
+
         // Get component types by crate for system codegen
-        // Get full list of components, global, evnets, and systems
-        let (crate_c_tys, c_tys, c_vars, g_tys, g_vars, e_tys, e_vars, e_varis) = crates
-            .iter()
-            .zip(crate_paths.iter())
-            .collect::<Vec<_>>()
-            .map_vec(|&(cr, cr_path)| {
-                (
-                    cr.components.iter().enumerate().unzip_vec(|(i, c)| {
-                        let path = vec_to_path(c.path.path[1..].to_vec());
-                        (
-                            quote!(#cr_path::#path),
-                            format_ident!("{}", component_var(cr.cr_idx, i)),
-                        )
-                    }),
-                    cr.globals.iter().enumerate().unzip_vec(|(i, g)| {
-                        let path = vec_to_path(g.path.path[1..].to_vec());
-                        (
-                            quote!(#cr_path::#path),
-                            format_ident!("{}", global_var(cr.cr_idx, i)),
-                        )
-                    }),
-                    cr.events
-                        .iter()
-                        .enumerate()
-                        .map_vec(|(i, e)| {
-                            let ty = vec_to_path(e.path.path[1..].to_vec());
-                            (
-                                quote!(#cr_path::#ty),
-                                format_ident!("{}", event_var(cr.cr_idx, i)),
-                                format_ident!("{}", event_variant(cr.cr_idx, i)),
-                            )
-                        })
-                        .into_iter()
-                        .unzip3_vec(),
-                )
-                    .call_into(
-                        |((c_tys, c_vars), (g_tys, g_vars), (e_tys, e_vars, e_varis))| {
-                            (c_tys, c_vars, g_tys, g_vars, e_tys, e_vars, e_varis)
-                        },
-                    )
-            })
-            .into_iter()
-            .unzip7_vec()
-            .call_into(|(c_tys, c_vars, g_tys, g_vars, e_tys, e_vars, e_varis)| {
-                (
-                    c_tys.to_vec(),
-                    c_tys.concat(),
-                    c_vars.concat(),
-                    g_tys.concat(),
-                    g_vars.concat(),
-                    e_tys.concat(),
-                    e_vars.concat(),
-                    e_varis.concat(),
-                )
-            });
+        let mut comps = Vec::new();
+        let_mut_vecs!(cfoo_tys, cfoo_news, cfoo_adds, cfoo_appends, cfoo_removes);
+        let_mut_vecs!(g_tys, g_vars, e_tys, e_vars, e_varis);
+        for (cr, cr_path) in crates.iter().zip(crate_paths.iter()) {
+            comps.push(cr.components.iter().enumerate().map_vec(|(i, c)| {
+                let path = vec_to_path(c.path.path[1..].to_vec());
+                let ty = quote!(#cr_path::#path);
+                let var = format_ident!("{}", component_var(cr.cr_idx, i));
+
+                if c.args.is_singleton {
+                    cfoo_tys.push(quote!(Option<#singleton<#ty>>));
+                    cfoo_news.push(quote!(None));
+                    cfoo_adds.push(quote!(self.#var = Some(#singleton::new(e, t))));
+                    cfoo_appends.push(quote!(
+                        if cm.#var.is_some() {
+                            if self.#var.is_some() {
+                                panic!("Cannot set Singleton component more than once")
+                            }
+                            self.#var = cm.#var.take();
+                        }
+                    ));
+                    cfoo_removes.push(quote!(
+                        if self.#var.as_ref().is_some_and(|s| s.contains_key(&eid)) {
+                            self.#var = None;
+                        }
+                    ));
+                } else {
+                    cfoo_tys.push(quote!(#entity_map<#ty>));
+                    cfoo_news.push(quote!(#entity_map::new()));
+                    cfoo_adds.push(quote!(self.#var.insert(e, t);));
+                    cfoo_appends.push(quote!(self.#var.extend(cm.#var.drain());));
+                    cfoo_removes.push(quote!(self.#var.remove(&eid);));
+                }
+                Component {
+                    ty,
+                    var,
+                    args: c.args,
+                }
+            }));
+
+            for (i, g) in cr.globals.iter().enumerate() {
+                let path = vec_to_path(g.path.path[1..].to_vec());
+                g_tys.push(quote!(#cr_path::#path));
+                g_vars.push(format_ident!("{}", global_var(cr.cr_idx, i)));
+            }
+            for (i, e) in cr.events.iter().enumerate() {
+                let ty = vec_to_path(e.path.path[1..].to_vec());
+                e_tys.push(quote!(#cr_path::#ty));
+                e_vars.push(format_ident!("{}", event_var(cr.cr_idx, i)));
+                e_varis.push(format_ident!("{}", event_variant(cr.cr_idx, i)));
+            }
+        }
+        let c_tys = comps.flatten_map_vec(|c| &c.ty);
+        let c_vars = comps.flatten_map_vec(|c| &c.var);
 
         // Global manager
         let gfoo_ident = Idents::GFoo.to_ident();
@@ -278,12 +267,9 @@ impl ItemsCrate {
 
         let engine_globals = self.get_engine_globals(paths, crates);
         // Paths to engine globals
-        let entity = EngineIdents::Entity
-            .to_path()
-            .call(|i| quote!(#engine_cr_path::#i));
-        let entity_trash = EngineGlobals::EntityTrash
-            .to_path()
-            .call(|i| quote!(#engine_cr_path::#i));
+        let entity_trash = EngineGlobals::EntityTrash.construct_path(&engine_cr_path);
+
+        let entity = EngineIdents::Entity.construct_path(&engine_cr_path);
 
         // Component manager
         let add_comp = Idents::AddComponent.to_ident();
@@ -291,27 +277,27 @@ impl ItemsCrate {
         let cfoo_ident = Idents::CFoo.to_ident();
         let cfoo_def = quote!(
             pub struct #cfoo_ident {
-                eids: std::collections::HashSet<#entity>,
-                #(#c_vars: std::collections::HashMap<#entity, #c_tys>),*
+                eids: #entity_set,
+                #(#c_vars: #cfoo_tys),*
             }
 
             impl #cfoo_ident {
                 pub fn new() -> Self {
                     Self {
-                        eids: std::collections::HashSet::new(),
-                        #(#c_vars: std::collections::HashMap::new()),*
+                        eids: #entity_set::new(),
+                        #(#c_vars: #cfoo_news),*
                     }
                 }
 
                 pub fn append(&mut self, cm: &mut Self) {
                     self.eids.extend(cm.eids.drain());
-                    #(self.#c_vars.extend(cm.#c_vars.drain());)*
+                    #(#cfoo_appends)*
                 }
 
                 pub fn remove(&mut self, tr: &mut #entity_trash) {
                     for eid in tr.0.drain(..) {
                         self.eids.remove(&eid);
-                        #(self.#c_vars.remove(&eid);)*
+                        #(#cfoo_removes)*
                     }
                 }
             }
@@ -321,7 +307,7 @@ impl ItemsCrate {
                 impl #add_comp_tr<#c_tys> for #cfoo_ident {
                     fn add_component(&mut self, e: #entity, t: #c_tys) {
                         self.eids.insert(e);
-                        self.#c_vars.insert(e, t);
+                        #cfoo_adds
                     }
                 }
             )*
@@ -418,17 +404,18 @@ impl ItemsCrate {
         let g_cfoo = &engine_globals[EngineGlobals::CFoo as usize];
 
         // Systems
-        let (init_systems, systems) = crates.iter().zip(crate_paths.iter()).fold(
-            (Vec::new(), Vec::new()),
-            |(mut s_init, mut sys), (cr, cr_path)| {
-                for s in cr.systems.iter() {
-                    let s = codegen::system::System::from(s, cr_path, paths, crates);
-                    if s.is_init { &mut s_init } else { &mut sys }
-                        .push(s.to_quote(&engine_cr_path, &crate_c_tys))
+        let_mut_vecs!(systems, init_systems);
+        for (cr, cr_path) in crates.iter().zip(crate_paths.iter()) {
+            for s in cr.systems.iter() {
+                let s = codegen::system::System::from(s, cr_path, paths, crates);
+                if s.is_init {
+                    &mut init_systems
+                } else {
+                    &mut systems
                 }
-                (s_init, sys)
-            },
-        );
+                .push(s.to_quote(&engine_cr_path, &comps))
+            }
+        }
 
         let [cfoo, gfoo, efoo] =
             [Idents::GenCFoo, Idents::GenGFoo, Idents::GenEFoo].map(|i| i.to_ident());

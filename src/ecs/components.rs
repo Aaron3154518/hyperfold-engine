@@ -16,6 +16,29 @@ pub type Not<T> = PhantomData<T>;
 pub type And<T> = PhantomData<T>;
 pub type Or<T> = PhantomData<T>;
 
+pub struct Singleton<T> {
+    eid: Entity,
+    t: T,
+}
+
+impl<T> Singleton<T> {
+    pub fn new(eid: Entity, t: T) -> Self {
+        Self { eid, t }
+    }
+
+    pub fn get<'a>(&'a self, id: &Entity) -> Option<&'a T> {
+        (&self.eid == id).then_some(&self.t)
+    }
+
+    pub fn get_mut<'a>(&'a mut self, id: &Entity) -> Option<&'a mut T> {
+        (&self.eid == id).then_some(&mut self.t)
+    }
+
+    pub fn contains_key(&self, id: &Entity) -> bool {
+        &self.eid == id
+    }
+}
+
 pub type Globals<G> = G;
 
 #[derive(Debug)]

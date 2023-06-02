@@ -12,17 +12,22 @@ where
 }
 
 // Component args
-#[derive(Debug, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub struct ComponentMacroArgs {
     pub is_dummy: bool,
+    pub is_singleton: bool,
 }
 
 impl From<Vec<String>> for ComponentMacroArgs {
     fn from(vals: Vec<String>) -> Self {
-        let mut c = Self { is_dummy: false };
+        let mut c = Self {
+            is_dummy: false,
+            is_singleton: false,
+        };
         for v in vals {
             match v.as_str() {
                 "Dummy" => c.is_dummy = true,
+                "Singleton" => c.is_singleton = true,
                 "Const" => panic!(
                     "{}\n{}",
                     "Component cannot be Const", "Perhaps you meant to declare this as \"global\"?"
@@ -41,7 +46,7 @@ impl syn::parse::Parse for ComponentMacroArgs {
 }
 
 // Global args
-#[derive(Debug, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub struct GlobalMacroArgs {
     pub is_dummy: bool,
     pub is_const: bool,
@@ -71,7 +76,7 @@ impl syn::parse::Parse for GlobalMacroArgs {
 }
 
 // System args
-#[derive(Debug, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub struct SystemMacroArgs {
     pub is_init: bool,
 }

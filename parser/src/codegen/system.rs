@@ -22,7 +22,9 @@ use crate::{
         constants::{component_var, event_variant, global_var, EID},
     },
 };
-use shared::util::{Call, Catch, Flatten, JoinMap, JoinMapInto, SplitCollect};
+use shared::util::{Call, Catch, JoinMap, JoinMapInto, SplitCollect};
+
+use super::structs::Component;
 
 #[shared::macros::expand_enum]
 pub enum LabelType {
@@ -64,16 +66,19 @@ pub enum FnArg {
     Container(Vec<ContainerArg>),
 }
 
+// Crate index, item index
+type Id = (usize, usize);
+
 pub struct System {
     pub name: TokenStream,
     args: Vec<TokenStream>,
-    c_args: Vec<syn::Ident>,
-    g_args: Vec<syn::Ident>,
-    event: syn::Ident,
-    and_labels: HashSet<syn::Ident>,
-    or_labels: Vec<HashSet<syn::Ident>>,
-    nor_labels: HashSet<syn::Ident>,
-    nand_labels: Vec<HashSet<syn::Ident>>,
+    c_args: Vec<Id>,
+    g_args: Vec<Id>,
+    event: Option<Id>,
+    and_labels: HashSet<Id>,
+    or_labels: Vec<HashSet<Id>>,
+    nor_labels: HashSet<Id>,
+    nand_labels: Vec<HashSet<Id>>,
     // Includes reference and mutability
     v_types: Vec<ContainerArg>,
     is_vec: bool,
@@ -87,7 +92,7 @@ impl System {
             args: Vec::new(),
             c_args: Vec::new(),
             g_args: Vec::new(),
-            event: format_ident!("_"),
+            event: None,
             and_labels: HashSet::new(),
             or_labels: Vec::new(),
             nor_labels: HashSet::new(),
@@ -130,7 +135,7 @@ impl System {
                         validate.add_component(arg, (cr_i, c_i));
                         let var = format_ident!("{}", component_var(cr_i, c_i));
                         let tt = quote!(#var);
-                        sys.c_args.push(var);
+                        sys.c_args.push((cr_i, c_i));
                         tt
                     })
                 })
@@ -144,7 +149,7 @@ impl System {
                         validate.add_global(arg, (cr_i, g_i));
                         let var = format_ident!("{}", global_var(cr_i, g_i));
                         let tt = quote!(&mut #gfoo.#var);
-                        sys.g_args.push(var);
+                        sys.g_args.push((cr_i, g_i));
                         tt
                     })
                 })
@@ -154,7 +159,7 @@ impl System {
                         arg.validate_ref(1, &mut validate.errs);
                         arg.validate_mut(false, &mut validate.errs);
                         validate.add_event(arg);
-                        sys.event = format_ident!("{}", event_variant(cr_i, e_i));
+                        sys.event = Some((cr_i, e_i)); // format_ident!("{}", event_variant(cr_i, e_i));
                         quote!(#e_ident)
                     })
                 })
@@ -166,7 +171,7 @@ impl System {
                         validate.add_global(arg, (cr_i, g_i));
                         let var = format_ident!("{}", global_var(cr_i, g_i));
                         let tt = quote!(&mut #gfoo.#var);
-                        sys.g_args.push(var);
+                        sys.g_args.push((cr_i, g_i));
                         tt
                     })
                 })
@@ -176,16 +181,16 @@ impl System {
                         arg.validate_ref(0, &mut validate.errs);
                         let args = args
                             .iter()
-                            .map(|a| {
+                            .filter_map(|a| {
                                 a.to_component(crates).map_or_else(
                                     || {
                                         &mut validate.errs.push(format!(
                                             "Label expects Component type, found: {}",
                                             a
                                         ));
-                                        format_ident!("_")
+                                        None
                                     },
-                                    |(cr_i, c_i, _)| format_ident!("{}", component_var(cr_i, c_i)),
+                                    |(cr_i, c_i, _)| Some((cr_i, c_i)),
                                 )
                             })
                             .collect::<HashSet<_>>();
@@ -203,63 +208,26 @@ impl System {
                     arg.to_container(paths).map(|args| {
                         arg.validate_ref(0, &mut validate.errs);
                         validate.add_container(arg);
-                        args.join_map(
-                            |a| {
-                                a.to_eid(paths)
-                                    .map(|_| {
-                                        a.validate_ref(1, &mut validate.errs);
-                                        a.validate_mut(false, &mut validate.errs);
-                                        EID.to_string()
-                                    })
-                                    .or_else(|| {
-                                        a.to_component(crates).map(|(cr_i, c_i, _)| {
-                                            a.validate_ref(1, &mut validate.errs);
-                                            format!(
-                                                "{}{}",
-                                                if a.mutable { "m" } else { "" },
-                                                component_var(cr_i, c_i)
-                                            )
-                                        })
-                                    })
-                                    .map_or_else(
-                                        || {
-                                            &mut validate.errs.push(format!(
-                                        "Container expects Component or Entity ID type, found: {}",
-                                        a
-                                    ));
-                                            String::new()
-                                        },
-                                        |s| s,
-                                    )
-                            },
-                            "-",
-                        );
                         sys.is_vec = true;
-                        (sys.c_args, sys.v_types) = args.unzip_vec(|a| {
-                            a.to_eid(paths)
-                                .map(|_| {
-                                    a.validate_ref(1, &mut validate.errs);
-                                    a.validate_mut(false, &mut validate.errs);
-                                    (Idents::GenEids.to_ident(), ContainerArg::EntityId)
-                                })
-                                .or_else(|| {
-                                    a.to_component(crates).map(|(cr_i, c_i, _)| {
-                                        a.validate_ref(1, &mut validate.errs);
-                                        let var = format_ident!("{}", component_var(cr_i, c_i));
-                                        (var, ContainerArg::Component(cr_i, c_i, a.mutable))
-                                    })
-                                })
-                                .map_or_else(
-                                    || {
-                                        validate.errs.push(format!(
-                                            "Container expects Component or Entity ID type, found: {}",
-                                            a
-                                        ));
-                                        (format_ident!("_"), ContainerArg::EntityId)
-                                    },
-                                    |t| t,
-                                )
-                        });
+                        (sys.c_args, sys.v_types) = (Vec::new(), Vec::new());
+                        for a in args.iter() {
+                            if a.to_eid(paths).is_some() {
+                                a.validate_ref(1, &mut validate.errs);
+                                a.validate_mut(false, &mut validate.errs);
+                                sys.v_types.push(ContainerArg::EntityId);
+                            } else if let Some((cr_i, c_i, _)) = a.to_component(crates) {
+                                a.validate_ref(1, &mut validate.errs);
+                                let var = format_ident!("{}", component_var(cr_i, c_i));
+                                sys.c_args.push((cr_i, c_i));
+                                sys.v_types
+                                    .push(ContainerArg::Component(cr_i, c_i, a.mutable))
+                            } else {
+                                validate.errs.push(format!(
+                                    "Container expects Component or Entity ID type, found: {}",
+                                    a
+                                ));
+                            }
+                        }
                         quote!(#v_ident)
                     })
                 }) {
@@ -330,24 +298,35 @@ impl System {
         self.and_labels.drain_filter(|c| self.c_args.contains(c));
     }
 
-    fn quote_labels(&self, body: TokenStream) -> TokenStream {
+    fn quote_labels(&self, body: TokenStream, components: &Vec<Vec<Component>>) -> TokenStream {
         let [cfoo, eid] = [Idents::GenCFoo, Idents::GenEid].map(|i| i.to_ident());
 
         let (ands, nors) = (self.and_labels.iter(), self.nor_labels.iter());
 
+        let quote_check = |c: &Component| {
+            let var = &c.var;
+            if c.args.is_singleton {
+                quote!(#cfoo.#var.as_ref().is_some_and(|s| s.contains_key(#eid)))
+            } else {
+                quote!(#cfoo.#var.contains_key(#eid))
+            }
+        };
+
         let mut checks = Vec::new();
-        for (i, v) in [&self.and_labels, &self.nor_labels].iter().enumerate() {
+        for (v, not) in [(&self.and_labels, quote!()), (&self.nor_labels, quote!(!))].iter() {
             if !v.is_empty() {
-                let vs = v.iter();
-                let not = if i == 0 { quote!() } else { quote!(!) };
-                checks.push(quote!(#(#not #cfoo.#vs.contains_key(#eid))&&*));
+                let key_checks = v
+                    .iter()
+                    .map(|(cr_i, c_i)| quote_check(&components[*cr_i][*c_i]));
+                checks.push(quote!(#(#not #key_checks)&&*));
             }
         }
-        for (i, v) in [&self.or_labels, &self.nand_labels].iter().enumerate() {
-            let not = if i == 0 { quote!() } else { quote!(!) };
+        for ((v, not)) in [(&self.or_labels, quote!()), (&self.nand_labels, quote!(!))].iter() {
             checks.append(&mut v.map_vec(|v| {
-                let vs = v.iter();
-                quote!(#(#not #cfoo.#vs.contains_key(#eid))||*)
+                let key_checks = v
+                    .iter()
+                    .map(|(cr_i, c_i)| quote_check(&components[*cr_i][*c_i]));
+                quote!(#(#not #key_checks)||*)
             }));
         }
 
@@ -365,7 +344,7 @@ impl System {
     pub fn to_quote(
         &self,
         engine_crate_path: &syn::Path,
-        components: &Vec<Vec<TokenStream>>,
+        components: &Vec<Vec<Component>>,
     ) -> TokenStream {
         let f = &self.name;
         let args = &self.args;
@@ -373,17 +352,31 @@ impl System {
         let body = if self.c_args.is_empty() {
             quote!(#f(#(#args),*))
         } else if !self.is_vec {
-            let c_args = &self.c_args;
-            let label_checks = self.quote_labels(quote!(#f(#(#args),*)));
-
             let eid = Idents::GenEid.to_ident();
 
             let [get_keys, intersect_keys] = [EngineIdents::GetKeys, EngineIdents::IntersectKeys]
                 .map(|i| vec_to_path(i.path_stem()));
+            let cfoo = Idents::GenCFoo.to_ident();
+
+            let label_checks = self.quote_labels(quote!(#f(#(#args),*)), components);
+
+            let c_vars = self
+                .c_args
+                .map_vec(|(cr_i, c_i)| &components[*cr_i][*c_i].var);
+
+            let get_stmts = self.c_args.map_vec(|(cr_i, c_i)| {
+                let c = &components[*cr_i][*c_i];
+                let var = &c.var;
+                if c.args.is_singleton {
+                    quote!(#cfoo.#var.get_mut(#eid))
+                } else {
+                    quote!(#cfoo.#var.get_mut(#eid))
+                }
+            });
 
             quote!(
-                for #eid in #engine_crate_path::#intersect_keys(&mut [#(#engine_crate_path::#get_keys(&cfoo.#c_args)),*]).iter() {
-                    if let (#(Some(#c_args),)*) = (#(cfoo.#c_args.get_mut(#eid),)*) {
+                for #eid in #engine_crate_path::#intersect_keys(&mut [#(#engine_crate_path::#get_keys(&#cfoo.#c_vars)),*]).iter() {
+                    if let (#(Some(#c_vars),)*) = (#(#get_stmts,)*) {
                         #label_checks
                     }
                 }
@@ -398,51 +391,68 @@ impl System {
                 .map(|a| match a {
                     ContainerArg::EntityId => quote!(&#engine_crate_path::#eid),
                     ContainerArg::Component(cr_idx, c_idx, m) => {
-                        let c_ty = &components[*cr_idx][*c_idx];
+                        let c_ty = &components[*cr_idx][*c_idx].ty;
                         let mut_tok = if *m { quote!(mut) } else { quote!() };
                         quote!(&#mut_tok #c_ty)
                     }
                 })
                 .collect::<Vec<_>>();
             // Get first argument to initialize the result hashmap
-            let arg = self.c_args.first().expect("No first component");
-            let nones = ["None"].repeat(self.v_types.len() - 1).join(",");
-            let (iter, tuple_init) = match self.v_types.first().expect("No first vector types") {
-                ContainerArg::EntityId => ("iter", format!("|k| (k, (None, {}))", nones)),
-                ContainerArg::Component(_, _, m) => (
-                    if *m { "iter_mut" } else { "iter" },
-                    format!("|(k, v)| (k, (Some(v), {}))", nones),
-                ),
-            };
-            let iter = format_ident!("{}", iter);
+            let arg = self
+                .c_args
+                .first()
+                .expect("No first component")
+                .call_into(|(cr_i, c_i)| &components[*cr_i][*c_i].var);
+            let v_comps = self
+                .v_types
+                .iter()
+                .enumerate()
+                .filter_map(|(i, ty)| match ty {
+                    ContainerArg::EntityId => None,
+                    ContainerArg::Component(_, _, m) => Some((i, *m)),
+                })
+                .collect::<Vec<_>>();
+            let (iter, tuple_init) =
+                v_comps
+                    .first()
+                    .expect("No first component")
+                    .call_into(|(i, m)| {
+                        (
+                            format_ident!("{}", if *m { "iter_mut" } else { "iter" }),
+                            format!(
+                                "|(k, v)| (k, ({}Some(v){}))",
+                                "None,".repeat(*i),
+                                ",None".repeat(self.v_types.len() - i - 1)
+                            ),
+                        )
+                    });
             let tuple_init = syn::parse_str::<syn::ExprClosure>(tuple_init.as_str())
                 .expect("Could not parse tuple init closure");
 
             let [cfoo, v, eid] =
                 [Idents::GenCFoo, Idents::GenV, Idents::GenEid].map(|i| i.to_ident());
 
+            // eprintln!("{:#?}, {:#?}, {:#?}", self.c_args, self.v_types, it.clone().collect::<Vec<_>>());
+
             // Intersect with tail args
             let intersect_stmts = self.c_args[1..]
                 .iter()
-                .zip(self.v_types[1..].iter())
-                .enumerate()
-                .filter_map(|(mut i, (a, ty))| match ty {
-                    ContainerArg::EntityId => None,
-                    ContainerArg::Component(_, _, m) => {
-                        let intersect = vec_to_path(
-                            if *m {
-                                EngineIdents::IntersectMut
-                            } else {
-                                EngineIdents::Intersect
-                            }
-                            .path_stem(),
-                        );
-                        let member: syn::Member = syn::parse_str(format!("{}", i + 1).as_str())
-                            .catch(format!("Could not parse expression: {}", i + 1));
-                        Some(quote!(
-                            #engine_crate_path::#intersect(#v, &mut #cfoo.#a, |t| &mut t.#member)
-                        ))
-                    }
+                .zip(v_comps[1..].iter())
+                .map(|((cr_i, c_i), (i, m))| {
+                    let intersect = vec_to_path(
+                        if *m {
+                            EngineIdents::IntersectMut
+                        } else {
+                            EngineIdents::Intersect
+                        }
+                        .path_stem(),
+                    );
+                    let member: syn::Member = syn::parse_str(format!("{}", i).as_str())
+                        .catch(format!("Could not parse expression: {}", i));
+                    let c_var = &components[*cr_i][*c_i].var;
+                    Some(quote!(
+                        #engine_crate_path::#intersect(#v, &mut #cfoo.#c_var, |t| &mut t.#member)
+                    ))
                 })
                 .collect::<Vec<_>>();
 
@@ -452,24 +462,21 @@ impl System {
             let mut c_vars = Vec::new();
             // all_vars contains all v_i
             // all_args replaces eids with "k"
-            let (all_vars, all_args) = self
-                .c_args
-                .iter()
-                .zip(self.v_types.iter())
-                .enumerate()
-                .map(|(i, (_v, ty))| {
-                    let v_i = format_ident!("v{}", i);
-                    match ty {
-                        ContainerArg::EntityId => (v_i, eid.to_owned()),
-                        ContainerArg::Component(_, _, _) => {
-                            c_vars.push(v_i.to_owned());
-                            (v_i.to_owned(), v_i)
-                        }
+            let (mut all_vars, mut all_args) = (Vec::new(), Vec::new());
+            for (i, ty) in self.v_types.iter().enumerate() {
+                let v_i = format_ident!("v{}", i);
+                match ty {
+                    ContainerArg::EntityId => all_args.push(eid.clone()),
+                    ContainerArg::Component(_, _, _) => {
+                        c_vars.push(v_i.clone());
+                        all_args.push(v_i.clone());
                     }
-                })
-                .unzip::<_, _, Vec<_>, Vec<_>>();
+                }
+                all_vars.push(v_i);
+            }
 
-            let label_checks = self.quote_labels(quote!(return Some((#(#all_args,)*));));
+            let label_checks =
+                self.quote_labels(quote!(return Some((#(#all_args,)*));), components);
 
             quote!(
                 let mut #v = cfoo.#arg
@@ -504,7 +511,10 @@ impl System {
             )
         } else {
             let [e_ident, e] = [Idents::E, Idents::GenE].map(|i| i.to_ident());
-            let event = &self.event;
+            let event = self
+                .event
+                .expect("No event provided")
+                .call_into(|(cr_i, e_i)| format_ident!("{}", event_variant(cr_i, e_i)));
             quote!(
                 let f = |#cfoo: &mut #cfoo_ty, #gfoo: &mut #gfoo_ty, #efoo: &mut #efoo_ty| {
                     if let Some(#e) = #engine_crate_path::#add_event::get_event(#efoo) {

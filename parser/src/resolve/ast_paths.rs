@@ -1,4 +1,5 @@
-use quote::format_ident;
+use proc_macro2::TokenStream;
+use quote::{format_ident, quote};
 
 use crate::{
     codegen::{idents::Idents, util::vec_to_path},
@@ -6,7 +7,7 @@ use crate::{
     validate::constants::NAMESPACE,
 };
 
-use shared::util::JoinMap;
+use shared::util::{Call, JoinMap};
 
 use super::ast_resolve::Path;
 
@@ -22,6 +23,10 @@ pub trait GetPaths<const N: usize>: ExpandEnum<N> {
     // ident
     fn as_ident(&self) -> &str;
 
+    fn to_ident(&self) -> syn::Ident {
+        format_ident!("{}", self.as_ident())
+    }
+
     // path
     fn as_path(&self) -> Vec<&str> {
         Vec::new()
@@ -29,6 +34,10 @@ pub trait GetPaths<const N: usize>: ExpandEnum<N> {
 
     fn to_path(&self) -> syn::Path {
         vec_to_path(self.path_stem())
+    }
+
+    fn construct_path(&self, path: &syn::Path) -> TokenStream {
+        self.to_path().call(|i| quote!(#path::#i))
     }
 
     // path::ident
@@ -159,6 +168,7 @@ pub enum EngineIdents {
     OrLabels,
     NandLabels,
     NorLabels,
+    Singleton,
     // Functions
     Intersect,
     IntersectMut,
@@ -171,6 +181,8 @@ pub enum EngineIdents {
     CoreRender,
     // Entities
     Entity,
+    EntitySet,
+    EntityMap,
     // Use statements
     SDL2,
     SDL2Image,
@@ -185,6 +197,7 @@ impl GetPaths<{ Self::LEN }> for EngineIdents {
             EngineIdents::OrLabels => "OrLabels",
             EngineIdents::NandLabels => "NandLabels",
             EngineIdents::NorLabels => "NorLabels",
+            EngineIdents::Singleton => "Singleton",
             EngineIdents::Intersect => "intersect",
             EngineIdents::IntersectMut => "intersect_mut",
             EngineIdents::IntersectKeys => "intersect_keys",
@@ -194,6 +207,8 @@ impl GetPaths<{ Self::LEN }> for EngineIdents {
             EngineIdents::CorePreRender => "PreRender",
             EngineIdents::CoreRender => "Render",
             EngineIdents::Entity => "Entity",
+            EngineIdents::EntitySet => "EntitySet",
+            EngineIdents::EntityMap => "EntityMap",
             EngineIdents::SDL2 => "sdl2",
             EngineIdents::SDL2Image => "sdl2_image",
         }
@@ -206,7 +221,8 @@ impl GetPaths<{ Self::LEN }> for EngineIdents {
             | EngineIdents::AndLabels
             | EngineIdents::OrLabels
             | EngineIdents::NandLabels
-            | EngineIdents::NorLabels => vec![ECS, "components"],
+            | EngineIdents::NorLabels
+            | EngineIdents::Singleton => vec![ECS, "components"],
             EngineIdents::Intersect
             | EngineIdents::IntersectMut
             | EngineIdents::IntersectKeys
@@ -217,7 +233,9 @@ impl GetPaths<{ Self::LEN }> for EngineIdents {
             | EngineIdents::CoreRender => {
                 vec![ECS, "events", "core"]
             }
-            EngineIdents::Entity => vec![ECS, "entities"],
+            EngineIdents::Entity | EngineIdents::EntitySet | EngineIdents::EntityMap => {
+                vec![ECS, "entities"]
+            }
             EngineIdents::SDL2 | EngineIdents::SDL2Image => vec![],
         }
     }

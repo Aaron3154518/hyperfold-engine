@@ -91,13 +91,14 @@ macro_rules! unzip {
 
 unzip!(
     (
+        unzip8_vec: Unzip8,
         unzip7_vec: Unzip7,
         unzip6_vec: Unzip6,
         unzip5_vec: Unzip5,
         unzip4_vec: Unzip4,
         unzip3_vec: Unzip3
     ),
-    (a: A, b: B, c: C, d: D, e: E, f: F, g: G)
+    (a: A, b: B, c: C, d: D, e: E, f: F, g: G, h: H)
 );
 
 // Trait for mapping Vec elements to strings and joining them
@@ -272,6 +273,37 @@ impl<'a> JoinMapInto<&'a str> for std::str::Split<'a, &str> {
     }
 }
 
+// Trait for flattening and mapping
+pub trait FlattenMap<'a, T> {
+    fn flatten_map_vec<U, F>(&'a self, f: F) -> Vec<U>
+    where
+        F: FnMut(T) -> U;
+}
+
+impl<'a, T: 'a> FlattenMap<'a, &'a T> for Vec<Vec<T>> {
+    fn flatten_map_vec<U, F>(&'a self, f: F) -> Vec<U>
+    where
+        F: FnMut(&'a T) -> U,
+    {
+        self.iter().flatten().map(f).collect()
+    }
+}
+
+pub trait FlattenMapInto<T> {
+    fn flatten_map_vec_into<U, F>(self, f: F) -> Vec<U>
+    where
+        F: FnMut(T) -> U;
+}
+
+impl<T> FlattenMapInto<T> for Vec<Vec<T>> {
+    fn flatten_map_vec_into<U, F>(self, f: F) -> Vec<U>
+    where
+        F: FnMut(T) -> U,
+    {
+        self.into_iter().flatten().map(f).collect()
+    }
+}
+
 // Trait for logic on None values in Options
 pub trait NoneOr<T> {
     fn is_none_or_into(self, f: impl FnOnce(T) -> bool) -> bool;
@@ -352,32 +384,5 @@ impl SplitCollect for str {
         V: FromIterator<T>,
     {
         self.split(sep).map(f).collect()
-    }
-}
-
-// Flatten 2D -> 1D
-pub trait Flatten<'a, T>
-where
-    T: 'a,
-{
-    fn flatten<V>(self, v: V) -> V
-    where
-        V: Extend<&'a T>;
-}
-
-impl<'a, A, B, T> Flatten<'a, T> for A
-where
-    A: IntoIterator<Item = B>,
-    B: IntoIterator<Item = &'a T>,
-    T: 'a,
-{
-    fn flatten<V>(self, v: V) -> V
-    where
-        V: Extend<&'a T>,
-    {
-        self.into_iter().fold(v, |mut v, t| {
-            v.extend(t.into_iter());
-            v
-        })
     }
 }
