@@ -25,7 +25,60 @@ pub mod test {
     };
 
     macro_rules! components {
-        ($name: ident, $($n: ident: $t: ty),+$(, Labels: $(t: ty),*)?) => {
+        // Op => e
+        (@op) => {};
+
+        // Op => && NoOp
+        (@op && $($tail: tt)*) => {
+            components!(@no_op $($tail)*);
+        };
+
+        // Op => || NoOp
+        (@op || $($tail: tt)*) => {
+            components!(@no_op $($tail)*);
+        };
+
+        // NoOp => (NoOp) Op
+        (@no_op ($($inner: tt)*) $($tail: tt)*) => {
+            components!(@no_op $($inner)*);
+            components!(@op $($tail)*);
+        };
+
+        // Ty => :: ident Ty
+        (@ty :: $i: ident $($tail: tt)*) => {
+            components!(@ty $($tail)*);
+        };
+
+        // Ty => Op
+        (@ty $($tail: tt)*) => {
+            components!(@op $($tail)*);
+        };
+
+        // NoOp => ident Ty Op
+        (@no_op $i: ident $($tail: tt)*) => {
+            components!(@ty $($tail)*);
+        };
+
+        // NoOp => ! NoOp
+        (@no_op ! $($tail: tt)*) => {
+            components!(@no_op $($tail)*);
+        };
+
+        // S => e
+        (@labels) => {};
+
+        // S => NoOp
+        (@labels $($tts: tt)*) => {
+            components!(@no_op $($tts)*);
+        };
+
+        (labels $labels: tt, $name: ident, $($n: ident: $t: ty),+) => {
+            components!(@labels $labels);
+            components!($name, $($n: $t),*);
+        };
+
+        ($name: ident, $($n: ident: $t: ty),+) => {
+
             pub struct $name<'a> {
                 pub eid: &'a crate::_engine::Entity,
                 $(pub $n: $t),*
@@ -39,7 +92,25 @@ pub mod test {
         };
     }
 
+    // Labels tests
+    pub mod A {
+        pub mod B {
+            pub struct C;
+        }
+    }
+
+    components!(@labels);
+    components!(@labels (!t1));
+    components!(@labels t1);
+    components!(@labels (t1));
+    components!(@labels t1 && t2);
+    components!(@labels (t1 || t2) && !!!t1);
+    components!(@labels (!(t1 || t2) && t1));
+    components!(@labels A::B::C);
+    components!(@labels String || !A::B::C);
+
     components!(
+        labels((TFoo || !String) && !A::B::C),
         QuxComponents,
         t: &'a TFoo,
         greet: &'a String,
