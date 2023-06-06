@@ -86,20 +86,22 @@ impl ItemsCrate {
             .map(|p| string_to_type(p.path_from(self.cr_idx, crates).join("::"), false, false))
     }
 
+    fn get_crate_path(&self, cr: &ItemsCrate, crates: &Vec<ItemsCrate>) -> syn::Path {
+        vec_to_path(
+            Path {
+                cr_idx: cr.cr_idx,
+                path: vec![if cr.cr_idx == self.cr_idx {
+                    "crate".to_string()
+                } else {
+                    cr.cr_name.to_string()
+                }],
+            }
+            .path_from(self.cr_idx, crates),
+        )
+    }
+
     fn get_crate_paths(&self, crates: &Vec<ItemsCrate>) -> Vec<syn::Path> {
-        crates.map_vec(|cr| {
-            vec_to_path(
-                Path {
-                    cr_idx: cr.cr_idx,
-                    path: vec![if cr.cr_idx == 0 {
-                        "crate".to_string()
-                    } else {
-                        cr.cr_name.to_string()
-                    }],
-                }
-                .path_from(self.cr_idx, crates),
-            )
-        })
+        crates.map_vec(|cr| self.get_crate_path(cr, crates))
     }
 
     fn get_engine_globals(
@@ -132,6 +134,12 @@ impl ItemsCrate {
             .iter()
             .map(|d| format_ident!("{}", d.cr_alias))
             .collect::<Vec<_>>();
+
+        // Other idents exposed in _engine
+        let engine_path = self.get_crate_path(&crates[paths.engine_cr_idx], crates);
+        let entity_use = EngineIdents::Entity
+            .to_path()
+            .call_into(|p| quote!(#engine_path::#p));
 
         // Aggregate AddComponent traits and dependencies
         let add_comp = Idents::AddComponent.to_ident();
@@ -169,6 +177,7 @@ impl ItemsCrate {
 
         quote!(
             #(pub use #dep_aliases;)*
+            pub use #entity_use;
             #comp_code
             #event_code
         )
@@ -282,19 +291,19 @@ impl ItemsCrate {
             }
 
             impl #cfoo_ident {
-                pub fn new() -> Self {
+                fn new() -> Self {
                     Self {
                         eids: #entity_set::new(),
                         #(#c_vars: #cfoo_news),*
                     }
                 }
 
-                pub fn append(&mut self, cm: &mut Self) {
+                fn append(&mut self, cm: &mut Self) {
                     self.eids.extend(cm.eids.drain());
                     #(#cfoo_appends)*
                 }
 
-                pub fn remove(&mut self, tr: &mut #entity_trash) {
+                fn remove(&mut self, tr: &mut #entity_trash) {
                     for eid in tr.0.drain(..) {
                         self.eids.remove(&eid);
                         #(#cfoo_removes)*
@@ -324,10 +333,10 @@ impl ItemsCrate {
         let e_len = e_varis.len();
         let e_def = quote!(
             #[derive(Hash, Clone, Copy, Eq, PartialEq, Debug)]
-            pub enum #e_ident {
+            enum #e_ident {
                 #(#e_varis),*
             }
-            pub const #e_len_ident: usize = #e_len;
+            const #e_len_ident: usize = #e_len;
         );
         let efoo_ident = Idents::EFoo.to_ident();
         let efoo_def = quote!(
@@ -337,14 +346,14 @@ impl ItemsCrate {
             }
 
             impl #efoo_ident {
-                pub fn new() -> Self {
+                fn new() -> Self {
                     Self {
                         #(#e_vars: Vec::new()),*,
                         events: std::collections::VecDeque::new()
                     }
                 }
 
-                pub fn has_events(&self) -> bool {
+                fn has_events(&self) -> bool {
                     !self.events.is_empty()
                 }
 
@@ -352,18 +361,18 @@ impl ItemsCrate {
                     self.events.push_back((e, 0));
                 }
 
-                pub fn get_events(&mut self) -> std::collections::VecDeque<(#e_ident, usize)> {
+                fn get_events(&mut self) -> std::collections::VecDeque<(#e_ident, usize)> {
                     std::mem::replace(&mut self.events, std::collections::VecDeque::new())
                 }
 
-                pub fn append(&mut self, other: &mut Self) {
+                fn append(&mut self, other: &mut Self) {
                     #(
                         other.#e_vars.reverse();
                         self.#e_vars.append(&mut other.#e_vars);
                     )*
                 }
 
-                pub fn pop(&mut self, e: #e_ident) {
+                fn pop(&mut self, e: #e_ident) {
                     match e {
                         #(
                             #e_ident::#e_varis => {

@@ -19,11 +19,32 @@ pub mod utils;
 game_crate!();
 
 pub mod test {
-    use crate::ecs::{
-        components::{Components, ComponentsVec, Globals},
-        entities::{Entity, NewEntity},
-        events::Event,
+    use crate::{
+        _engine::Entity,
+        ecs::{components::Globals, entities::NewEntity, events::Event},
     };
+
+    macro_rules! components {
+        ($name: ident, $($n: ident: $t: ty),+$(, Labels: $(t: ty),*)?) => {
+            pub struct $name<'a> {
+                pub eid: &'a crate::_engine::Entity,
+                $(pub $n: $t),*
+            }
+
+            impl<'a> $name<'a> {
+                pub fn new(eid: &'a crate::_engine::Entity, $($n: $t),*) -> Self {
+                    Self { eid, $($n),* }
+                }
+            }
+        };
+    }
+
+    components!(
+        QuxComponents,
+        t: &'a TFoo,
+        greet: &'a String,
+        happy: &'a mut bool
+    );
 
     trait T {
         fn to_string(&self) -> String {
@@ -31,52 +52,46 @@ pub mod test {
         }
     }
 
-    struct TFoo;
+    pub struct TFoo;
     impl T for TFoo {}
 
     fn qux(
         ev: Event<u32>,
-        Components {
-            eid,
-            data: (greet, happy),
-            ..
-        }: Components<(&String, &mut bool), ()>,
-        c_vec: ComponentsVec<(&i32,), ()>,
-        (cnt, timer, tr): Globals<(&u8, &u8, &dyn T)>,
+        components: Vec<QuxComponents>,
+        (cnt, timer, tr): Globals<(&mut u8, &u8, &dyn T)>,
     ) {
-        *happy = true;
-        println!(
-            "{ev},{eid},({greet},{happy}),({cnt},{timer},{})\n{}",
-            tr.to_string(),
-            c_vec
-                .iter()
-                .map(|c| format!("{}{}=0", c.eid, c.data.0))
-                .collect::<Vec<_>>()
-                .join(", ")
-        )
+        for c in components {
+            *cnt += 1;
+            println!(
+                "{ev},({},{},{}),({cnt},{timer},{})",
+                c.t.to_string(),
+                c.greet,
+                c.happy,
+                tr.to_string(),
+            )
+        }
     }
 
     pub fn test() {
         let event = 2;
         let eid = Entity::new();
         let greet = "Hello".to_string();
-        let mut happy = false;
-        let cnt = 0;
+        let mut cnt = 0;
         let timer = 4;
 
         let eids = [0; 5].map(|_| Entity::new());
+        let mut happies = [0, 1, 2, 3, 4].map(|i| i % 2 == 0);
         let ints = [-1, -2, -3, -4, -5];
         let t = TFoo;
 
-        let k = Components::new(&eid, (&greet, &mut happy));
+        // let k = Components::new(&eid, (&greet, &mut happy));
         qux(
             &event,
-            k,
             eids.iter()
-                .zip(ints.iter())
-                .map(|(eid, is)| Components::new(eid, (is,)))
+                .zip(happies.iter_mut())
+                .map(|(eid, happy)| QuxComponents::new(eid, &t, &greet, happy))
                 .collect(),
-            (&cnt, &timer, &t),
+            (&mut cnt, &timer, &t),
         );
     }
 }
