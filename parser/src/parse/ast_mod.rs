@@ -1,11 +1,12 @@
 use std::{fs, path::PathBuf};
 
+use proc_macro2::TokenStream;
 use shared::util::Catch;
 use syn::visit::Visit;
 
 use crate::{
     parse::ast_attrs::{get_attributes_if_active, Attribute, EcsAttribute},
-    util::end,
+    util::{add_path_item, end, parse_syn_path},
 };
 
 use super::ast_fn_arg::FnArg;
@@ -23,6 +24,12 @@ pub struct MarkedItem {
     pub ty: MarkType,
     pub sym: Symbol,
     pub attrs: Vec<(Vec<String>, Vec<String>)>,
+}
+
+#[derive(Debug)]
+pub struct MacroCall {
+    pub path: Vec<String>,
+    pub args: TokenStream,
 }
 
 #[derive(Clone, Debug)]
@@ -67,6 +74,7 @@ pub struct Mod {
     pub symbols: Vec<Symbol>,
     pub uses: Vec<Symbol>,
     pub marked: Vec<MarkedItem>,
+    pub macro_calls: Vec<MacroCall>,
 }
 
 // TODO: ignore private mods
@@ -81,6 +89,7 @@ impl Mod {
             symbols: Vec::new(),
             uses: Vec::new(),
             marked: Vec::new(),
+            macro_calls: Vec::new(),
         }
     }
 
@@ -163,6 +172,7 @@ impl Mod {
             syn::Item::Fn(i) => self.visit_item_fn(i),
             syn::Item::Enum(i) => self.visit_item_enum(i),
             syn::Item::Struct(i) => self.visit_item_struct(i),
+            syn::Item::Macro(i) => self.visit_item_macro(i),
             _ => (),
         }
     }
@@ -243,6 +253,19 @@ impl Mod {
             }
         }
     }
+
+    // Macro call
+    fn visit_item_macro(&mut self, i: &syn::ItemMacro) {
+        if let Some(_) = get_attributes_if_active(&i.attrs, &self.path, &Vec::new()) {
+            // Some is for macro_rules!
+            if i.ident.is_none() {
+                self.macro_calls.push(MacroCall {
+                    args: i.mac.tokens.to_owned(),
+                    path: parse_syn_path(&self.path, &i.mac.path),
+                });
+            }
+        }
+    }
 }
 
 // TODO: Ambiguous paths, :: paths
@@ -282,15 +305,7 @@ impl Mod {
         path: &mut Vec<String>,
         items: Vec<Symbol>,
     ) -> Vec<Symbol> {
-        if i.ident == "super" {
-            if path.is_empty() {
-                *path = self.path[..end(&self.path, 1)].to_vec()
-            } else {
-                path.pop();
-            }
-        } else {
-            path.push(i.ident.to_string())
-        }
+        add_path_item(&self.path, path, i.ident.to_string());
         self.visit_use_tree(&i.tree, path, items)
     }
 
@@ -300,20 +315,12 @@ impl Mod {
         path: &mut Vec<String>,
         mut items: Vec<Symbol>,
     ) -> Vec<Symbol> {
-        let sym = if i.ident == "self" {
-            Symbol {
-                ident: path.last().expect("Empty use path with 'self'").to_string(),
-                path: path.to_vec(),
-                public: false,
-            }
-        } else {
-            Symbol {
-                ident: i.ident.to_string(),
-                path: [path.to_vec(), vec![i.ident.to_string()]].concat(),
-                public: false,
-            }
-        };
-        items.push(sym);
+        add_path_item(&self.path, path, i.ident.to_string());
+        items.push(Symbol {
+            ident: path.last().expect("Empty use path with 'self'").to_string(),
+            path: path.to_vec(),
+            public: false,
+        });
         items
     }
 

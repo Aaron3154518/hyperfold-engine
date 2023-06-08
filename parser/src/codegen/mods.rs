@@ -94,5 +94,6 @@ pub fn dependency_namespace_mod(cr: &Crate, dir: PathBuf, mut mods: Vec<String>)
             })
             .collect(),
         marked: Vec::new(),
+        macro_calls: Vec::new(),
     }
 }

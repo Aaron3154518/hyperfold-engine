@@ -177,6 +177,15 @@ impl ItemsCrate {
                 }
             }
         }
+
+        for mc in m.macro_calls.iter() {
+            if &resolve_path(mc.path.to_vec(), cr, m, crates).get()
+                == paths.get_macro(MacroPaths::Component)
+            {
+                eprintln!("{:#?}", mc);
+            }
+        }
+
         m.mods
             .iter()
             .for_each(|m| self.parse_mod(cr, m, paths, crates));

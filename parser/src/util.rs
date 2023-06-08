@@ -9,19 +9,28 @@ pub fn end<T>(v: &Vec<T>, off: usize) -> usize {
 }
 
 // Manage use statements
+pub fn add_path_item(parent_path: &Vec<String>, path: &mut Vec<String>, item: String) {
+    match item.as_str() {
+        "super" => {
+            if path.is_empty() {
+                *path = parent_path[..end(&parent_path, 1)].to_vec();
+            } else {
+                path.pop();
+            }
+        }
+        "self" => {
+            if path.is_empty() {
+                *path = parent_path.to_vec();
+            }
+        }
+        _ => path.push(item),
+    }
+}
+
 pub fn parse_vec_path(parent_path: &Vec<String>, path: &Vec<String>) -> Vec<String> {
     let mut res_path: Vec<String> = Vec::new();
     for p in path {
-        match p.as_str() {
-            "super" => {
-                if res_path.is_empty() {
-                    res_path = parent_path[..end(parent_path, 1)].to_vec();
-                } else {
-                    res_path.pop();
-                }
-            }
-            _ => res_path.push(p.to_string()),
-        }
+        add_path_item(parent_path, &mut res_path, p.to_string())
     }
     res_path
 }

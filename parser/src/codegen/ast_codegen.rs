@@ -11,7 +11,9 @@ use crate::{
     codegen::{self, idents::Idents, structs::Component, util::vec_to_path},
     resolve::{
         ast_items::{Dependency, ItemsCrate},
-        ast_paths::{EngineGlobals, EngineIdents, EngineTraits, ExpandEnum, GetPaths, Paths},
+        ast_paths::{
+            Crates, EngineGlobals, EngineIdents, EngineTraits, ExpandEnum, GetPaths, Paths,
+        },
         ast_resolve::Path,
     },
     validate::constants::{component_var, event_var, event_variant, global_var, NAMESPACE},
@@ -136,7 +138,7 @@ impl ItemsCrate {
             .collect::<Vec<_>>();
 
         // Other idents exposed in _engine
-        let engine_path = self.get_crate_path(&crates[paths.engine_cr_idx], crates);
+        let engine_path = self.get_crate_path(&crates[paths.get_cr_idx(Crates::Engine)], crates);
         let entity_use = EngineIdents::Entity
             .to_path()
             .call_into(|p| quote!(#engine_path::#p));
@@ -191,7 +193,7 @@ impl ItemsCrate {
         // Paths from entry crate to all other crates
         let crate_paths = self.get_crate_paths(crates);
         let crate_paths_post = deps_lrn.map_vec(|i| &crate_paths[*i]);
-        let engine_cr_path = &crate_paths[paths.engine_cr_idx];
+        let engine_cr_path = &crate_paths[paths.get_cr_idx(Crates::Engine)];
 
         let singleton = EngineIdents::Singleton.construct_path(&engine_cr_path);
         let entity_set = EngineIdents::EntitySet.construct_path(&engine_cr_path);
