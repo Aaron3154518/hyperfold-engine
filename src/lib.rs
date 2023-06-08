@@ -2,6 +2,7 @@
 #![feature(pattern)]
 #![feature(map_try_insert)]
 #![feature(lazy_cell)]
+#![feature(trivial_bounds)]
 
 mod sdl2_bindings;
 pub use sdl2_bindings::sdl2;
@@ -45,18 +46,19 @@ pub mod test {
         };
 
         // Ty => :: ident Ty
-        (@ty :: $i: ident $($tail: tt)*) => {
-            components!(@ty $($tail)*);
+        (@ty ($($ty: ident),+) :: $i: ident $($tail: tt)*) => {
+            components!(@ty ($($ty),*,$i) $($tail)*);
         };
 
         // Ty => Op
-        (@ty $($tail: tt)*) => {
+        (@ty ($($ty: ident),+) $($tail: tt)*) => {
+            const _: std::marker::PhantomData<$($ty)::*> = std::marker::PhantomData;
             components!(@op $($tail)*);
         };
 
         // NoOp => ident Ty Op
         (@no_op $i: ident $($tail: tt)*) => {
-            components!(@ty $($tail)*);
+            components!(@ty ($i) $($tail)*);
         };
 
         // NoOp => ! NoOp
@@ -78,7 +80,6 @@ pub mod test {
         };
 
         ($name: ident, $($n: ident: $t: ty),+) => {
-
             pub struct $name<'a> {
                 pub eid: &'a crate::_engine::Entity,
                 $(pub $n: $t),*
@@ -100,17 +101,17 @@ pub mod test {
     }
 
     components!(@labels);
-    components!(@labels (!t1));
-    components!(@labels t1);
-    components!(@labels (t1));
-    components!(@labels t1 && t2);
-    components!(@labels (t1 || t2) && !!!t1);
-    components!(@labels (!(t1 || t2) && t1));
+    components!(@labels (!u8));
+    components!(@labels u8);
+    components!(@labels (u8));
+    components!(@labels u8 && i8);
+    components!(@labels (u8 || i8) && !!!u8);
+    components!(@labels (!(u8 || i8) && u8));
     components!(@labels A::B::C);
     components!(@labels String || !A::B::C);
 
     components!(
-        labels((TFoo || !String) && !A::B::C),
+        labels((TFoo || !A::B::C) && !A::B::C),
         QuxComponents,
         t: &'a TFoo,
         greet: &'a String,
