@@ -1,11 +1,9 @@
 use std::{
     array,
     f32::consts::{PI, TAU},
-    str::pattern::Pattern,
     sync::LazyLock,
 };
 
-use shared::util::Call;
 use uuid::Uuid;
 
 pub const HALF_PI: f32 = PI / 2.0;
@@ -81,31 +79,6 @@ impl<'a, T, U, const N: usize, const M: usize, const R: usize>
     fn cross(&'a self, us: &'a [U; M]) -> [(&'a T, &'a U); R] {
         let () = AssertProduct::<N, M, R>::OK;
         array::from_fn(|i| (&self[i / N], &us[i % M]))
-    }
-}
-
-// Search string from position
-pub trait FindFrom {
-    fn find_from<'a, P>(&'a self, pat: P, pos: usize) -> Option<usize>
-    where
-        P: Pattern<'a>;
-}
-
-impl FindFrom for String {
-    fn find_from<'a, P>(&'a self, pat: P, pos: usize) -> Option<usize>
-    where
-        P: Pattern<'a>,
-    {
-        self[pos..].find(pat).map(|idx| idx + pos)
-    }
-}
-
-impl FindFrom for &str {
-    fn find_from<'a, P>(&'a self, pat: P, pos: usize) -> Option<usize>
-    where
-        P: Pattern<'a>,
-    {
-        self[pos..].find(pat).map(|idx| idx + pos)
     }
 }
 
@@ -206,30 +179,5 @@ impl UuidTrait for Uuid {
 
     fn create() -> LazyLock<Uuid> {
         LazyLock::new(|| Uuid::new_v4())
-    }
-}
-
-// Split a vector around an element
-pub trait SplitAround<T> {
-    fn split_around<'a>(&'a self, i: usize) -> (&'a [T], &'a T, &'a [T]);
-
-    fn split_around_mut<'a>(&'a mut self, i: usize) -> (&'a mut [T], &'a mut T, &'a mut [T]);
-}
-
-impl<T> SplitAround<T> for Vec<T> {
-    fn split_around<'a>(&'a self, i: usize) -> (&'a [T], &'a T, &'a [T]) {
-        self.split_at(i).call_into(|(left, mid_right)| {
-            mid_right
-                .split_at(1)
-                .call_into(|(mid, right)| (left, &mid[0], right))
-        })
-    }
-
-    fn split_around_mut<'a>(&'a mut self, i: usize) -> (&'a mut [T], &'a mut T, &'a mut [T]) {
-        self.split_at_mut(i).call_into(|(left, mid_right)| {
-            mid_right
-                .split_at_mut(1)
-                .call_into(|(mid, right)| (left, &mut mid[0], right))
-        })
     }
 }

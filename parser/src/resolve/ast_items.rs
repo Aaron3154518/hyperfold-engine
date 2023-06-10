@@ -11,9 +11,11 @@ use crate::{
     util::end,
 };
 use proc_macro2::{token_stream::IntoIter, TokenStream, TokenTree};
-use shared::util::{Catch, Get, JoinMap};
+use quote::ToTokens;
+use shared::util::{Call, Catch, FindFrom, Get, JoinMap, SplitAround};
 
 use shared::parse_args::{ComponentMacroArgs, GlobalMacroArgs, SystemMacroArgs};
+use syn::{parenthesized, parse_macro_input, spanned::Spanned, Error, Token};
 
 use super::{
     ast_paths::{MacroPaths, Paths},
@@ -56,6 +58,124 @@ pub struct Dependency {
     pub cr_alias: String,
 }
 
+macro_rules! err {
+    ($token: ident, $msg: literal) => {
+        Err(Error::new($token.span(), $msg))
+    };
+
+    ($token: ident, $msg: literal, $($es: ident),+) => {
+        Err({
+            let mut err_ = Error::new($token.span(), $msg);
+            $(err_.combine($es);)*
+            err_
+        })
+    };
+}
+
+macro_rules! parse_expect {
+    ($tokens: ident, $token: ident, $msg: literal) => {
+        match $tokens.parse() {
+            Ok(t) => t,
+            Err(e) => return err!($token, $msg, e),
+        }
+    };
+
+    ($tokens: ident, $type: ty, $token: ident, $msg: literal) => {
+        match $tokens.parse::<$type>() {
+            Ok(t) => t,
+            Err(e) => return err!($token, $msg, e),
+        }
+    };
+}
+
+#[derive(Copy, Clone, Debug)]
+pub enum LabelOp {
+    And,
+    Or,
+}
+
+impl syn::parse::Parse for LabelOp {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        input
+            .parse::<Token!(&&)>()
+            .map(|_| Self::And)
+            .or_else(|_| input.parse::<Token!(||)>().map(|_| Self::Or))
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum LabelItem {
+    Parens {
+        not: bool,
+        body: Box<LabelItem>,
+    },
+    Item {
+        not: bool,
+        ty: Vec<String>,
+    },
+    Op {
+        lhs: Box<LabelItem>,
+        op: LabelOp,
+        rhs: Box<LabelItem>,
+    },
+}
+
+pub fn split(noops: &Vec<LabelItem>, ops: &Vec<LabelOp>, lb: usize, ub: usize) -> LabelItem {
+    match ops
+        .find_from_to(|op| matches!(op, LabelOp::And), lb, ub)
+        .or_else(|| ops.find_from_to(|op| matches!(op, LabelOp::Or), lb, ub))
+    {
+        Some(i) => LabelItem::Op {
+            lhs: Box::new(split(noops, ops, lb, i + lb)),
+            op: ops[i + lb],
+            rhs: Box::new(split(noops, ops, i + lb + 1, ub)),
+        },
+        None => noops[lb].clone(),
+    }
+}
+
+impl syn::parse::Parse for LabelItem {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let mut not = false;
+        while input.parse::<Token!(!)>().is_ok() {
+            not = !not;
+        }
+
+        input.parse::<proc_macro2::Group>().map_or_else(
+            |_| {
+                input.parse::<syn::Type>().map_or_else(
+                    |e| err!(input, "Expected parentheses or ident in label", e),
+                    |ty| match ty {
+                        syn::Type::Path(p) => Ok(Self::Item {
+                            not,
+                            ty: p
+                                .path
+                                .segments
+                                .iter()
+                                .map(|s| s.ident.to_string())
+                                .collect(),
+                        }),
+                        _ => err!(ty, "Expected parentheses or ident in label"),
+                    },
+                )
+            },
+            |g| {
+                let body = Box::new(match syn::parse2(g.stream()) {
+                    Ok(t) => t,
+                    Err(e) => return err!(g, "Expected label expression in parentheses", e),
+                });
+                let mut noops = vec![Self::Parens { not, body }];
+                let mut ops = Vec::new();
+                while let Ok(op) = input.parse::<LabelOp>() {
+                    ops.push(op);
+                    noops.push(parse_expect!(input, LabelItem, g, "Expected NoOp after op"));
+                }
+                Ok(split(&noops, &ops, 0, ops.len()))
+            },
+        )
+    }
+}
+
 #[derive(Debug)]
 pub struct ComponentSetItem {
     var: String,
@@ -64,79 +184,45 @@ pub struct ComponentSetItem {
     is_mut: bool,
 }
 
-#[derive(Debug)]
-pub enum LabelOp {
-    And { lhs: LabelItem, rhs: LabelItem },
-    Or { lhs: LabelItem, rhs: LabelItem },
-    None(LabelItem),
-}
-
-// TODO: use fancy syn parsing, not manual
-// TODO: Parse types, not idents
-impl LabelOp {
-    fn parse(lhs_not: bool, lhs_tt: TokenTree, op: TokenTree, rhs: IntoIter) -> Self {
-        let lhs = match lhs_tt {
-            TokenTree::Group(g) => LabelItem::parse(g),
-            TokenTree::Ident(i) => LabelItem::Item { not: lhs_not, ty: vec![] },
-            _ => panic!("Expected parentheses or item")
-        }
-
-        return match (op, rhs.next()) {
-            (TokenTree::Punct(p1), Some(TokenTree::Punct(p2))) => {
-                match (p1.as_char(), p2.as_char()) {
-                    ('&', '&') => Self::And { lhs: (), rhs: () },
-                    ('|', '|') => Self::Or { lhs: (), rhs: () },
-                    _ => panic!("Expected '&&' or '||'"),
+impl ComponentSetItem {
+    pub fn from(var: String, ty: syn::Type) -> syn::Result<Self> {
+        let span = ty.span();
+        return match ty {
+            syn::Type::Path(ty) => Ok(Self {
+                var,
+                ty: ty
+                    .path
+                    .segments
+                    .iter()
+                    .map(|s| s.ident.to_string())
+                    .collect(),
+                ref_cnt: 0,
+                is_mut: false,
+            }),
+            syn::Type::Reference(ty) => match Self::from(var, *ty.elem) {
+                Ok(mut i) => {
+                    i.ref_cnt += 1;
+                    i.is_mut |= ty.mutability.is_some();
+                    Ok(i)
                 }
-            }
-            _ => panic!("Expected '&&' or '||'"),
+                Err(e) => err!(span, "Couldn't parse component arg type", e),
+            },
+            _ => err!(ty, "Invalid variable type"),
         };
     }
-}
 
-#[derive(Debug)]
-pub enum LabelItem {
-    Parens { not: bool, body: Box<LabelOp> },
-    Item { not: bool, ty: Vec<String> },
-}
-
-impl LabelItem {
-    fn parse(g: proc_macro2::Group) -> Self {
-        let ts = g.stream();
-
-        let mut it = ts.into_iter();
-        match it.next() {
-            Some(mut first_tt) => {
-                let mut not = false;
-                while let TokenTree::Punct(p) = first_tt {
-                    assert_eq!(p.as_char(), '!', "Expected '!'");
-                    not = !not;
-                    first_tt = it.next().catch(format!("Expected NonOp"));
-                }
-                match it.next() {
-                    Some(tt) => {
-                        return Self::Parens {
-                            not: false,
-                            body: Box::new(LabelOp::parse(not, first_tt, tt, it)),
-                        }
-                    }
-                    None => {
-                        return Self::Parens {
-                            not,
-                            body: Box::new(LabelOp::None(LabelItem::parse(match first_tt {
-                                TokenTree::Group(g) => g,
-                                _ => panic!("Expected token group in single None op"),
-                            }))),
-                        }
-                    }
-                }
-            }
-            None => {
-                return Self::Item {
-                    not: false,
-                    ty: Vec::new(),
-                }
-            }
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        // var : type
+        let var = match input.parse::<syn::Ident>() {
+            Ok(i) => i.to_string(),
+            Err(e) => return err!(input, "Expected variable name", e),
+        };
+        if let Err(e) = input.parse::<syn::token::Colon>() {
+            return err!(input, "Expected ':'", e);
+        }
+        match input.parse::<syn::Type>() {
+            Ok(ty) => ComponentSetItem::from(var, ty),
+            Err(e) => err!(input, "Expected variable type", e),
         }
     }
 }
@@ -148,139 +234,47 @@ pub struct ComponentSet {
     pub labels: Option<LabelItem>,
 }
 
-impl ComponentSet {
-    fn parse(cr_idx: usize, path: Vec<String>, ts: TokenStream) -> Self {
+impl syn::parse::Parse for ComponentSet {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let mut _comma: syn::token::Comma;
+
         let mut labels = None;
-        let mut path = Path { cr_idx, path };
 
-        let mut it = ts.into_iter();
-        let mut loc = "at the beginning".to_string();
-        // first ident
-        match it.next().catch(format!("Expected item {loc}")) {
-            TokenTree::Ident(mut i) => {
-                // labels
-                if i == "labels" {
-                    loc = "in labels".to_string();
-                    // "()"
-                    labels = Some(LabelItem::parse(
-                        match it.next().catch(format!("Expected args {loc}")) {
-                            TokenTree::Group(g) => g,
-                            _ => panic!("Expected args group {loc}"),
-                        },
-                    ));
-                    loc = "after labels".to_string();
-                    // ","
-                    match it.next().catch(format!("Missing comma {loc}")) {
-                        TokenTree::Punct(p) => {
-                            assert_eq!(p.as_char(), ',', "Expected comma {loc}")
-                        }
-                        _ => panic!("Expected comma {loc}"),
-                    }
-                    // identifier ident
-                    i = match it.next().catch(format!("Expected ident {loc}")) {
-                        TokenTree::Ident(i) => i,
-                        _ => panic!("Expected identified ident {loc}"),
-                    }
-                }
-
-                // identifier ident
-                path.path.push(i.to_string());
-            }
-            _ => panic!("Expected an ident {loc}"),
+        // First ident
+        let mut first_ident = parse_expect!(input, syn::Ident, input, "Expected ident");
+        if first_ident == "labels" {
+            // Labels
+            labels = Some(parse_expect!(input, input, "Failed to parse labels"));
+            _comma = parse_expect!(input, input, "Expected comma");
+            first_ident = parse_expect!(input, input, "Expected ident");
         }
+
+        let path = Path {
+            cr_idx: 0,
+            path: vec![first_ident.to_string()],
+        };
 
         let mut args = Vec::new();
-        let mut next_tt = it.next();
-        while let Some(mut tt) = next_tt {
-            loc = format!("while parsing component {}", args.len());
-
-            // ","
-            match tt {
-                TokenTree::Punct(p) => assert_eq!(p.as_char(), ',', "Expected comma {loc}"),
-                _ => panic!("Expected comma {loc}"),
-            };
-
-            // var
-            let var = match it.next().catch(format!("Expected parameter name {loc}")) {
-                TokenTree::Ident(i) => i.to_string(),
-                _ => panic!("Expected parameter name {loc}"),
-            };
-
-            // ":"
-            match it.next().catch(format!("Expected colon {loc}")) {
-                TokenTree::Punct(p) => assert_eq!(p.as_char(), ':', "Expected colon {loc}"),
-                _ => panic!("Expected colon {loc}"),
-            }
-
-            tt = it.next().catch(format!("Expected type {loc}"));
-            let mut ref_cnt = 0;
-            // "&"* "'"lifetime?
-            while let TokenTree::Punct(p) = &tt {
-                match p.as_char() {
-                    '&' => {
-                        ref_cnt += 1;
-                        tt = it.next().catch(format!("Expected type {loc}"));
-                    }
-                    '\'' => {
-                        match it.next().catch(format!("Expected lifetime name {loc}")) {
-                            TokenTree::Ident(_) => (),
-                            _ => panic!("Expected lifetime name {loc}"),
-                        }
-                        break;
-                    }
-                    _ => panic!("Expected reference or lifetime {loc}"),
-                }
-            }
-
-            // "mut"? type
-            let mut is_mut = false;
-            let mut ty = Vec::new();
-            match it.next().catch(format!("Expected type name or mut {loc}")) {
-                TokenTree::Ident(mut i) => {
-                    if i == "mut" {
-                        is_mut = true;
-
-                        i = match it.next().catch(format!("Expected type after mut {loc}")) {
-                            TokenTree::Ident(i) => i,
-                            _ => panic!("Expected type after mut {loc}"),
-                        }
-                    }
-
-                    ty.push(i.to_string());
-                }
-                _ => panic!("Expected type name or mut {loc}"),
-            };
-
-            // "::"type*
-            next_tt = it.next();
-            while let Some(TokenTree::Punct(p)) = &next_tt {
-                match p.as_char() {
-                    ':' => {
-                        match it.next().catch(format!("Expected ':' in type {loc}")) {
-                            TokenTree::Punct(p) => {
-                                assert_eq!(p.as_char(), ':', "Expected ':' in type {loc}");
-                                ty.push(match it.next().catch(format!("Expected type {loc}")) {
-                                    TokenTree::Ident(i) => i.to_string(),
-                                    _ => panic!("Expected type {loc}"),
-                                });
-                            }
-                            _ => panic!("Expected ':' in type {loc}"),
-                        }
-                        next_tt = it.next();
-                    }
-                    _ => break,
-                }
-            }
-
-            args.push(ComponentSetItem {
-                var,
-                ty,
-                ref_cnt,
-                is_mut,
-            })
+        while let Result::Ok(_) = input.parse::<syn::token::Comma>() {
+            args.push(match ComponentSetItem::parse(&input) {
+                Ok(t) => t,
+                Err(e) => return err!(input, "Expected argument variable-type pair", e),
+            });
         }
 
-        Self { path, args, labels }
+        Ok(Self { path, args, labels })
+    }
+}
+
+impl ComponentSet {
+    fn parse(cr_idx: usize, path: Vec<String>, ts: TokenStream) -> syn::Result<Self> {
+        syn::parse2::<Self>(ts).map(|mut cs| {
+            cs.path = Path {
+                cr_idx,
+                path: [path, cs.path.path].concat(),
+            };
+            cs
+        })
     }
 }
 
@@ -415,7 +409,6 @@ impl ItemsCrate {
         let components_path = paths.get_macro(MacroPaths::Components);
         for mc in m.macro_calls.iter() {
             if &resolve_path(mc.path.to_vec(), cr, m, crates).get() == components_path {
-                eprintln!("{:#?}", mc.args);
                 eprintln!(
                     "{:#?}",
                     ComponentSet::parse(cr_idx, m.path.to_vec(), mc.args.clone())

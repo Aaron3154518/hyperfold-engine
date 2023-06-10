@@ -33,16 +33,16 @@ pub mod test {
         }
     }
 
-    // crate::components!(@labels);
-    // crate::components!(@labels (!u8));
-    // crate::components!(@labels);
-    // crate::components!(@labels u8);
-    // crate::components!(@labels (u8));
-    // crate::components!(@labels u8 && i8);
-    // crate::components!(@labels (u8 || i8) && !!!u8);
-    // crate::components!(@labels (!(u8 || i8) && u8));
-    // crate::components!(@labels A::B::C);
-    // crate::components!(@labels String || !A::B::C);
+    crate::components!(AA);
+    crate::components!(labels(), Z);
+    crate::components!(labels((!u8)), Y);
+    crate::components!(labels(u8), X);
+    crate::components!(labels((u8)), W);
+    crate::components!(labels(u8 && i8), V);
+    crate::components!(labels((u8 || i8) && !!!u8), U);
+    crate::components!(labels((!(u8 || i8) && u8)), Q);
+    crate::components!(labels(!A::B::C), S);
+    crate::components!(labels(String || !A::B::C), R);
 
     crate::components!(
         labels((TFoo || !A::B::C) && !A::B::C),

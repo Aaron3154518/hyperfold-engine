@@ -1,11 +1,8 @@
-use shared::util::Call;
+use shared::util::{Call, FindFrom};
 
 use crate::{
     sdl2,
-    utils::{
-        rect::{Align, Dimensions, Rect},
-        util::FindFrom,
-    },
+    utils::rect::{Align, Dimensions, Rect},
 };
 
 use super::{

@@ -1,4 +1,4 @@
-use shared::util::Call;
+use shared::util::{Call, SplitAround};
 
 use crate::{
     ecs::{components::Container, entities::Entity, events::core::PreRender},
@@ -7,7 +7,7 @@ use crate::{
     utils::{
         colors::{BLACK, GRAY},
         rect::{Align, Rect},
-        util::{AsType, SplitAround, TryAsType},
+        util::{AsType, TryAsType},
     },
 };
 

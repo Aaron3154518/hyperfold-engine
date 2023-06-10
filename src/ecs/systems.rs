@@ -47,24 +47,24 @@ macro_rules! components {
         (@labels ()) => {};
 
         // S => NoOp
-        (@labels $($tts: tt)*) => {
+        (@labels $($tts: tt)+) => {
             $crate::components!(@no_op $($tts)*);
         };
 
-        (labels $labels: tt, $name: ident, $($n: ident: $t: ty),+) => {
+        (labels $labels: tt, $name: ident $(,$n: ident: $t: ty)*) => {
             $crate::components!(@labels $labels);
-            $crate::components!($name, $($n: $t),*);
+            $crate::components!($name $(,$n: $t)*);
         };
 
-        ($name: ident, $($n: ident: $t: ty),+) => {
+        ($name: ident $(,$n: ident: $t: ty)*) => {
             pub struct $name<'a> {
-                pub eid: &'a crate::_engine::Entity,
-                $(pub $n: $t),*
+                pub eid: &'a crate::_engine::Entity
+                $(,pub $n: $t)*
             }
 
             impl<'a> $name<'a> {
-                pub fn new(eid: &'a crate::_engine::Entity, $($n: $t),*) -> Self {
-                    Self { eid, $($n),* }
+                pub fn new(eid: &'a crate::_engine::Entity $(,$n: $t)*) -> Self {
+                    Self { eid $(,$n)* }
                 }
             }
         };

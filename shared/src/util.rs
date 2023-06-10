@@ -1,6 +1,7 @@
 use std::{
     iter::Enumerate,
     ops::{Add, AddAssign},
+    str::pattern::Pattern,
 };
 
 extern crate alloc;
@@ -384,5 +385,98 @@ impl SplitCollect for str {
         V: FromIterator<T>,
     {
         self.split(sep).map(f).collect()
+    }
+}
+
+// Split a vector around an element
+pub trait SplitAround<T> {
+    fn split_around<'a>(&'a self, i: usize) -> (&'a [T], &'a T, &'a [T]);
+
+    fn split_around_mut<'a>(&'a mut self, i: usize) -> (&'a mut [T], &'a mut T, &'a mut [T]);
+}
+
+pub trait SplitAroundCopy<T> {
+    fn split_around_copy(&self, i: usize) -> (Vec<T>, T, Vec<T>);
+}
+
+impl<T> SplitAround<T> for Vec<T> {
+    fn split_around<'a>(&'a self, i: usize) -> (&'a [T], &'a T, &'a [T]) {
+        self.split_at(i).call_into(|(left, mid_right)| {
+            mid_right
+                .split_at(1)
+                .call_into(|(mid, right)| (left, &mid[0], right))
+        })
+    }
+
+    fn split_around_mut<'a>(&'a mut self, i: usize) -> (&'a mut [T], &'a mut T, &'a mut [T]) {
+        self.split_at_mut(i).call_into(|(left, mid_right)| {
+            mid_right
+                .split_at_mut(1)
+                .call_into(|(mid, right)| (left, &mut mid[0], right))
+        })
+    }
+}
+
+impl<T> SplitAroundCopy<T> for Vec<T>
+where
+    T: Clone,
+{
+    fn split_around_copy(&self, i: usize) -> (Vec<T>, T, Vec<T>) {
+        (self[..i].to_vec(), self[i].clone(), self[i + 1..].to_vec())
+    }
+}
+
+// Search from position
+pub trait FindFrom<'a, P> {
+    fn length(&self) -> usize;
+
+    fn find_from(&'a self, p: P, pos: usize) -> Option<usize> {
+        self.find_from_to(p, pos, self.length())
+    }
+
+    fn find_to(&'a self, p: P, pos: usize) -> Option<usize> {
+        self.find_from_to(p, 0, pos)
+    }
+
+    fn find_from_to(&'a self, p: P, pos1: usize, pos2: usize) -> Option<usize>;
+}
+
+impl<'a, P> FindFrom<'a, P> for String
+where
+    P: Pattern<'a>,
+{
+    fn length(&self) -> usize {
+        self.len()
+    }
+
+    fn find_from_to(&'a self, pat: P, pos1: usize, pos2: usize) -> Option<usize> {
+        self[pos1..pos2].find(pat).map(|idx| idx + pos1)
+    }
+}
+
+impl<'a, P> FindFrom<'a, P> for &str
+where
+    P: Pattern<'a>,
+{
+    fn length(&self) -> usize {
+        self.len()
+    }
+
+    fn find_from_to(&'a self, pat: P, pos1: usize, pos2: usize) -> Option<usize> {
+        self[pos1..pos2].find(pat).map(|idx| idx + pos1)
+    }
+}
+
+impl<'a, F, T> FindFrom<'a, F> for Vec<T>
+where
+    T: 'a,
+    F: Fn(&'a T) -> bool,
+{
+    fn length(&self) -> usize {
+        self.len()
+    }
+
+    fn find_from_to(&'a self, f: F, pos1: usize, pos2: usize) -> Option<usize> {
+        self[pos1..pos2].iter().position(f).map(|idx| idx + pos1)
     }
 }
