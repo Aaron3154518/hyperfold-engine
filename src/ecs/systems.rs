@@ -43,16 +43,13 @@ macro_rules! components {
         // S => e
         (@labels) => {};
 
-        // S => ()
-        (@labels ()) => {};
-
         // S => NoOp
         (@labels $($tts: tt)+) => {
             $crate::components!(@no_op $($tts)*);
         };
 
-        (labels $labels: tt, $name: ident $(,$n: ident: $t: ty)*) => {
-            $crate::components!(@labels $labels);
+        (labels ($($labels: tt)*), $name: ident $(,$n: ident: $t: ty)*) => {
+            $crate::components!(@labels $($labels)*);
             $crate::components!($name $(,$n: $t)*);
         };
 

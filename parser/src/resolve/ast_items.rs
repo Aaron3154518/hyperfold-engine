@@ -113,25 +113,11 @@ pub enum LabelItem {
         not: bool,
         ty: Vec<String>,
     },
-    Op {
+    Expression {
         lhs: Box<LabelItem>,
         op: LabelOp,
         rhs: Box<LabelItem>,
     },
-}
-
-pub fn split(noops: &Vec<LabelItem>, ops: &Vec<LabelOp>, lb: usize, ub: usize) -> LabelItem {
-    match ops
-        .find_from_to(|op| matches!(op, LabelOp::And), lb, ub)
-        .or_else(|| ops.find_from_to(|op| matches!(op, LabelOp::Or), lb, ub))
-    {
-        Some(i) => LabelItem::Op {
-            lhs: Box::new(split(noops, ops, lb, i + lb)),
-            op: ops[i + lb],
-            rhs: Box::new(split(noops, ops, i + lb + 1, ub)),
-        },
-        None => noops[lb].clone(),
-    }
 }
 
 impl syn::parse::Parse for LabelItem {
@@ -160,19 +146,60 @@ impl syn::parse::Parse for LabelItem {
                 )
             },
             |g| {
-                let body = Box::new(match syn::parse2(g.stream()) {
-                    Ok(t) => t,
-                    Err(e) => return err!(g, "Expected label expression in parentheses", e),
-                });
-                let mut noops = vec![Self::Parens { not, body }];
-                let mut ops = Vec::new();
-                while let Ok(op) = input.parse::<LabelOp>() {
-                    ops.push(op);
-                    noops.push(parse_expect!(input, LabelItem, g, "Expected NoOp after op"));
-                }
-                Ok(split(&noops, &ops, 0, ops.len()))
+                syn::parse2::<Expression>(g.stream()).map(|e| Self::Parens {
+                    not,
+                    body: Box::new(e.split()),
+                })
             },
         )
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Expression {
+    noops: Vec<LabelItem>,
+    ops: Vec<LabelOp>,
+}
+
+impl Expression {
+    pub fn split(&self) -> LabelItem {
+        self.split_impl(0, self.ops.len())
+    }
+
+    fn split_impl(&self, lb: usize, ub: usize) -> LabelItem {
+        match self
+            .ops
+            .find_from_to(|op| matches!(op, LabelOp::And), lb, ub)
+            .or_else(|| {
+                self.ops
+                    .find_from_to(|op| matches!(op, LabelOp::Or), lb, ub)
+            }) {
+            Some(i) => LabelItem::Expression {
+                lhs: Box::new(self.split_impl(lb, i)),
+                op: self.ops[i],
+                rhs: Box::new(self.split_impl(i + 1, ub)),
+            },
+            None => self.noops[lb].clone(),
+        }
+    }
+}
+
+impl syn::parse::Parse for Expression {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let body = match input.parse() {
+            Ok(t) => t,
+            Err(e) => return err!(input, "Expected label expression in parentheses", e),
+        };
+        let mut noops = vec![body];
+        let mut ops = Vec::new();
+        while let Ok(op) = input.parse() {
+            ops.push(op);
+            noops.push(match input.parse() {
+                Ok(t) => t,
+                Err(e) => return err!(input, "Expected NoOp after Op", e),
+            });
+        }
+        Ok(Self { noops, ops })
     }
 }
 
@@ -210,7 +237,9 @@ impl ComponentSetItem {
             _ => err!(ty, "Invalid variable type"),
         };
     }
+}
 
+impl syn::parse::Parse for ComponentSetItem {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         // var : type
         let var = match input.parse::<syn::Ident>() {
@@ -220,10 +249,10 @@ impl ComponentSetItem {
         if let Err(e) = input.parse::<syn::token::Colon>() {
             return err!(input, "Expected ':'", e);
         }
-        match input.parse::<syn::Type>() {
-            Ok(ty) => ComponentSetItem::from(var, ty),
-            Err(e) => err!(input, "Expected variable type", e),
-        }
+        ComponentSetItem::from(
+            var,
+            parse_expect!(input, syn::Type, input, "Expected variable type"),
+        )
     }
 }
 
@@ -244,7 +273,20 @@ impl syn::parse::Parse for ComponentSet {
         let mut first_ident = parse_expect!(input, syn::Ident, input, "Expected ident");
         if first_ident == "labels" {
             // Labels
-            labels = Some(parse_expect!(input, input, "Failed to parse labels"));
+            labels = match input.parse::<proc_macro2::Group>() {
+                Ok(g) => {
+                    let stream = g.stream();
+                    if stream.is_empty() {
+                        None
+                    } else {
+                        Some(match syn::parse2::<Expression>(stream) {
+                            Ok(e) => e.split(),
+                            Err(e) => return err!(g, "Failed to parse labels", e),
+                        })
+                    }
+                }
+                Err(e) => return err!(input, "Expected parentheses after labels", e),
+            };
             _comma = parse_expect!(input, input, "Expected comma");
             first_ident = parse_expect!(input, input, "Expected ident");
         }
@@ -256,10 +298,11 @@ impl syn::parse::Parse for ComponentSet {
 
         let mut args = Vec::new();
         while let Result::Ok(_) = input.parse::<syn::token::Comma>() {
-            args.push(match ComponentSetItem::parse(&input) {
-                Ok(t) => t,
-                Err(e) => return err!(input, "Expected argument variable-type pair", e),
-            });
+            args.push(parse_expect!(
+                input,
+                input,
+                "Expected argument variable-tyle pair"
+            ));
         }
 
         Ok(Self { path, args, labels })
@@ -409,10 +452,10 @@ impl ItemsCrate {
         let components_path = paths.get_macro(MacroPaths::Components);
         for mc in m.macro_calls.iter() {
             if &resolve_path(mc.path.to_vec(), cr, m, crates).get() == components_path {
-                eprintln!(
-                    "{:#?}",
-                    ComponentSet::parse(cr_idx, m.path.to_vec(), mc.args.clone())
-                )
+                match ComponentSet::parse(cr_idx, m.path.to_vec(), mc.args.clone()) {
+                    Ok(c) => eprintln!("{c:#?}"),
+                    Err(e) => eprintln!("{e:#?}"),
+                }
             }
         }
 
