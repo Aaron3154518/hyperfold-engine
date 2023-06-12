@@ -1,5 +1,7 @@
+use std::{fmt::Display, ops::Neg};
+
 use proc_macro2::TokenStream;
-use shared::util::FindFrom;
+use shared::util::{FindFrom, JoinMap, NoneOr};
 use syn::{spanned::Spanned, Error, Token};
 
 use super::ast_resolve::Path;
@@ -19,25 +21,34 @@ macro_rules! err {
 }
 
 macro_rules! parse_expect {
-    ($tokens: ident, $token: ident, $msg: literal) => {
+    ($tokens: ident, $msg: literal) => {
         match $tokens.parse() {
             Ok(t) => t,
-            Err(e) => return err!($token, $msg, e),
+            Err(e) => return err!($tokens, $msg, e),
         }
     };
 
-    ($tokens: ident, $type: ty, $token: ident, $msg: literal) => {
+    ($tokens: ident, $type: ty, $msg: literal) => {
         match $tokens.parse::<$type>() {
             Ok(t) => t,
-            Err(e) => return err!($token, $msg, e),
+            Err(e) => return err!($tokens, $msg, e),
         }
     };
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Eq, PartialEq, Copy, Clone, Debug)]
 pub enum LabelOp {
     And,
     Or,
+}
+
+impl LabelOp {
+    pub fn negate(&mut self) {
+        *self = match self {
+            LabelOp::And => LabelOp::Or,
+            LabelOp::Or => LabelOp::And,
+        }
+    }
 }
 
 impl syn::parse::Parse for LabelOp {
@@ -49,21 +60,31 @@ impl syn::parse::Parse for LabelOp {
     }
 }
 
+impl std::fmt::Display for LabelOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            LabelOp::And => "&&",
+            LabelOp::Or => "||",
+        })
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum LabelItem {
-    Parens {
-        not: bool,
-        body: Box<LabelItem>,
-    },
-    Item {
-        not: bool,
-        ty: Vec<String>,
-    },
-    Expression {
-        lhs: Box<LabelItem>,
-        op: LabelOp,
-        rhs: Box<LabelItem>,
-    },
+    Item { not: bool, ty: Vec<String> },
+    Expression { op: LabelOp, items: Vec<LabelItem> },
+}
+
+impl LabelItem {
+    pub fn negate(&mut self) {
+        match self {
+            LabelItem::Item { not, ty } => *not = !*not,
+            LabelItem::Expression { op, items } => {
+                op.negate();
+                items.iter_mut().for_each(|i| i.negate());
+            }
+        }
+    }
 }
 
 impl syn::parse::Parse for LabelItem {
@@ -91,62 +112,130 @@ impl syn::parse::Parse for LabelItem {
                     },
                 )
             },
-            |g| {
-                syn::parse2::<Expression>(g.stream()).map(|e| Self::Parens {
-                    not,
-                    body: Box::new(e.split()),
-                })
-            },
+            |g| syn::parse2::<Expression>(g.stream()).map(|e| e.to_item(not)),
         )
     }
 }
 
+impl std::fmt::Display for LabelItem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LabelItem::Item { not, ty } => f.write_fmt(format_args!(
+                "{}{}",
+                if *not { "!" } else { "" },
+                ty.join("::")
+            )),
+            LabelItem::Expression { op, items } => f.write_fmt(format_args!(
+                "({})",
+                items
+                    .map_vec(|i| format!("{i}"))
+                    .join(format!(" {op} ").as_str())
+            )),
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
-pub struct Expression {
-    noops: Vec<LabelItem>,
-    ops: Vec<LabelOp>,
+pub enum Expression {
+    Item(LabelItem),
+    Expr {
+        first: LabelItem,
+        noops: Vec<LabelItem>,
+        ops: Vec<LabelOp>,
+    },
 }
 
 impl Expression {
-    pub fn split(&self) -> LabelItem {
-        self.split_impl(0, self.ops.len())
-    }
-
-    fn split_impl(&self, lb: usize, ub: usize) -> LabelItem {
-        match self
-            .ops
-            .find_from_to(|op| matches!(op, LabelOp::And), lb, ub)
-            .or_else(|| {
-                self.ops
-                    .find_from_to(|op| matches!(op, LabelOp::Or), lb, ub)
-            }) {
-            Some(i) => LabelItem::Expression {
-                lhs: Box::new(self.split_impl(lb, i)),
-                op: self.ops[i],
-                rhs: Box::new(self.split_impl(i + 1, ub)),
-            },
-            None => self.noops[lb].clone(),
+    pub fn to_item(self, neg: bool) -> LabelItem {
+        let mut item = match self {
+            Expression::Item(i) => i,
+            Expression::Expr { first, noops, ops } => {
+                let mut get_item = |items: Vec<LabelItem>, op: LabelOp| {
+                    if items.len() == 1 {
+                        items.into_iter().next().expect("This will not fail")
+                    } else {
+                        // Combine expressions with the same operation
+                        let items = items.into_iter().fold(Vec::new(), |mut items, item| {
+                            match item {
+                                LabelItem::Item { not, ty } => {
+                                    items.push(LabelItem::Item { not, ty })
+                                }
+                                LabelItem::Expression {
+                                    op: exp_op,
+                                    items: exp_items,
+                                } => {
+                                    if op == exp_op {
+                                        items.extend(exp_items);
+                                    } else {
+                                        items.push(LabelItem::Expression {
+                                            op: exp_op,
+                                            items: exp_items,
+                                        });
+                                    }
+                                }
+                            }
+                            items
+                        });
+                        LabelItem::Expression { op, items }
+                    }
+                };
+                let mut ors = Vec::new();
+                let mut ands = vec![first];
+                for (item, op) in noops.into_iter().zip(ops.into_iter()) {
+                    match op {
+                        LabelOp::And => ands.push(item),
+                        LabelOp::Or => {
+                            ors.push(get_item(ands, LabelOp::And));
+                            ands = vec![item];
+                        }
+                    }
+                }
+                ors.push(get_item(ands, LabelOp::And));
+                get_item(ors, LabelOp::Or)
+            }
+        };
+        if neg {
+            item.negate();
         }
+        item
     }
 }
 
 impl syn::parse::Parse for Expression {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let body = match input.parse() {
+        let first = match input.parse() {
             Ok(t) => t,
             Err(e) => return err!(input, "Expected label expression in parentheses", e),
         };
-        let mut noops = vec![body];
-        let mut ops = Vec::new();
-        while let Ok(op) = input.parse() {
-            ops.push(op);
-            noops.push(match input.parse() {
-                Ok(t) => t,
-                Err(e) => return err!(input, "Expected NoOp after Op", e),
-            });
+
+        match input.parse() {
+            Ok(op) => {
+                let mut noops = vec![parse_expect!(input, "Expected NoOp after Op")];
+                let mut ops = vec![op];
+
+                while let Ok(op) = input.parse() {
+                    ops.push(op);
+                    noops.push(parse_expect!(input, "Expected NoOp after Op"));
+                }
+
+                Ok(Self::Expr { first, noops, ops })
+            }
+            Err(_) => Ok(Self::Item(first)),
         }
-        Ok(Self { noops, ops })
     }
+}
+
+#[derive(Clone, Debug)]
+pub enum LabelNode {
+    Item {
+        not: bool,
+        ty: Vec<String>,
+    },
+    Expression {
+        lhs: Box<LabelItem>,
+        op: LabelOp,
+        rhs: Box<LabelItem>,
+    },
 }
 
 #[derive(Debug)]
@@ -197,7 +286,7 @@ impl syn::parse::Parse for ComponentSetItem {
         }
         ComponentSetItem::from(
             var,
-            parse_expect!(input, syn::Type, input, "Expected variable type"),
+            parse_expect!(input, syn::Type, "Expected variable type"),
         )
     }
 }
@@ -209,52 +298,6 @@ pub struct ComponentSet {
     pub labels: Option<LabelItem>,
 }
 
-impl syn::parse::Parse for ComponentSet {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let mut _comma: syn::token::Comma;
-
-        let mut labels = None;
-
-        // First ident
-        let mut first_ident = parse_expect!(input, syn::Ident, input, "Expected ident");
-        if first_ident == "labels" {
-            // Labels
-            labels = match input.parse::<proc_macro2::Group>() {
-                Ok(g) => {
-                    let stream = g.stream();
-                    if stream.is_empty() {
-                        None
-                    } else {
-                        Some(match syn::parse2::<Expression>(stream) {
-                            Ok(e) => e.split(),
-                            Err(e) => return err!(g, "Failed to parse labels", e),
-                        })
-                    }
-                }
-                Err(e) => return err!(input, "Expected parentheses after labels", e),
-            };
-            _comma = parse_expect!(input, input, "Expected comma");
-            first_ident = parse_expect!(input, input, "Expected ident");
-        }
-
-        let path = Path {
-            cr_idx: 0,
-            path: vec![first_ident.to_string()],
-        };
-
-        let mut args = Vec::new();
-        while let Result::Ok(_) = input.parse::<syn::token::Comma>() {
-            args.push(parse_expect!(
-                input,
-                input,
-                "Expected argument variable-tyle pair"
-            ));
-        }
-
-        Ok(Self { path, args, labels })
-    }
-}
-
 impl ComponentSet {
     pub fn parse(cr_idx: usize, path: Vec<String>, ts: TokenStream) -> syn::Result<Self> {
         syn::parse2::<Self>(ts).map(|mut cs| {
@@ -264,5 +307,60 @@ impl ComponentSet {
             };
             cs
         })
+    }
+}
+
+impl syn::parse::Parse for ComponentSet {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let mut _comma: syn::token::Comma;
+
+        let mut labels = None;
+
+        // First ident
+        let mut first_ident = parse_expect!(input, syn::Ident, "Expected ident");
+        if first_ident == "labels" {
+            // Labels
+            labels = match input.parse::<proc_macro2::Group>() {
+                Ok(g) => {
+                    let stream = g.stream();
+                    if stream.is_empty() {
+                        None
+                    } else {
+                        Some(match syn::parse2::<Expression>(stream) {
+                            Ok(e) => e.to_item(false),
+                            Err(e) => return err!(g, "Failed to parse labels", e),
+                        })
+                    }
+                }
+                Err(e) => return err!(input, "Expected parentheses after labels", e),
+            };
+            _comma = parse_expect!(input, "Expected comma");
+            first_ident = parse_expect!(input, "Expected ident");
+        }
+
+        let path = Path {
+            cr_idx: 0,
+            path: vec![first_ident.to_string()],
+        };
+
+        let mut args = Vec::new();
+        while let Result::Ok(_) = input.parse::<syn::token::Comma>() {
+            args.push(parse_expect!(input, "Expected argument variable-type pair"));
+        }
+
+        Ok(Self { path, args, labels })
+    }
+}
+
+impl std::fmt::Display for ComponentSet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!(
+            "{{\n{:#?}\n{:#?}\nLabels: {}\n}}",
+            self.path,
+            self.args,
+            self.labels
+                .as_ref()
+                .map_or(String::new(), |l| format!("{l}"))
+        ))
     }
 }

@@ -191,7 +191,7 @@ impl ItemsCrate {
         for mc in m.macro_calls.iter() {
             if &resolve_path(mc.path.to_vec(), cr, m, crates).get() == components_path {
                 match ComponentSet::parse(cr_idx, m.path.to_vec(), mc.args.clone()) {
-                    Ok(c) => eprintln!("{c:#?}"),
+                    Ok(c) => eprintln!("{c}"),
                     Err(e) => eprintln!("{e:#?}"),
                 }
             }

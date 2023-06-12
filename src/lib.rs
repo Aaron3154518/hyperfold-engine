@@ -40,7 +40,7 @@ pub mod test {
     crate::components!(labels((u8)), W);
     crate::components!(labels(u8 && i8), V);
     crate::components!(labels((u8 || i8) && !!!u8), U);
-    crate::components!(labels((!(u8 || i8) && u8)), Q);
+    crate::components!(labels((!(u8 || !i8) && u8)), Q);
     crate::components!(labels(!A::B::C), S);
     crate::components!(labels(String || !A::B::C), R);
 
