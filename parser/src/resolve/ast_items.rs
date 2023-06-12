@@ -79,7 +79,7 @@ pub trait ParseMacroCall
 where
     Self: Sized,
 {
-    fn parse(cr: &Crate, m: &Mod, ts: TokenStream) -> syn::Result<Self>;
+    fn parse(cr: &Crate, m: &Mod, crates: &Vec<Crate>, ts: TokenStream) -> syn::Result<Self>;
 
     fn update_mod(&self, m: &mut Mod);
 }
@@ -121,7 +121,7 @@ impl ItemsCrate {
                 .filter_map(|mc| {
                     (&resolve_path(mc.path.to_vec(), cr, m, crates).get() == macro_path)
                         .then_some(())
-                        .and_then(|_| T::parse(cr, m, mc.args.clone()).ok())
+                        .and_then(|_| T::parse(cr, m, crates, mc.args.clone()).ok())
                 })
                 .collect(),
             mods: m

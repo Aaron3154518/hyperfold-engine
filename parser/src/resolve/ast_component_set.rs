@@ -1,15 +1,21 @@
-use std::{fmt::Display, ops::Neg};
+use std::{collections::VecDeque, fmt::Display, ops::Neg};
 
 use proc_macro2::TokenStream;
-use shared::util::{Call, FindFrom, JoinMap, NoneOr};
+use shared::util::{Call, FindFrom, Get, JoinMap, NoneOr};
 use syn::{spanned::Spanned, Error, Token};
 
-use crate::parse::{
-    ast_crate::Crate,
-    ast_mod::{Mod, Symbol},
+use crate::{
+    parse::{
+        ast_crate::Crate,
+        ast_mod::{Mod, Symbol},
+    },
+    resolve::ast_resolve::resolve_path,
 };
 
-use super::{ast_items::ParseMacroCall, ast_resolve::Path};
+use super::{
+    ast_items::ParseMacroCall,
+    ast_resolve::{resolve, Path},
+};
 
 macro_rules! err {
     ($token: ident, $msg: literal) => {
@@ -76,7 +82,7 @@ impl std::fmt::Display for LabelOp {
 
 #[derive(Clone, Debug)]
 pub enum LabelItem {
-    Item { not: bool, ty: Vec<String> },
+    Item { not: bool, ty: Path },
     Expression { op: LabelOp, items: Vec<LabelItem> },
 }
 
@@ -106,14 +112,17 @@ impl syn::parse::Parse for LabelItem {
                     |ty| match ty {
                         syn::Type::Path(p) => Ok(Self::Item {
                             not,
-                            ty: p
-                                .path
-                                .segments
-                                .iter()
-                                .map(|s| s.ident.to_string())
-                                .collect(),
+                            ty: Path {
+                                cr_idx: 0,
+                                path: p
+                                    .path
+                                    .segments
+                                    .iter()
+                                    .map(|s| s.ident.to_string())
+                                    .collect(),
+                            },
                         }),
-                        _ => err!(ty, "Expected parentheses or ident in label"),
+                        _ => err!(ty, "Invalid type in label"),
                     },
                 )
             },
@@ -128,7 +137,7 @@ impl std::fmt::Display for LabelItem {
             LabelItem::Item { not, ty } => f.write_fmt(format_args!(
                 "{}{}",
                 if *not { "!" } else { "" },
-                ty.join("::")
+                ty.path.join("::")
             )),
             LabelItem::Expression { op, items } => f.write_fmt(format_args!(
                 "({})",
@@ -234,7 +243,7 @@ impl syn::parse::Parse for Expression {
 pub enum LabelNode {
     Item {
         not: bool,
-        ty: Vec<String>,
+        ty: Path,
     },
     Expression {
         lhs: Box<LabelItem>,
@@ -246,7 +255,7 @@ pub enum LabelNode {
 #[derive(Debug)]
 pub struct ComponentSetItem {
     var: String,
-    ty: Vec<String>,
+    ty: Path,
     ref_cnt: usize,
     is_mut: bool,
 }
@@ -257,12 +266,15 @@ impl ComponentSetItem {
         return match ty {
             syn::Type::Path(ty) => Ok(Self {
                 var,
-                ty: ty
-                    .path
-                    .segments
-                    .iter()
-                    .map(|s| s.ident.to_string())
-                    .collect(),
+                ty: Path {
+                    cr_idx: 0,
+                    path: ty
+                        .path
+                        .segments
+                        .iter()
+                        .map(|s| s.ident.to_string())
+                        .collect(),
+                },
                 ref_cnt: 0,
                 is_mut: false,
             }),
@@ -304,12 +316,27 @@ pub struct ComponentSet {
 }
 
 impl ParseMacroCall for ComponentSet {
-    fn parse(cr: &Crate, m: &Mod, ts: TokenStream) -> syn::Result<Self> {
+    fn parse(cr: &Crate, m: &Mod, crates: &Vec<Crate>, ts: TokenStream) -> syn::Result<Self> {
         syn::parse2::<Self>(ts).map(|mut cs| {
             cs.path = Path {
                 cr_idx: cr.idx,
                 path: [m.path.to_vec(), cs.path.path].concat(),
             };
+            for item in cs.args.iter_mut() {
+                item.ty = resolve_path(item.ty.path.to_vec(), cr, m, crates).get();
+            }
+            if let Some(root) = &mut cs.labels {
+                let mut labels = VecDeque::new();
+                labels.push_back(root);
+                while let Some(node) = labels.pop_front() {
+                    match node {
+                        LabelItem::Item { not, ty } => {
+                            *ty = resolve_path(ty.path.to_vec(), cr, m, crates).get()
+                        }
+                        LabelItem::Expression { op, items } => labels.extend(items),
+                    }
+                }
+            }
             cs
         })
     }
