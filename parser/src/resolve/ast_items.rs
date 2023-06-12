@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{collections::VecDeque, path::PathBuf};
 
 use crate::{
     codegen::mods::add_traits,
@@ -75,6 +75,20 @@ pub struct ItemsCrate {
     pub component_sets: Vec<ComponentSet>,
 }
 
+pub trait ParseMacroCall
+where
+    Self: Sized,
+{
+    fn parse(cr: &Crate, m: &Mod, ts: TokenStream) -> syn::Result<Self>;
+
+    fn update_mod(&self, m: &mut Mod);
+}
+
+struct MacroCalls<T> {
+    calls: Vec<T>,
+    mods: Vec<MacroCalls<T>>,
+}
+
 impl ItemsCrate {
     pub fn new() -> Self {
         Self {
@@ -91,21 +105,78 @@ impl ItemsCrate {
         }
     }
 
-    pub fn parse(paths: &Paths, crates: &Vec<Crate>) -> Vec<Self> {
+    fn parse_macro_calls<T>(
+        macro_path: &Path,
+        m: &Mod,
+        cr: &Crate,
+        crates: &Vec<Crate>,
+    ) -> MacroCalls<T>
+    where
+        T: ParseMacroCall,
+    {
+        MacroCalls {
+            calls: m
+                .macro_calls
+                .iter()
+                .filter_map(|mc| {
+                    (&resolve_path(mc.path.to_vec(), cr, m, crates).get() == macro_path)
+                        .then_some(())
+                        .and_then(|_| T::parse(cr, m, mc.args.clone()).ok())
+                })
+                .collect(),
+            mods: m
+                .mods
+                .map_vec(|m| Self::parse_macro_calls(macro_path, m, cr, crates)),
+        }
+    }
+
+    fn update_macro_calls<T>(macro_calls: MacroCalls<T>, m: &mut Mod) -> Vec<T>
+    where
+        T: ParseMacroCall,
+    {
+        let mut calls = macro_calls.calls;
+        calls.iter().for_each(|c| c.update_mod(m));
+        for (macro_calls, m) in macro_calls.mods.into_iter().zip(m.mods.iter_mut()) {
+            calls.extend(Self::update_macro_calls(macro_calls, m));
+        }
+        calls
+    }
+
+    pub fn parse(paths: &Paths, crates: &mut Vec<Crate>) -> Vec<Self> {
         // Skip macros crate
-        let mut items = crates[..end(&crates, 1)].map_vec(|cr| {
-            let mut ic = ItemsCrate::new();
-            ic.parse_crate(cr, &paths, &crates);
+        let last = end(&crates, 1);
+        let parse_crates = &crates[..last];
+        let mut items = parse_crates.map_vec(|_| ItemsCrate::new());
+
+        // Pass 1: Parse component set macro calls
+        let components_path = paths.get_macro(MacroPaths::Components);
+        let comp_sets = parse_crates
+            .map_vec(|cr| Self::parse_macro_calls(components_path, &cr.main, cr, crates));
+
+        let mut parse_crates = &mut crates[..last];
+
+        // Pass 2: Update mods with component sets
+        for ((item, comp_sets), cr) in items
+            .iter_mut()
+            .zip(comp_sets.into_iter())
+            .zip(parse_crates)
+        {
+            item.component_sets = Self::update_macro_calls(comp_sets, &mut cr.main);
+        }
+
+        let parse_crates = &crates[..last];
+
+        for (item, cr) in items.iter_mut().zip(parse_crates) {
+            item.parse_crate(cr, &paths, &crates);
             // Remove macros crate as crate dependency
-            if let Some(i) = ic
+            if let Some(i) = item
                 .dependencies
                 .iter()
                 .position(|d| d.cr_idx == crates.len() - 1)
             {
-                ic.dependencies.swap_remove(i);
+                item.dependencies.swap_remove(i);
             }
-            ic
-        });
+        }
         add_traits(&mut items);
         items
     }
@@ -180,19 +251,6 @@ impl ItemsCrate {
                             break;
                         }
                     }
-                }
-            }
-        }
-
-        // Todo: needs to happen in separate pass within ast_mod
-        // 1: Match "components!"; Parse args into blackbox types; Add export type to mod
-        // 2: Do resolution pass; Resolve all parse args + labels
-        let components_path = paths.get_macro(MacroPaths::Components);
-        for mc in m.macro_calls.iter() {
-            if &resolve_path(mc.path.to_vec(), cr, m, crates).get() == components_path {
-                match ComponentSet::parse(cr_idx, m.path.to_vec(), mc.args.clone()) {
-                    Ok(c) => eprintln!("{c}"),
-                    Err(e) => eprintln!("{e:#?}"),
                 }
             }
         }

@@ -35,8 +35,7 @@ pub struct MacroCall {
 #[derive(Clone, Debug)]
 pub struct Symbol {
     pub ident: String,
-    // Use stmts: Includes ident/alias
-    // Other items: Doesn't include ident
+    // Include ident (or alias for use stmts)
     pub path: Vec<String>,
     pub public: bool,
 }

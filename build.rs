@@ -139,11 +139,11 @@ pub fn main() {
     //     .collect::<Vec<_>>();
 
     // TODO: hardcoded
-    let (crates, paths) = Crate::parse(PathBuf::from("../"));
+    let (mut crates, paths) = Crate::parse(PathBuf::from("../"));
 
     // eprintln!("{crates:#?}");
 
-    let mut items = ItemsCrate::parse(&paths, &crates);
+    let mut items = ItemsCrate::parse(&paths, &mut crates);
 
     // eprintln!("{items:#?}");
 

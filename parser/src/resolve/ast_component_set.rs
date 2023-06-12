@@ -1,10 +1,15 @@
 use std::{fmt::Display, ops::Neg};
 
 use proc_macro2::TokenStream;
-use shared::util::{FindFrom, JoinMap, NoneOr};
+use shared::util::{Call, FindFrom, JoinMap, NoneOr};
 use syn::{spanned::Spanned, Error, Token};
 
-use super::ast_resolve::Path;
+use crate::parse::{
+    ast_crate::Crate,
+    ast_mod::{Mod, Symbol},
+};
+
+use super::{ast_items::ParseMacroCall, ast_resolve::Path};
 
 macro_rules! err {
     ($token: ident, $msg: literal) => {
@@ -298,15 +303,28 @@ pub struct ComponentSet {
     pub labels: Option<LabelItem>,
 }
 
-impl ComponentSet {
-    pub fn parse(cr_idx: usize, path: Vec<String>, ts: TokenStream) -> syn::Result<Self> {
+impl ParseMacroCall for ComponentSet {
+    fn parse(cr: &Crate, m: &Mod, ts: TokenStream) -> syn::Result<Self> {
         syn::parse2::<Self>(ts).map(|mut cs| {
             cs.path = Path {
-                cr_idx,
-                path: [path, cs.path.path].concat(),
+                cr_idx: cr.idx,
+                path: [m.path.to_vec(), cs.path.path].concat(),
             };
             cs
         })
+    }
+
+    fn update_mod(&self, m: &mut Mod) {
+        m.symbols.push(Symbol {
+            ident: self
+                .path
+                .path
+                .last()
+                .expect("Empty component set path")
+                .to_string(),
+            path: self.path.path.to_vec(),
+            public: true,
+        });
     }
 }
 
