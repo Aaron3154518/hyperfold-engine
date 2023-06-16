@@ -8,6 +8,8 @@ use quote::format_ident;
 use quote::quote;
 use regex::Regex;
 
+use crate::validate::ast_system::FnArgResult;
+use crate::validate::constants::component_set_var;
 use crate::validate::util::ItemIndex;
 use crate::{
     codegen::{
@@ -117,128 +119,31 @@ impl System {
         sys.name = quote!(#cr_path::#path);
         sys.is_init = system.attr_args.is_init;
         sys.args = system.args.map_vec(|arg| {
-            match arg
-                // Entity ID
-                .to_eid(paths)
-                .map(|_| {
-                    arg.validate_ref(1, &mut validate.errs);
-                    arg.validate_mut(false, &mut validate.errs);
-                    validate.add_eid();
-                    quote!(#eid)
-                })
-                // Component
-                .or_else(|| {
-                    arg.to_component(crates).map(|(cr_i, c_i, _)| {
-                        arg.validate_ref(1, &mut validate.errs);
-                        validate.add_component(arg, (cr_i, c_i));
-                        let var = format_ident!("{}", component_var(cr_i, c_i));
-                        let tt = quote!(#var);
-                        sys.c_args.push((cr_i, c_i));
-                        tt
-                    })
-                })
-                // Global
-                .or_else(|| {
-                    arg.to_global(crates).map(|(cr_i, g_i, g_args)| {
-                        arg.validate_ref(1, &mut validate.errs);
-                        if g_args.is_const {
-                            arg.validate_mut(false, &mut validate.errs);
-                        }
-                        validate.add_global(arg, (cr_i, g_i));
-                        let var = format_ident!("{}", global_var(cr_i, g_i));
-                        let tt = quote!(&mut #gfoo.#var);
-                        sys.g_args.push((cr_i, g_i));
-                        tt
-                    })
-                })
-                // Event
-                .or_else(|| {
-                    arg.to_event(crates).map(|(cr_i, e_i)| {
-                        arg.validate_ref(1, &mut validate.errs);
-                        arg.validate_mut(false, &mut validate.errs);
-                        validate.add_event(arg);
-                        sys.event = Some((cr_i, e_i)); // format_ident!("{}", event_variant(cr_i, e_i));
+            arg.validate(crates, &mut validate)
+                .map(|arg| match arg {
+                    FnArgResult::Global((cr_i, i)) => {
+                        sys.g_args.push((cr_i, i));
+                        let var = format_ident!("{}", global_var(cr_i, i));
+                        quote!(&mut #gfoo.#var)
+                    }
+                    FnArgResult::Event((cr_i, i)) => {
+                        sys.event = Some((cr_i, i));
                         quote!(#e_ident)
-                    })
+                    }
+                    FnArgResult::Vec((cr_i, i)) => {
+                        let var = format_ident!("{}", component_set_var(cr_i, i));
+                        quote!(#var)
+                    }
                 })
-                // Trait
-                .or_else(|| {
-                    // This assumes the traits are all at the beginning of the globals list
-                    arg.to_trait(crates).map(|(cr_i, g_i)| {
-                        arg.validate_ref(1, &mut validate.errs);
-                        validate.add_global(arg, (cr_i, g_i));
-                        let var = format_ident!("{}", global_var(cr_i, g_i));
-                        let tt = quote!(&mut #gfoo.#var);
-                        sys.g_args.push((cr_i, g_i));
-                        tt
-                    })
-                })
-                // Label
-                .or_else(|| {
-                    arg.to_label(paths).map(|(l_ty, args)| {
-                        arg.validate_ref(0, &mut validate.errs);
-                        let args = args
-                            .iter()
-                            .filter_map(|a| {
-                                a.to_component(crates).map_or_else(
-                                    || {
-                                        &mut validate.errs.push(format!(
-                                            "Label expects Component type, found: {}",
-                                            a
-                                        ));
-                                        None
-                                    },
-                                    |(cr_i, c_i, _)| Some((cr_i, c_i)),
-                                )
-                            })
-                            .collect::<HashSet<_>>();
-                        match l_ty {
-                            LabelType::And => sys.and_labels.extend(args.into_iter()),
-                            LabelType::Or => sys.or_labels.push(args),
-                            LabelType::Nand => sys.nand_labels.push(args),
-                            LabelType::Nor => sys.nor_labels.extend(args.into_iter()),
-                        }
-                        quote!(std::marker::PhantomData)
-                    })
-                })
-                // Container
-                .or_else(|| {
-                    arg.to_container(paths).map(|args| {
-                        arg.validate_ref(0, &mut validate.errs);
-                        validate.add_container(arg);
-                        sys.is_vec = true;
-                        (sys.c_args, sys.v_types) = (Vec::new(), Vec::new());
-                        for a in args.iter() {
-                            if a.to_eid(paths).is_some() {
-                                a.validate_ref(1, &mut validate.errs);
-                                a.validate_mut(false, &mut validate.errs);
-                                sys.v_types.push(ContainerArg::EntityId);
-                            } else if let Some((cr_i, c_i, _)) = a.to_component(crates) {
-                                a.validate_ref(1, &mut validate.errs);
-                                let var = format_ident!("{}", component_var(cr_i, c_i));
-                                sys.c_args.push((cr_i, c_i));
-                                sys.v_types
-                                    .push(ContainerArg::Component(cr_i, c_i, a.mutable))
-                            } else {
-                                validate.errs.push(format!(
-                                    "Container expects Component or Entity ID type, found: {}",
-                                    a
-                                ));
-                            }
-                        }
-                        quote!(#v_ident)
-                    })
-                }) {
-                Some(a) => a,
-                None => {
+                .unwrap_or_else(|| {
                     validate
                         .errs
                         .push(format!("Argument: \"{}\" is not a known type", arg));
                     quote!()
-                }
-            }
+                })
         });
-        validate.validate(&system.attr_args);
+
+        validate.validate(&system.attr_args, crates);
         if !validate.errs.is_empty() {
             panic!(
                 "\n\nIn system: \"{}()\"\n{}\n\n",

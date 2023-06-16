@@ -1,5 +1,6 @@
 use std::{fmt::Display, path::PathBuf};
 
+use quote::ToTokens;
 use shared::util::Catch;
 
 use crate::{
@@ -16,10 +17,8 @@ pub enum FnArgType {
     Path(Path),
     // &dyn Type
     Trait(Path),
-    // Container<Type>
-    SContainer(Path, Box<FnArg>),
-    // Container<(Type, Type, ...)>
-    Container(Path, Vec<FnArg>),
+    // Vec<Type>
+    Vec(Path),
 }
 
 impl std::fmt::Display for FnArgType {
@@ -27,20 +26,7 @@ impl std::fmt::Display for FnArgType {
         match self {
             FnArgType::Path(p) => f.write_str(p.path.join("::").as_str()),
             FnArgType::Trait(p) => f.write_str(format!("dyn {}", p.path.join("::")).as_str()),
-            FnArgType::Container(p, v) => f.write_str(
-                format!(
-                    "{}<({})>",
-                    p.path.join("::"),
-                    v.iter()
-                        .map(|a| format!("{}", a))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )
-                .as_str(),
-            ),
-            FnArgType::SContainer(p, a) => {
-                f.write_str(format!("{}<({})>", p.path.join("::"), a).as_str())
-            }
+            FnArgType::Vec(p) => f.write_str(format!("Vec<{}>", p.path.join("::")).as_str()),
         }
     }
 }
@@ -73,42 +59,25 @@ impl FnArg {
     fn parse_type(&mut self, cr_idx: usize, super_path: &Vec<String>, ty: &syn::Type) {
         match ty {
             syn::Type::Path(p) => {
-                // Type container with generic tuple
+                // Type with generic arguments
                 if let Some(syn::PathArguments::AngleBracketed(ab)) =
                     p.path.segments.last().map(|s| &s.arguments)
                 {
-                    if let Some(a) = ab.args.first() {
-                        self.ty = match a {
-                            syn::GenericArgument::Type(t) => match t {
-                                syn::Type::Tuple(tup) => {
-                                    let mut v = Vec::new();
-                                    for tup_ty in tup.elems.iter() {
-                                        let mut arg = FnArg::new();
-                                        arg.parse_type(cr_idx, super_path, &tup_ty);
-                                        v.push(arg);
-                                    }
-                                    FnArgType::Container(
-                                        Path {
-                                            cr_idx,
-                                            path: parse_syn_path(super_path, &p.path),
-                                        },
-                                        v,
-                                    )
-                                }
-                                syn::Type::Path(_) => {
-                                    let mut arg = FnArg::new();
-                                    arg.parse_type(cr_idx, super_path, t);
-                                    FnArgType::SContainer(
-                                        Path {
-                                            cr_idx,
-                                            path: parse_syn_path(super_path, &p.path),
-                                        },
-                                        Box::new(arg),
-                                    )
-                                }
-                                _ => panic!("Unknown generic argument"),
-                            },
-                            _ => panic!("Missing generic argument"),
+                    // Vec
+                    if p.path.is_ident("Vec") {
+                        self.ty = match ab.args.iter().collect::<Vec<_>>()[..] {
+                            [syn::GenericArgument::Type(syn::Type::Path(p))] => {
+                                FnArgType::Vec(Path {
+                                    cr_idx,
+                                    path: parse_syn_path(super_path, &p.path),
+                                })
+                            }
+                            _ => {
+                                panic!(
+                                    "Expected single type path inside Vec<>, found {}",
+                                    ab.args.to_token_stream().to_string()
+                                )
+                            }
                         }
                     }
                 // Normal type
@@ -145,15 +114,7 @@ impl FnArg {
     pub fn resolve_paths(&mut self, cr: &Crate, m: &Mod, crates: &Vec<Crate>) {
         // Resolve all paths
         let p = match &mut self.ty {
-            FnArgType::Path(p) | FnArgType::Trait(p) => p,
-            FnArgType::SContainer(p, arg) => {
-                arg.resolve_paths(cr, m, crates);
-                p
-            }
-            FnArgType::Container(p, args) => {
-                args.iter_mut().for_each(|a| a.resolve_paths(cr, m, crates));
-                p
-            }
+            FnArgType::Path(p) | FnArgType::Trait(p) | FnArgType::Vec(p) => p,
         };
         *p = resolve_path(p.path.to_vec(), cr, m, crates).catch(format!(
             "Could not find argument type: \"{}\" in crate {}",

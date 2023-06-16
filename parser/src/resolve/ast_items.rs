@@ -72,7 +72,7 @@ pub struct ItemsCrate {
     pub events: Vec<Event>,
     pub systems: Vec<System>,
     pub dependencies: Vec<Dependency>,
-    pub component_sets: Vec<ComponentSet>,
+    pub component_sets: Vec<component_set::ComponentSet>,
 }
 
 pub trait ParseMacroCall
@@ -103,6 +103,44 @@ impl ItemsCrate {
             dependencies: Vec::new(),
             component_sets: Vec::new(),
         }
+    }
+
+    pub fn find_component<'a>(&'a self, p: &Path) -> Option<(usize, &'a Component)> {
+        self.components
+            .iter()
+            .enumerate()
+            .find_map(|(i, c)| (&c.path == p).then_some((i, c)))
+    }
+
+    pub fn find_global<'a>(&'a self, p: &Path) -> Option<(usize, &'a Global)> {
+        self.globals
+            .iter()
+            .enumerate()
+            .find_map(|(i, g)| (&g.path == p).then_some((i, g)))
+    }
+
+    pub fn find_trait<'a>(&'a self, p: &Path) -> Option<(usize, &'a Trait)> {
+        self.traits
+            .iter()
+            .enumerate()
+            .find_map(|(i, t)| (t.path.path == p.path).then_some((i, t)))
+    }
+
+    pub fn find_event<'a>(&'a self, p: &Path) -> Option<(usize, &'a Event)> {
+        self.events
+            .iter()
+            .enumerate()
+            .find_map(|(i, e)| (&e.path == p).then_some((i, e)))
+    }
+
+    pub fn find_component_set<'a>(
+        &'a self,
+        p: &Path,
+    ) -> Option<(usize, &'a component_set::ComponentSet)> {
+        self.component_sets
+            .iter()
+            .enumerate()
+            .find_map(|(i, cs)| (&cs.path == p).then_some((i, cs)))
     }
 
     fn parse_macro_calls<T>(
@@ -148,24 +186,24 @@ impl ItemsCrate {
         let parse_crates = &crates[..last];
         let mut items = parse_crates.map_vec(|_| ItemsCrate::new());
 
-        // Pass 1: Parse component set macro calls
+        // Pass 1
+        // Pass 1-1: Parse component set macro calls
         let components_path = paths.get_macro(MacroPaths::Components);
         let comp_sets = parse_crates
             .map_vec(|cr| Self::parse_macro_calls(components_path, &cr.main, cr, crates));
 
         let mut parse_crates = &mut crates[..last];
 
-        // Pass 2: Update mods with component sets
-        for ((item, comp_sets), cr) in items
-            .iter_mut()
-            .zip(comp_sets.into_iter())
+        // Pass 1-2: Update mods with component sets
+        let component_sets = comp_sets
+            .into_iter()
             .zip(parse_crates)
-        {
-            item.component_sets = Self::update_macro_calls(comp_sets, &mut cr.main);
-        }
+            .map(|(comp_sets, cr)| Self::update_macro_calls(comp_sets, &mut cr.main))
+            .collect::<Vec<_>>();
 
         let parse_crates = &crates[..last];
 
+        // Pass 1-3: Resolve components, globals, events, and system
         for (item, cr) in items.iter_mut().zip(parse_crates) {
             item.parse_crate(cr, &paths, &crates);
             // Remove macros crate as crate dependency
@@ -177,17 +215,18 @@ impl ItemsCrate {
                 item.dependencies.swap_remove(i);
             }
         }
+        // Add traits
         add_traits(&mut items);
 
-        let mut components = Vec::new();
-        for cr in items.iter() {
-            components.extend(
-                cr.component_sets
-                    .map_vec(|cs| component_set::ComponentSet::parse(cs, &items)),
-            )
+        // Pass 2
+        // Pass 2-1: Validate component sets with components
+        let component_sets = component_sets
+            .map_vec(|cs_vec| cs_vec.map_vec(|cs| component_set::ComponentSet::parse(cs, &items)));
+        for (item, cs) in items.iter_mut().zip(component_sets) {
+            item.component_sets = cs;
         }
 
-        eprintln!("{components:#?}");
+        // Pass 2-2: Validate system args
 
         items
     }

@@ -29,9 +29,8 @@ impl ComponentSetLabels {
             (
                 item_c.cr_idx,
                 crates[item_c.cr_idx]
-                    .components
-                    .iter()
-                    .position(|c| item_c == &c.path)
+                    .find_component(item_c)
+                    .map(|(i, _)| i)
                     .unwrap(),
             )
         });
@@ -61,9 +60,15 @@ impl ComponentSetLabels {
 }
 
 #[derive(Debug)]
+pub struct ComponentSetItem {
+    pub idx: ItemIndex,
+    pub is_mut: bool,
+}
+
+#[derive(Debug)]
 pub struct ComponentSet {
     pub path: Path,
-    pub components: Vec<ItemIndex>,
+    pub components: Vec<ComponentSetItem>,
     pub labels: Option<ComponentSetLabels>,
 }
 
@@ -76,15 +81,15 @@ impl ComponentSet {
 
         Self {
             path: cs.path.clone(),
-            components: cs.args.map_vec(|item| {
-                (
+            components: cs.args.map_vec(|item| ComponentSetItem {
+                idx: (
                     item.ty.cr_idx,
                     crates[item.ty.cr_idx]
-                        .components
-                        .iter()
-                        .position(|c| item.ty == c.path)
+                        .find_component(&item.ty)
+                        .map(|(i, _)| i)
                         .unwrap(),
-                )
+                ),
+                is_mut: item.is_mut,
             }),
             labels,
         }

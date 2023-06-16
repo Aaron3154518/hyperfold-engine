@@ -18,3 +18,7 @@ pub fn event_var(cr_idx: usize, e_idx: usize) -> String {
 pub fn event_variant(cr_idx: usize, e_idx: usize) -> String {
     format!("E{}_{}", cr_idx, e_idx)
 }
+
+pub fn component_set_var(cr_idx: usize, cs_idx: usize) -> String {
+    format!("v{}_{}", cr_idx, cs_idx)
+}
