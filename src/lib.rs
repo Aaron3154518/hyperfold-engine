@@ -33,24 +33,46 @@ pub mod test {
         }
     }
 
-    crate::components!(AA);
-    crate::components!(labels(), Z);
-    crate::components!(labels((!u8)), Y);
-    crate::components!(labels(u8), X);
-    crate::components!(labels((u8)), W);
-    crate::components!(labels(u8 && i8), V);
-    crate::components!(labels((u8 || i8) && !!!u8), U);
-    crate::components!(labels((!(u8 || !i8) && u8)), Q);
-    crate::components!(labels(!A::B::C), S);
-    crate::components!(labels(String || !A::B::C), R);
+    // crate::components!(AA);
+    // crate::components!(labels(), Z);
+    // crate::components!(labels((!u8)), Y);
+    // crate::components!(labels(u8), X);
+    // crate::components!(labels((u8)), W);
+    // crate::components!(labels(u8 && i8), V);
+    // crate::components!(labels((u8 || i8) && !!!u8), U);
+    // crate::components!(labels((!(u8 || !i8) && u8)), Q);
+    // crate::components!(labels(!A::B::C), S);
+    // crate::components!(labels(String || !A::B::C), R);
 
-    crate::components!(
-        labels((TFoo || !A::B::C) && !A::B::C),
-        QuxComponents,
-        t: &'a TFoo,
-        greet: &'a String,
-        happy: &'a mut bool
-    );
+    // crate::components!(
+    //     labels((TFoo || !A::B::C) && !A::B::C),
+    //     QuxComponents,
+    //     t: &'a TFoo,
+    //     greet: &'a String,
+    //     happy: &'a mut bool
+    // );
+
+    pub struct QuxComponents<'a> {
+        pub eid: &'a crate::_engine::Entity,
+        pub t: &'a TFoo,
+        pub greet: &'a String,
+        pub happy: &'a mut bool,
+    }
+    impl<'a> QuxComponents<'a> {
+        pub fn new(
+            eid: &'a crate::_engine::Entity,
+            t: &'a TFoo,
+            greet: &'a String,
+            happy: &'a mut bool,
+        ) -> Self {
+            Self {
+                eid,
+                t,
+                greet,
+                happy,
+            }
+        }
+    }
 
     trait T {
         fn to_string(&self) -> String {

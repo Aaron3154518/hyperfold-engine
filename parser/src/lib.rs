@@ -72,34 +72,12 @@ fn test_resolves(crates: &Vec<Crate>) {
 }
 
 fn test() {
-    let (crates, paths) = Crate::parse(PathBuf::from("test/a"));
-    println!(
-        "{:#?}",
-        crates
-            .iter()
-            .enumerate()
-            .map_vec(|(i, cr)| format!("{}: {}", i, cr.name))
-    );
-    // println!("{:#?}", crates);
+    // TODO: hardcoded
+    let (mut crates, paths) = Crate::parse(PathBuf::from("../"));
 
-    // test_resolves(&crates);
+    // eprintln!("{crates:#?}");
 
-    // Skip macros crate for resolution phase
-    let mut items = crates[..end(&crates, 1)]
-        .iter()
-        .map(|cr| {
-            let mut ic = ItemsCrate::new();
-            ic.parse_crate(cr, &paths, &crates);
-            // Remove macros crate as crate dependency
-            if let Some(i) = ic
-                .dependencies
-                .iter()
-                .position(|d| d.cr_idx == crates.len() - 1)
-            {
-                ic.dependencies.swap_remove(i);
-            }
-            ic
-        })
-        .collect::<Vec<_>>();
-    // println!("{:#?}", items);
+    let mut items = ItemsCrate::parse(&paths, &mut crates);
+
+    // eprintln!("{items:#?}");
 }

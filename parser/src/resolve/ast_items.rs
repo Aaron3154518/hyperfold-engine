@@ -1,7 +1,7 @@
 use std::{collections::VecDeque, path::PathBuf};
 
 use crate::{
-    codegen::mods::add_traits,
+    codegen::{component_set, mods::add_traits},
     parse::{
         ast_crate::Crate,
         ast_fn_arg::{FnArg, FnArgType},
@@ -178,6 +178,17 @@ impl ItemsCrate {
             }
         }
         add_traits(&mut items);
+
+        let mut components = Vec::new();
+        for cr in items.iter() {
+            components.extend(
+                cr.component_sets
+                    .map_vec(|cs| component_set::ComponentSet::parse(cs, &items)),
+            )
+        }
+
+        eprintln!("{components:#?}");
+
         items
     }
 
@@ -196,7 +207,7 @@ impl ItemsCrate {
         self.parse_mod(cr, &cr.main, paths, crates)
     }
 
-    pub fn parse_mod(&mut self, cr: &Crate, m: &Mod, paths: &Paths, crates: &Vec<Crate>) {
+    fn parse_mod(&mut self, cr: &Crate, m: &Mod, paths: &Paths, crates: &Vec<Crate>) {
         let cr_idx = cr.idx;
 
         for mi in m.marked.iter() {

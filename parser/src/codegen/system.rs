@@ -8,6 +8,7 @@ use quote::format_ident;
 use quote::quote;
 use regex::Regex;
 
+use crate::validate::util::ItemIndex;
 use crate::{
     codegen::{
         idents::Idents,
@@ -66,19 +67,16 @@ pub enum FnArg {
     Container(Vec<ContainerArg>),
 }
 
-// Crate index, item index
-type Id = (usize, usize);
-
 pub struct System {
     pub name: TokenStream,
     args: Vec<TokenStream>,
-    c_args: Vec<Id>,
-    g_args: Vec<Id>,
-    event: Option<Id>,
-    and_labels: HashSet<Id>,
-    or_labels: Vec<HashSet<Id>>,
-    nor_labels: HashSet<Id>,
-    nand_labels: Vec<HashSet<Id>>,
+    c_args: Vec<ItemIndex>,
+    g_args: Vec<ItemIndex>,
+    event: Option<ItemIndex>,
+    and_labels: HashSet<ItemIndex>,
+    or_labels: Vec<HashSet<ItemIndex>>,
+    nor_labels: HashSet<ItemIndex>,
+    nand_labels: Vec<HashSet<ItemIndex>>,
     // Includes reference and mutability
     v_types: Vec<ContainerArg>,
     is_vec: bool,

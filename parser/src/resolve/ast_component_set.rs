@@ -47,6 +47,18 @@ macro_rules! parse_expect {
     };
 }
 
+/*
+* Pass 1: Parse into expressions
+* Grammar:
+* Expr -> Item (Op Item)*
+* Item -> !*Ident | !*(Expr)
+* Op -> && | ||
+
+* Pass 2: Apply DeMorgan's law
+          Split expression sequences with left->right precedence for &&
+          Flatten
+*/
+
 #[derive(Eq, PartialEq, Copy, Clone, Debug)]
 pub enum LabelOp {
     And,
@@ -77,75 +89,6 @@ impl std::fmt::Display for LabelOp {
             LabelOp::And => "&&",
             LabelOp::Or => "||",
         })
-    }
-}
-
-#[derive(Clone, Debug)]
-pub enum LabelItem {
-    Item { not: bool, ty: Path },
-    Expression { op: LabelOp, items: Vec<LabelItem> },
-}
-
-impl LabelItem {
-    pub fn negate(&mut self) {
-        match self {
-            LabelItem::Item { not, ty } => *not = !*not,
-            LabelItem::Expression { op, items } => {
-                op.negate();
-                items.iter_mut().for_each(|i| i.negate());
-            }
-        }
-    }
-}
-
-impl syn::parse::Parse for LabelItem {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let mut not = false;
-        while input.parse::<Token!(!)>().is_ok() {
-            not = !not;
-        }
-
-        input.parse::<proc_macro2::Group>().map_or_else(
-            |_| {
-                input.parse::<syn::Type>().map_or_else(
-                    |e| err!(input, "Expected parentheses or ident in label", e),
-                    |ty| match ty {
-                        syn::Type::Path(p) => Ok(Self::Item {
-                            not,
-                            ty: Path {
-                                cr_idx: 0,
-                                path: p
-                                    .path
-                                    .segments
-                                    .iter()
-                                    .map(|s| s.ident.to_string())
-                                    .collect(),
-                            },
-                        }),
-                        _ => err!(ty, "Invalid type in label"),
-                    },
-                )
-            },
-            |g| syn::parse2::<Expression>(g.stream()).map(|e| e.to_item(not)),
-        )
-    }
-}
-
-impl std::fmt::Display for LabelItem {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            LabelItem::Item { not, ty } => f.write_fmt(format_args!(
-                "{}{}",
-                if *not { "!" } else { "" },
-                ty.path.join("::")
-            )),
-            LabelItem::Expression { op, items } => f.write_fmt(format_args!(
-                "({})",
-                items
-                    .map_vec(|i| format!("{i}"))
-                    .join(format!(" {op} ").as_str())
-            )),
-        }
     }
 }
 
@@ -239,25 +182,82 @@ impl syn::parse::Parse for Expression {
     }
 }
 
+// Flattened label set
 #[derive(Clone, Debug)]
-pub enum LabelNode {
-    Item {
-        not: bool,
-        ty: Path,
-    },
-    Expression {
-        lhs: Box<LabelItem>,
-        op: LabelOp,
-        rhs: Box<LabelItem>,
-    },
+pub enum LabelItem {
+    Item { not: bool, ty: Path },
+    Expression { op: LabelOp, items: Vec<LabelItem> },
+}
+
+impl LabelItem {
+    pub fn negate(&mut self) {
+        match self {
+            LabelItem::Item { not, ty } => *not = !*not,
+            LabelItem::Expression { op, items } => {
+                op.negate();
+                items.iter_mut().for_each(|i| i.negate());
+            }
+        }
+    }
+}
+
+impl syn::parse::Parse for LabelItem {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let mut not = false;
+        while input.parse::<Token!(!)>().is_ok() {
+            not = !not;
+        }
+
+        input.parse::<proc_macro2::Group>().map_or_else(
+            |_| {
+                input.parse::<syn::Type>().map_or_else(
+                    |e| err!(input, "Expected parentheses or ident in label", e),
+                    |ty| match ty {
+                        syn::Type::Path(p) => Ok(Self::Item {
+                            not,
+                            ty: Path {
+                                cr_idx: 0,
+                                path: p
+                                    .path
+                                    .segments
+                                    .iter()
+                                    .map(|s| s.ident.to_string())
+                                    .collect(),
+                            },
+                        }),
+                        _ => err!(ty, "Invalid type in label"),
+                    },
+                )
+            },
+            |g| syn::parse2::<Expression>(g.stream()).map(|e| e.to_item(not)),
+        )
+    }
+}
+
+impl std::fmt::Display for LabelItem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LabelItem::Item { not, ty } => f.write_fmt(format_args!(
+                "{}{}",
+                if *not { "!" } else { "" },
+                ty.path.join("::")
+            )),
+            LabelItem::Expression { op, items } => f.write_fmt(format_args!(
+                "({})",
+                items
+                    .map_vec(|i| format!("{i}"))
+                    .join(format!(" {op} ").as_str())
+            )),
+        }
+    }
 }
 
 #[derive(Debug)]
 pub struct ComponentSetItem {
-    var: String,
-    ty: Path,
-    ref_cnt: usize,
-    is_mut: bool,
+    pub var: String,
+    pub ty: Path,
+    pub ref_cnt: usize,
+    pub is_mut: bool,
 }
 
 impl ComponentSetItem {
