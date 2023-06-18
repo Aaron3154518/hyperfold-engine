@@ -15,7 +15,7 @@ use super::ast_fn_arg::FnArg;
 pub enum MarkType {
     Struct,
     Enum,
-    Fn { args: Vec<FnArg> },
+    Fn { sig: syn::Signature },
 }
 
 // TODO: Cfg features
@@ -76,7 +76,7 @@ pub struct Mod {
     pub macro_calls: Vec<MacroCall>,
 }
 
-// TODO: ignore private mods
+// TODO: ignore private mods to avoid name collisions
 // Pass 1: parsing
 impl Mod {
     pub fn new(dir: PathBuf, path: Vec<String>, ty: ModType) -> Self {
@@ -99,7 +99,7 @@ impl Mod {
             "Failed to parse file contents of: {}",
             path.display()
         ));
-        self.visit_file(&ast);
+        self.visit_file(ast);
 
         // Post processing
         self.resolve_local_use_paths();
@@ -122,17 +122,19 @@ impl Mod {
 
 // File/items
 impl Mod {
-    pub fn visit_file(&mut self, i: &syn::File) {
-        self.visit_items(&i.items);
+    pub fn visit_file(&mut self, i: syn::File) {
+        self.visit_items(i.items);
     }
 
-    fn visit_items(&mut self, i: &Vec<syn::Item>) {
-        i.iter().for_each(|i| self.visit_item(i))
+    fn visit_items(&mut self, items: Vec<syn::Item>) {
+        for item in items {
+            self.visit_item(item);
+        }
     }
 
-    fn visit_item(&mut self, i: &syn::Item) {
+    fn visit_item(&mut self, i: syn::Item) {
         // Match once to add to symbol table
-        match i {
+        match &i {
             // Use statements need to be parsed
             syn::Item::Use(i) => None,
             // Add to symbol table
@@ -177,9 +179,9 @@ impl Mod {
     }
 
     // Mod
-    fn visit_item_mod(&mut self, i: &syn::ItemMod) {
+    fn visit_item_mod(&mut self, i: syn::ItemMod) {
         if let Some(attrs) = get_attributes_if_active(&i.attrs, &self.path, &Vec::new()) {
-            match &i.content {
+            match i.content {
                 // Parse inner mod
                 Some((_, items)) => {
                     let mut new_mod = Self::new(
@@ -202,7 +204,7 @@ impl Mod {
     }
 
     // Components
-    fn visit_item_struct(&mut self, i: &syn::ItemStruct) {
+    fn visit_item_struct(&mut self, i: syn::ItemStruct) {
         if let Some(attrs) = get_attributes_if_active(&i.attrs, &self.path, &Vec::new()) {
             if !attrs.is_empty() {
                 self.marked.push(MarkedItem {
@@ -214,7 +216,7 @@ impl Mod {
         }
     }
 
-    fn visit_item_enum(&mut self, i: &syn::ItemEnum) {
+    fn visit_item_enum(&mut self, i: syn::ItemEnum) {
         if let Some(attrs) = get_attributes_if_active(&i.attrs, &self.path, &Vec::new()) {
             if !attrs.is_empty() {
                 self.marked.push(MarkedItem {
@@ -227,25 +229,11 @@ impl Mod {
     }
 
     // Systems
-    fn visit_item_fn(&mut self, i: &syn::ItemFn) {
+    fn visit_item_fn(&mut self, i: syn::ItemFn) {
         if let Some(attrs) = get_attributes_if_active(&i.attrs, &self.path, &Vec::new()) {
             if !attrs.is_empty() {
                 self.marked.push(MarkedItem {
-                    ty: MarkType::Fn {
-                        args: i
-                            .sig
-                            .inputs
-                            .iter()
-                            .filter_map(|arg| match arg {
-                                syn::FnArg::Typed(t) => {
-                                    let mut sys_arg = FnArg::new();
-                                    sys_arg.parse_arg(0, &self.path, &t);
-                                    Some(sys_arg)
-                                }
-                                syn::FnArg::Receiver(_) => None,
-                            })
-                            .collect(),
-                    },
+                    ty: MarkType::Fn { sig: i.sig },
                     sym: Symbol::from(self.path.to_vec(), &i.sig.ident, &i.vis),
                     attrs,
                 });
@@ -254,7 +242,7 @@ impl Mod {
     }
 
     // Macro call
-    fn visit_item_macro(&mut self, i: &syn::ItemMacro) {
+    fn visit_item_macro(&mut self, i: syn::ItemMacro) {
         if let Some(_) = get_attributes_if_active(&i.attrs, &self.path, &Vec::new()) {
             // Some is for macro_rules!
             if i.ident.is_none() {
@@ -268,12 +256,13 @@ impl Mod {
 }
 
 // TODO: Ambiguous paths, :: paths
+// TODO: type redeclarations
 
 // Use paths
 impl Mod {
-    fn visit_item_use(&mut self, i: &syn::ItemUse) {
+    fn visit_item_use(&mut self, i: syn::ItemUse) {
         if let Some(attrs) = get_attributes_if_active(&i.attrs, &self.path, &Vec::new()) {
-            let mut uses = self.visit_use_tree(&i.tree, &mut Vec::new(), Vec::new());
+            let mut uses = self.visit_use_tree(i.tree, &mut Vec::new(), Vec::new());
             let public = match i.vis {
                 syn::Visibility::Public(_) => true,
                 syn::Visibility::Restricted(_) | syn::Visibility::Inherited => false,
@@ -285,11 +274,11 @@ impl Mod {
 
     fn visit_use_tree(
         &mut self,
-        i: &syn::UseTree,
+        i: syn::UseTree,
         path: &mut Vec<String>,
         items: Vec<Symbol>,
     ) -> Vec<Symbol> {
-        match &i {
+        match i {
             syn::UseTree::Path(i) => self.visit_use_path(i, path, items),
             syn::UseTree::Name(i) => self.visit_use_name(i, path, items),
             syn::UseTree::Rename(i) => self.visit_use_rename(i, path, items),
@@ -300,17 +289,17 @@ impl Mod {
 
     fn visit_use_path(
         &mut self,
-        i: &syn::UsePath,
+        i: syn::UsePath,
         path: &mut Vec<String>,
         items: Vec<Symbol>,
     ) -> Vec<Symbol> {
         add_path_item(&self.path, path, i.ident.to_string());
-        self.visit_use_tree(&i.tree, path, items)
+        self.visit_use_tree(*i.tree, path, items)
     }
 
     fn visit_use_name(
         &mut self,
-        i: &syn::UseName,
+        i: syn::UseName,
         path: &mut Vec<String>,
         mut items: Vec<Symbol>,
     ) -> Vec<Symbol> {
@@ -325,7 +314,7 @@ impl Mod {
 
     fn visit_use_rename(
         &mut self,
-        i: &syn::UseRename,
+        i: syn::UseRename,
         path: &mut Vec<String>,
         mut items: Vec<Symbol>,
     ) -> Vec<Symbol> {
@@ -339,7 +328,7 @@ impl Mod {
 
     fn visit_use_glob(
         &mut self,
-        i: &syn::UseGlob,
+        i: syn::UseGlob,
         path: &mut Vec<String>,
         mut items: Vec<Symbol>,
     ) -> Vec<Symbol> {
@@ -353,11 +342,11 @@ impl Mod {
 
     fn visit_use_group(
         &mut self,
-        i: &syn::UseGroup,
+        i: syn::UseGroup,
         path: &mut Vec<String>,
         items: Vec<Symbol>,
     ) -> Vec<Symbol> {
-        i.items.iter().fold(items, |items, i| {
+        i.items.into_iter().fold(items, |items, i| {
             self.visit_use_tree(i, &mut path.to_vec(), items)
         })
     }

@@ -10,7 +10,7 @@ use crate::{
     parse::ast_fn_arg::{FnArg, FnArgType},
     resolve::{
         ast_items::{ItemsCrate, System},
-        ast_paths::{EngineGlobals, EngineIdents, Paths},
+        ast_paths::{EngineGlobals, EnginePaths, Paths},
         ast_resolve::Path,
     },
     validate::constants::{component_var, event_var},
@@ -126,20 +126,26 @@ impl SystemValidate {
         }
     }
 
-    pub fn add_global(&mut self, arg: &FnArg, idxs: ItemIndex) {
-        if !self.globals.insert(idxs) {
+    pub fn validate_global(&mut self, arg: &FnArg, idx: ItemIndex, args: &GlobalMacroArgs) {
+        self.validate_ref(arg, 1);
+        if args.is_const {
+            self.validate_mut(arg, false);
+        }
+        if !self.globals.insert(idx) {
             self.errs.push(format!("Duplicate global: {arg}"));
         }
     }
 
-    pub fn add_event(&mut self, arg: &FnArg) {
+    pub fn validate_event(&mut self, arg: &FnArg) {
+        self.validate_ref(arg, 1);
+        self.validate_mut(arg, false);
         if self.has_event {
             self.errs.push(format!("Multiple events specified: {arg}"));
         }
         self.has_event = true;
     }
 
-    pub fn add_vec(&mut self, arg: &FnArg, cs: &ComponentSet) {
+    pub fn validate_component_set(&mut self, arg: &FnArg, cs: &ComponentSet, is_vec: bool) {
         for i in cs.components.iter() {
             if !self.components.contains_key(&i.idx) {
                 self.components.insert(i.idx, ComponentRefTracker::new());
@@ -149,6 +155,12 @@ impl SystemValidate {
                 refs.add_ref(cs.path.path.join("::"), i.is_mut);
             }
         }
+
+        if !is_vec && self.has_comp_set {
+            self.errs.push(format!("Component set cannot be taken as an argument as another component set has already been specified: {arg}"));
+            self.errs.push("\tConsider using 'Vec<>'".to_string());
+        }
+        self.has_comp_set = self.has_comp_set || is_vec;
     }
 
     // Validate conditions
@@ -184,9 +196,9 @@ impl SystemValidate {
 }
 
 pub enum FnArgResult {
-    Global(ItemIndex),
+    Global { idx: ItemIndex, is_mut: bool },
     Event(ItemIndex),
-    Vec(ItemIndex),
+    ComponentSet { idx: ItemIndex, is_vec: bool },
 }
 
 impl FnArg {
@@ -196,38 +208,53 @@ impl FnArg {
         validate: &mut SystemValidate,
     ) -> Option<FnArgResult> {
         match &self.ty {
-            // Global or Event
+            // Global or Event or Component Set
             FnArgType::Path(p) => crates[p.cr_idx]
                 // Global
                 .find_global(p)
                 .map(|(i, g)| {
-                    validate.validate_ref(self, 1);
-                    if g.args.is_const {
-                        validate.validate_mut(self, false);
+                    validate.validate_global(self, (p.cr_idx, i), &g.args);
+                    FnArgResult::Global {
+                        idx: (p.cr_idx, i),
+                        is_mut: self.mutable,
                     }
-                    validate.add_global(self, (p.cr_idx, i));
-                    FnArgResult::Global((p.cr_idx, i))
                 })
                 // Event
                 .or_else(|| {
                     crates[p.cr_idx].find_event(p).map(|(i, _)| {
-                        validate.validate_ref(self, 1);
-                        validate.validate_mut(self, false);
-                        validate.add_event(self);
+                        validate.validate_event(self);
                         FnArgResult::Event((p.cr_idx, i))
+                    })
+                })
+                // Components Set
+                .or_else(|| {
+                    crates[p.cr_idx].find_component_set(p).map(|(i, cs)| {
+                        validate.validate_component_set(self, cs, false);
+                        FnArgResult::ComponentSet {
+                            idx: (p.cr_idx, i),
+                            is_vec: false,
+                        }
                     })
                 }),
             // Trait
             FnArgType::Trait(p) => crates[p.cr_idx].find_trait(p).map(|(_, tr)| {
-                validate.validate_ref(self, 1);
-                validate.add_global(self, (tr.path.cr_idx, tr.g_idx));
-                FnArgResult::Global((tr.path.cr_idx, tr.g_idx))
+                validate.validate_global(
+                    self,
+                    (tr.path.cr_idx, tr.g_idx),
+                    &GlobalMacroArgs::from(Vec::new()),
+                );
+                FnArgResult::Global {
+                    idx: (tr.path.cr_idx, tr.g_idx),
+                    is_mut: self.mutable,
+                }
             }),
-            // Vec
+            // Vec<Component Set>
             FnArgType::Vec(p) => crates[p.cr_idx].find_component_set(p).map(|(i, cs)| {
-                validate.validate_ref(self, 0);
-                validate.add_vec(self, cs);
-                FnArgResult::Vec((p.cr_idx, i))
+                validate.validate_component_set(self, cs, true);
+                FnArgResult::ComponentSet {
+                    idx: (p.cr_idx, i),
+                    is_vec: true,
+                }
             }),
         }
     }

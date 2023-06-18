@@ -12,7 +12,7 @@ use crate::{
     resolve::{
         ast_items::{Dependency, ItemsCrate},
         ast_paths::{
-            Crates, EngineGlobals, EngineIdents, EngineTraits, ExpandEnum, GetPaths, Paths,
+            Crates, EngineGlobals, EnginePaths, EngineTraits, ExpandEnum, GetPaths, Paths,
         },
         ast_resolve::Path,
     },
@@ -139,7 +139,7 @@ impl ItemsCrate {
 
         // Other idents exposed in _engine
         let engine_path = self.get_crate_path(&crates[paths.get_cr_idx(Crates::Engine)], crates);
-        let entity_use = EngineIdents::Entity
+        let entity_use = EnginePaths::Entity
             .to_path()
             .call_into(|p| quote!(#engine_path::#p));
 
@@ -195,9 +195,9 @@ impl ItemsCrate {
         let crate_paths_post = deps_lrn.map_vec(|i| &crate_paths[*i]);
         let engine_cr_path = &crate_paths[paths.get_cr_idx(Crates::Engine)];
 
-        let singleton = EngineIdents::Singleton.construct_path(&engine_cr_path);
-        let entity_set = EngineIdents::EntitySet.construct_path(&engine_cr_path);
-        let entity_map = EngineIdents::EntityMap.construct_path(&engine_cr_path);
+        let singleton = EnginePaths::Singleton.construct_path(&engine_cr_path);
+        let entity_set = EnginePaths::EntitySet.construct_path(&engine_cr_path);
+        let entity_map = EnginePaths::EntityMap.construct_path(&engine_cr_path);
 
         // Get component types by crate for system codegen
         let mut comps = Vec::new();
@@ -280,7 +280,7 @@ impl ItemsCrate {
         // Paths to engine globals
         let entity_trash = EngineGlobals::EntityTrash.construct_path(&engine_cr_path);
 
-        let entity = EngineIdents::Entity.construct_path(&engine_cr_path);
+        let entity = EnginePaths::Entity.construct_path(&engine_cr_path);
 
         // Component manager
         let add_comp = Idents::AddComponent.to_ident();
@@ -431,15 +431,15 @@ impl ItemsCrate {
         let [cfoo, gfoo, efoo] =
             [Idents::GenCFoo, Idents::GenGFoo, Idents::GenEFoo].map(|i| i.to_ident());
         let [core_update, core_events, core_pre_render, core_render] = [
-            EngineIdents::CoreUpdate,
-            EngineIdents::CoreEvents,
-            EngineIdents::CorePreRender,
-            EngineIdents::CoreRender,
+            EnginePaths::CoreUpdate,
+            EnginePaths::CoreEvents,
+            EnginePaths::CorePreRender,
+            EnginePaths::CoreRender,
         ]
         .map(|i| vec_to_path(i.path_stem()));
 
         // Sdl
-        let sdl2 = EngineIdents::SDL2.to_path();
+        let sdl2 = EnginePaths::SDL2.to_path();
 
         // Systems manager
         let sfoo_ident = Idents::SFoo.to_ident();

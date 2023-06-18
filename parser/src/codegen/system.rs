@@ -8,9 +8,6 @@ use quote::format_ident;
 use quote::quote;
 use regex::Regex;
 
-use crate::validate::ast_system::FnArgResult;
-use crate::validate::constants::component_set_var;
-use crate::validate::util::ItemIndex;
 use crate::{
     codegen::{
         idents::Idents,
@@ -18,11 +15,12 @@ use crate::{
     },
     resolve::{
         ast_items::{self, ItemsCrate},
-        ast_paths::{EngineGlobals, EngineIdents, EngineTraits, ExpandEnum, GetPaths, Paths},
+        ast_paths::{EngineGlobals, EnginePaths, EngineTraits, ExpandEnum, GetPaths, Paths},
     },
     validate::{
-        ast_system::SystemValidate,
-        constants::{component_var, event_variant, global_var, EID},
+        ast_system::{FnArgResult, SystemValidate},
+        constants::{component_set_var, component_var, event_variant, global_var, EID},
+        util::ItemIndex,
     },
 };
 use shared::util::{Call, Catch, JoinMap, JoinMapInto, SplitCollect};
@@ -69,11 +67,14 @@ pub enum FnArg {
     Container(Vec<ContainerArg>),
 }
 
+#[derive(Debug)]
 pub struct System {
     pub name: TokenStream,
     args: Vec<TokenStream>,
     c_args: Vec<ItemIndex>,
     g_args: Vec<ItemIndex>,
+    cs_arg: Option<ItemIndex>,
+    cs_vec_args: Vec<ItemIndex>,
     event: Option<ItemIndex>,
     and_labels: HashSet<ItemIndex>,
     or_labels: Vec<HashSet<ItemIndex>>,
@@ -92,6 +93,8 @@ impl System {
             args: Vec::new(),
             c_args: Vec::new(),
             g_args: Vec::new(),
+            cs_arg: None,
+            cs_vec_args: Vec::new(),
             event: None,
             and_labels: HashSet::new(),
             or_labels: Vec::new(),
@@ -121,16 +124,28 @@ impl System {
         sys.args = system.args.map_vec(|arg| {
             arg.validate(crates, &mut validate)
                 .map(|arg| match arg {
-                    FnArgResult::Global((cr_i, i)) => {
+                    FnArgResult::Global {
+                        idx: (cr_i, i),
+                        is_mut,
+                    } => {
                         sys.g_args.push((cr_i, i));
                         let var = format_ident!("{}", global_var(cr_i, i));
-                        quote!(&mut #gfoo.#var)
+                        let mut_tok = if is_mut { quote!(mut) } else { quote!() };
+                        quote!(&#mut_tok #gfoo.#var)
                     }
                     FnArgResult::Event((cr_i, i)) => {
                         sys.event = Some((cr_i, i));
                         quote!(#e_ident)
                     }
-                    FnArgResult::Vec((cr_i, i)) => {
+                    FnArgResult::ComponentSet {
+                        idx: (cr_i, i),
+                        is_vec,
+                    } => {
+                        if is_vec {
+                            sys.cs_vec_args.push((cr_i, i));
+                        } else {
+                            sys.cs_arg = Some((cr_i, i));
+                        }
                         let var = format_ident!("{}", component_set_var(cr_i, i));
                         quote!(#var)
                     }
@@ -151,6 +166,9 @@ impl System {
                 validate.errs.join("\n")
             )
         }
+
+        eprintln!("{sys:#?}");
+
         sys
     }
 
@@ -257,7 +275,7 @@ impl System {
         } else if !self.is_vec {
             let eid = Idents::GenEid.to_ident();
 
-            let [get_keys, intersect_keys] = [EngineIdents::GetKeys, EngineIdents::IntersectKeys]
+            let [get_keys, intersect_keys] = [EnginePaths::GetKeys, EnginePaths::IntersectKeys]
                 .map(|i| vec_to_path(i.path_stem()));
             let cfoo = Idents::GenCFoo.to_ident();
 
@@ -285,7 +303,7 @@ impl System {
                 }
             )
         } else {
-            let eid = EngineIdents::Entity.to_path();
+            let eid = EnginePaths::Entity.to_path();
 
             // Container argument types
             let v_types = self
@@ -344,9 +362,9 @@ impl System {
                 .map(|((cr_i, c_i), (i, m))| {
                     let intersect = vec_to_path(
                         if *m {
-                            EngineIdents::IntersectMut
+                            EnginePaths::IntersectMut
                         } else {
-                            EngineIdents::Intersect
+                            EnginePaths::Intersect
                         }
                         .path_stem(),
                     );

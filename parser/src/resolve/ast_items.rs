@@ -90,18 +90,35 @@ struct MacroCalls<T> {
 }
 
 impl ItemsCrate {
-    pub fn new() -> Self {
+    pub fn new(cr: &Crate, paths: &Paths, crates: &Vec<Crate>) -> Self {
         Self {
-            dir: PathBuf::new(),
-            cr_name: String::new(),
-            cr_idx: 0,
+            dir: cr.dir.to_owned(),
+            cr_name: cr.name.to_string(),
+            cr_idx: cr.idx,
             components: Vec::new(),
             globals: Vec::new(),
             traits: Vec::new(),
             events: Vec::new(),
             systems: Vec::new(),
-            dependencies: Vec::new(),
+            dependencies: cr
+                .deps
+                .iter()
+                .map(|(&cr_idx, alias)| Dependency {
+                    cr_idx,
+                    cr_alias: alias.to_string(),
+                })
+                .collect(),
             component_sets: Vec::new(),
+        }
+    }
+
+    fn remove_macros_crate(&mut self, crates: &Vec<Crate>) {
+        if let Some(i) = self
+            .dependencies
+            .iter()
+            .position(|d| d.cr_idx == crates.len() - 1)
+        {
+            self.dependencies.swap_remove(i);
         }
     }
 
@@ -184,17 +201,16 @@ impl ItemsCrate {
         // Skip macros crate
         let last = end(&crates, 1);
         let parse_crates = &crates[..last];
-        let mut items = parse_crates.map_vec(|_| ItemsCrate::new());
 
         // Pass 1
-        // Pass 1-1: Parse component set macro calls
+        // Pass 1-1a: Parse component set macro calls
         let components_path = paths.get_macro(MacroPaths::Components);
         let comp_sets = parse_crates
             .map_vec(|cr| Self::parse_macro_calls(components_path, &cr.main, cr, crates));
 
         let mut parse_crates = &mut crates[..last];
 
-        // Pass 1-2: Update mods with component sets
+        // Pass 1-1b: Update mods with component sets
         let component_sets = comp_sets
             .into_iter()
             .zip(parse_crates)
@@ -203,18 +219,14 @@ impl ItemsCrate {
 
         let parse_crates = &crates[..last];
 
-        // Pass 1-3: Resolve components, globals, events, and system
-        for (item, cr) in items.iter_mut().zip(parse_crates) {
-            item.parse_crate(cr, &paths, &crates);
+        // Pass 1-2: Resolve components, globals, events, and systems
+        let mut items = parse_crates.map_vec(|cr| {
+            let mut item = ItemsCrate::new(cr, &paths, &crates);
+            // Macros crate must be included as a dependency to resolve macro calls
+            item.resolve_items(cr, &cr.main, &paths, &crates);
             // Remove macros crate as crate dependency
-            if let Some(i) = item
-                .dependencies
-                .iter()
-                .position(|d| d.cr_idx == crates.len() - 1)
-            {
-                item.dependencies.swap_remove(i);
-            }
-        }
+            item.remove_macros_crate(&crates);
+        });
         // Add traits
         add_traits(&mut items);
 
@@ -231,24 +243,23 @@ impl ItemsCrate {
         items
     }
 
-    pub fn parse_crate(&mut self, cr: &Crate, paths: &Paths, crates: &Vec<Crate>) {
-        self.dir = cr.dir.to_owned();
-        self.cr_name = cr.name.to_string();
-        self.cr_idx = cr.idx;
-        self.dependencies = cr
-            .deps
-            .iter()
-            .map(|(&cr_idx, alias)| Dependency {
-                cr_idx,
-                cr_alias: alias.to_string(),
-            })
-            .collect::<Vec<_>>();
-        self.parse_mod(cr, &cr.main, paths, crates)
+    fn resolve_items<'a>(&mut self, cr: &'a Crate, paths: &Paths, crates: &Vec<Crate>) -> Vec<(&'a Mod, &'a FnArg)> {
+        let mut systems = Vec::new();
+        self.resolve_mod_items(cr, &cr.main, path, crates, &mut systems);
+        systems
     }
 
-    fn parse_mod(&mut self, cr: &Crate, m: &Mod, paths: &Paths, crates: &Vec<Crate>) {
+    fn resolve_mod_items(
+        &mut self,
+        cr: &Crate,
+        m: &Mod,
+        paths: &Paths,
+        crates: &Vec<Crate>,
+        systems: &mut Vec<(&'a Mod, &'a FnArg)>
+    ) {
         let cr_idx = cr.idx;
 
+        let mut systs = Vec::new();
         for mi in m.marked.iter() {
             for (path, args) in mi.attrs.iter() {
                 let match_path = resolve_path(path.to_vec(), cr, m, crates).get();
@@ -278,29 +289,17 @@ impl ItemsCrate {
                                     cr_idx,
                                     path: mi.sym.path.to_vec(),
                                 },
-                            })
-                        }
-                    }
-                    MarkType::Fn { args: fn_args } => {
-                        if &match_path == paths.get_macro(MacroPaths::System) {
-                            self.systems.push(System {
-                                path: Path {
-                                    cr_idx,
-                                    path: mi.sym.path.to_vec(),
-                                },
-                                args: fn_args
-                                    .iter()
-                                    .map(|a| {
-                                        let mut a = a.to_owned();
-                                        a.resolve_paths(cr, m, crates);
-                                        a
-                                    })
-                                    .collect(),
-                                attr_args: SystemMacroArgs::from(args.to_vec()),
                             });
                             break;
                         }
                     }
+                    MarkType::Fn { args } => {
+                        if &match_path == paths.get_macro(MacroPaths::System) {
+                            systems.push(args);
+                            break;
+                        }
+                    } 
+                    
                 }
             }
         }
