@@ -6,8 +6,7 @@ use syn::{spanned::Spanned, Error, Token};
 
 use crate::{
     parse::{
-        ast_crate::AstCrate,
-        ast_mod::{AstMod, AstSymbol},
+        AstCrate, {AstMod, AstSymbol},
     },
     resolve::path::resolve_path,
 };
@@ -344,6 +343,7 @@ impl ParseMacroCall for ComponentSetMacro {
     }
 
     fn update_mod(&self, m: &mut AstMod) {
+        eprintln!("{self}");
         m.symbols.push(AstSymbol {
             ident: self
                 .path

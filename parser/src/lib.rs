@@ -9,7 +9,7 @@ use std::{
     path::PathBuf,
 };
 
-use parse::ast_crate::AstCrate;
+use parse::AstCrate;
 use regex::Regex;
 use resolve::path;
 use shared::util::JoinMapInto;

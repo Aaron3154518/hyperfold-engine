@@ -1,7 +1,7 @@
 use proc_macro2::TokenStream;
 use shared::util::JoinMap;
 
-use crate::parse::{ast_crate::AstCrate, ast_mod::AstMod};
+use crate::parse::{AstCrate, AstMod};
 
 use super::path::{resolve_path, ItemPath};
 
@@ -24,6 +24,18 @@ pub struct MacroCalls<T> {
     mods: Vec<MacroCalls<T>>,
 }
 
+impl<T> std::fmt::Debug for MacroCalls<T>
+where
+    T: std::fmt::Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MacroCalls")
+            .field("calls", &self.calls)
+            .field("mods", &self.mods)
+            .finish()
+    }
+}
+
 pub fn parse_macro_calls<T>(
     macro_path: &ItemPath,
     m: &AstMod,
@@ -33,6 +45,12 @@ pub fn parse_macro_calls<T>(
 where
     T: ParseMacroCall,
 {
+    eprintln!("{:#?}", m.macro_calls.map_vec(|mc| mc.path.to_vec()));
+    eprintln!(
+        "{:#?}",
+        m.macro_calls
+            .map_vec(|mc| resolve_path(mc.path.to_vec(), cr, m, crates))
+    );
     MacroCalls {
         calls: m
             .macro_calls

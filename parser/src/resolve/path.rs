@@ -1,8 +1,7 @@
 use syn::Pat;
 
 use crate::parse::{
-    ast_crate::AstCrate,
-    ast_mod::{AstMod, AstSymbol},
+    AstCrate, {AstMod, AstSymbol},
 };
 use shared::util::Catch;
 

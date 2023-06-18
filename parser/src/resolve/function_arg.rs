@@ -4,7 +4,7 @@ use quote::ToTokens;
 use shared::util::{Catch, JoinMap};
 
 use crate::{
-    parse::{ast_crate::AstCrate, ast_mod::AstMod},
+    parse::{AstCrate, AstMod},
     resolve::{
         path::{resolve_path, ItemPath},
         paths::{EnginePaths, Paths},

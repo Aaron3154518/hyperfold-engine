@@ -1,10 +1,9 @@
 use std::{collections::VecDeque, path::PathBuf};
 
 use crate::{
-    codegen::{component_set, mods::add_traits},
+    codegen::component_set,
     parse::{
-        ast_crate::AstCrate,
-        ast_mod::{AstItemType, AstMod},
+        AstCrate, {AstItemType, AstMod},
     },
     resolve::{
         function_arg::{FnArg, FnArgType},
@@ -23,7 +22,7 @@ use super::{
     component_set::ComponentSetMacro,
     parse_macro_call::{parse_macro_calls, update_macro_calls},
     path::ItemPath,
-    paths::{MacroPaths, Paths},
+    paths::{ExpandEnum, GetPaths, MacroPaths, NamespaceTraits, Paths},
 };
 
 #[derive(Debug)]
@@ -78,39 +77,8 @@ pub struct ItemsCrate {
     pub component_sets: Vec<component_set::ComponentSet>,
 }
 
+// Find items
 impl ItemsCrate {
-    pub fn new(cr: &AstCrate, paths: &Paths, crates: &Vec<AstCrate>) -> Self {
-        Self {
-            dir: cr.dir.to_owned(),
-            cr_name: cr.name.to_string(),
-            cr_idx: cr.idx,
-            components: Vec::new(),
-            globals: Vec::new(),
-            traits: Vec::new(),
-            events: Vec::new(),
-            systems: Vec::new(),
-            dependencies: cr
-                .deps
-                .iter()
-                .map(|(&cr_idx, alias)| ItemsCrateDependency {
-                    cr_idx,
-                    cr_alias: alias.to_string(),
-                })
-                .collect(),
-            component_sets: Vec::new(),
-        }
-    }
-
-    fn remove_macros_crate(&mut self, crates: &Vec<AstCrate>) {
-        if let Some(i) = self
-            .dependencies
-            .iter()
-            .position(|d| d.cr_idx == crates.len() - 1)
-        {
-            self.dependencies.swap_remove(i);
-        }
-    }
-
     pub fn find_component<'a>(&'a self, p: &ItemPath) -> Option<(usize, &'a ItemComponent)> {
         self.components
             .iter()
@@ -148,6 +116,31 @@ impl ItemsCrate {
             .enumerate()
             .find_map(|(i, cs)| (&cs.path == p).then_some((i, cs)))
     }
+}
+
+// Parse AstCrate
+impl ItemsCrate {
+    fn new(cr: &AstCrate, paths: &Paths, crates: &Vec<AstCrate>) -> Self {
+        Self {
+            dir: cr.dir.to_owned(),
+            cr_name: cr.name.to_string(),
+            cr_idx: cr.idx,
+            components: Vec::new(),
+            globals: Vec::new(),
+            traits: Vec::new(),
+            events: Vec::new(),
+            systems: Vec::new(),
+            dependencies: cr
+                .deps
+                .iter()
+                .map(|(&cr_idx, alias)| ItemsCrateDependency {
+                    cr_idx,
+                    cr_alias: alias.to_string(),
+                })
+                .collect(),
+            component_sets: Vec::new(),
+        }
+    }
 
     pub fn parse(paths: &Paths, crates: &mut Vec<AstCrate>) -> Vec<Self> {
         // Skip macros crate
@@ -160,6 +153,8 @@ impl ItemsCrate {
         let comp_sets =
             parse_crates.map_vec(|cr| parse_macro_calls(components_path, &cr.main, cr, crates));
 
+        eprintln!("{comp_sets:#?}");
+
         let mut parse_crates = &mut crates[..last];
 
         // Step 1.2: Update mods with component sets
@@ -170,6 +165,7 @@ impl ItemsCrate {
             .collect::<Vec<_>>();
 
         let parse_crates = &crates[..last];
+        eprintln!("{parse_crates:#?}");
 
         // Pass 2: Resolve all paths to cannonical forms
         //     Prereq: All symbols must be added
@@ -182,8 +178,9 @@ impl ItemsCrate {
             item.remove_macros_crate(&crates);
             item
         });
+
         // Step 2.2: Add traits
-        add_traits(&mut items);
+        Self::add_traits(&mut items);
 
         // Pass 3: Validate all items
         // Step 3.1: Validate component sets with components
@@ -198,6 +195,16 @@ impl ItemsCrate {
         //     Prereq: All components, globals, events, and component sets must be added
 
         items
+    }
+
+    fn remove_macros_crate(&mut self, crates: &Vec<AstCrate>) {
+        if let Some(i) = self
+            .dependencies
+            .iter()
+            .position(|d| d.cr_idx == crates.len() - 1)
+        {
+            self.dependencies.swap_remove(i);
+        }
     }
 
     fn resolve_items(&mut self, cr: &AstCrate, m: &AstMod, paths: &Paths, crates: &Vec<AstCrate>) {
@@ -267,5 +274,38 @@ impl ItemsCrate {
         m.mods
             .iter()
             .for_each(|m| self.resolve_items(cr, m, paths, crates));
+    }
+
+    // Add namespace traits and globals
+    fn add_traits(items: &mut Vec<ItemsCrate>) {
+        let entry = items
+            .iter_mut()
+            .find(|cr| cr.cr_idx == 0)
+            .expect("No entry crate");
+
+        let traits = NamespaceTraits::VARIANTS.map(|tr| {
+            // Add trait
+            let new_tr = ItemTrait {
+                path: ItemPath {
+                    cr_idx: entry.cr_idx,
+                    path: tr.full_path(),
+                },
+                g_idx: entry.globals.len(),
+            };
+            // Add trait global
+            entry.globals.push(ItemGlobal {
+                path: ItemPath {
+                    cr_idx: entry.cr_idx,
+                    path: tr.get_global().full_path(),
+                },
+                args: GlobalMacroArgs::from(Vec::new()),
+            });
+            new_tr
+        });
+
+        drop(entry);
+        for i in items.iter_mut() {
+            traits.iter().for_each(|tr| i.traits.push(tr.clone()));
+        }
     }
 }

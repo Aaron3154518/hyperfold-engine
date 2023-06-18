@@ -2,7 +2,7 @@ use std::{fs, path::PathBuf};
 
 use syn::visit::Visit;
 
-use super::ast_mod::{AstMod, AstModType};
+use super::{ast_mod::AstModType, AstMod};
 use crate::validate::constants::NAMESPACE;
 
 #[derive(Debug)]

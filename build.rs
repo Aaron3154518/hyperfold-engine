@@ -1,7 +1,7 @@
 use bindgen::callbacks::{DeriveInfo, ParseCallbacks};
 use std::{env, panic, path::PathBuf};
 
-use parser::{codegen::ast_codegen, parse::ast_crate::AstCrate, resolve::items_crate::ItemsCrate};
+use parser::{codegen::ast_codegen, parse::AstCrate, resolve::items_crate::ItemsCrate};
 
 #[derive(Default, Debug)]
 struct MyCallbacks;

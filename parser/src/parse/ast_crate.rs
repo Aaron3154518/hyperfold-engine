@@ -7,30 +7,31 @@ use std::{
     path::PathBuf,
 };
 
-use shared::util::{Call, Catch};
+use shared::util::{Call, Catch, JoinMap, JoinMapInto};
 
 use super::{
     ast_file::DirType,
     ast_mod::{AstMod, AstModType},
+    AstSymbol,
 };
 use crate::{
-    codegen::mods::{dependency_namespace_mod, entry_namespace_mod},
-    resolve::paths::Paths,
+    resolve::paths::{ExpandEnum, GetPaths, NamespaceTraits, Paths},
     util::end,
+    validate::constants::NAMESPACE,
 };
 
 // TODO: hardcoded
 const ENGINE: &str = ".";
 const MACROS: &str = "macros";
 
-pub fn get_engine_dir() -> PathBuf {
+fn get_engine_dir() -> PathBuf {
     fs::canonicalize(PathBuf::from(ENGINE)).catch(format!(
         "Could not canonicalize engine crate path relative to: {:#?}",
         env::current_dir()
     ))
 }
 
-pub fn get_macros_dir() -> PathBuf {
+fn get_macros_dir() -> PathBuf {
     get_engine_dir().join("macros")
 }
 
@@ -76,41 +77,6 @@ impl AstCrate {
             ),
             deps: HashMap::new(),
         }
-    }
-
-    fn get_crate_dependencies(
-        cr_dir: PathBuf,
-        block_dirs: &HashMap<PathBuf, AstCrateDependency>,
-        crates: &Vec<AstCrate>,
-    ) -> (Vec<(AstCrateDependency, String)>, Vec<String>) {
-        let deps = AstCrate::parse_cargo_toml(cr_dir.to_owned());
-        let mut new_deps = Vec::new();
-        (
-            deps.into_iter()
-                .map(|(name, path)| {
-                    let dep_dir = fs::canonicalize(cr_dir.join(path.to_string())).catch(format!(
-                        "Could not canonicalize dependency path: {}: {}/{}",
-                        name,
-                        cr_dir.display(),
-                        path
-                    ));
-                    match block_dirs.get(&dep_dir) {
-                        Some(d) => (*d, name),
-                        None => match crates.iter().position(|cr| cr.dir == dep_dir) {
-                            Some(i) => (AstCrateDependency::Crate(i), name),
-                            None => {
-                                new_deps.push(path);
-                                (
-                                    AstCrateDependency::Crate(crates.len() + new_deps.len() - 1),
-                                    name,
-                                )
-                            }
-                        },
-                    }
-                })
-                .collect(),
-            new_deps,
-        )
     }
 
     pub fn parse(mut dir: PathBuf) -> (Vec<Self>, Paths) {
@@ -167,15 +133,46 @@ impl AstCrate {
         // Add namespace mod to all crates except macro
         // Must happen after the dependencies are set
         let end = end(&crates, 1);
-        for (i, cr) in crates[..end].iter_mut().enumerate() {
-            cr.main.mods.push(if i == 0 {
-                entry_namespace_mod(&cr, cr.main.dir.to_owned(), cr.main.path.to_vec())
-            } else {
-                dependency_namespace_mod(&cr, cr.main.dir.to_owned(), cr.main.path.to_vec())
-            });
+        for cr in crates[..end].iter_mut() {
+            cr.add_namespace_mod()
         }
 
         (crates, Paths::new(engine_cr_idx, macros_cr_idx))
+    }
+
+    fn get_crate_dependencies(
+        cr_dir: PathBuf,
+        block_dirs: &HashMap<PathBuf, AstCrateDependency>,
+        crates: &Vec<AstCrate>,
+    ) -> (Vec<(AstCrateDependency, String)>, Vec<String>) {
+        let deps = AstCrate::parse_cargo_toml(cr_dir.to_owned());
+        let mut new_deps = Vec::new();
+        (
+            deps.into_iter()
+                .map(|(name, path)| {
+                    let dep_dir = fs::canonicalize(cr_dir.join(path.to_string())).catch(format!(
+                        "Could not canonicalize dependency path: {}: {}/{}",
+                        name,
+                        cr_dir.display(),
+                        path
+                    ));
+                    match block_dirs.get(&dep_dir) {
+                        Some(d) => (*d, name),
+                        None => match crates.iter().position(|cr| cr.dir == dep_dir) {
+                            Some(i) => (AstCrateDependency::Crate(i), name),
+                            None => {
+                                new_deps.push(path);
+                                (
+                                    AstCrateDependency::Crate(crates.len() + new_deps.len() - 1),
+                                    name,
+                                )
+                            }
+                        },
+                    }
+                })
+                .collect(),
+            new_deps,
+        )
     }
 
     fn parse_cargo_toml(dir: PathBuf) -> HashMap<String, String> {
@@ -214,5 +211,59 @@ impl AstCrate {
                 _ => None,
             })
             .collect()
+    }
+
+    // Adds AstMod for the namespace module generated in codegen
+    fn add_namespace_mod(&mut self) {
+        let m = if self.idx == 0 {
+            self.entry_namespace_mod()
+        } else {
+            self.dependency_namespace_mod()
+        };
+        self.main.mods.push(m);
+    }
+
+    fn entry_namespace_mod(&mut self) -> AstMod {
+        let mut m = self.dependency_namespace_mod();
+        // Foo structs
+        for tr in NamespaceTraits::VARIANTS.iter() {
+            let gl = tr.get_global();
+            let sym = AstSymbol {
+                ident: gl.as_ident().to_string(),
+                path: gl.full_path(),
+                public: true,
+            };
+            m.symbols.push(sym.to_owned());
+        }
+        m
+    }
+
+    fn dependency_namespace_mod(&mut self) -> AstMod {
+        let mut path = self.main.path.to_vec();
+        path.push(NAMESPACE.to_string());
+        AstMod {
+            ty: AstModType::Internal,
+            dir: self.dir.to_owned(),
+            path,
+            mods: Vec::new(),
+            // Traits
+            symbols: NamespaceTraits::VARIANTS.iter().map_vec(|tr| AstSymbol {
+                ident: tr.as_ident().to_string(),
+                path: tr.full_path(),
+                public: true,
+            }),
+            // Use dependency
+            uses: self
+                .deps
+                .iter()
+                .map(|(_, alias)| AstSymbol {
+                    ident: alias.to_string(),
+                    path: vec!["crate", &alias].map_vec(|s| s.to_string()),
+                    public: true,
+                })
+                .collect(),
+            marked: Vec::new(),
+            macro_calls: Vec::new(),
+        }
     }
 }
