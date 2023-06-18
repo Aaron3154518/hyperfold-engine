@@ -4,15 +4,13 @@ use shared::parse_args::GlobalMacroArgs;
 
 use crate::{
     parse::{
-        ast_crate::Crate,
-        ast_mod::{MarkType, MarkedItem, Mod, ModType, Symbol},
+        ast_crate::AstCrate,
+        ast_mod::{AstItemType, AstMod, AstModType, AstSymbol, MarkedAstItem},
     },
     resolve::{
-        ast_items::{Global, ItemsCrate, Trait},
-        ast_paths::{
-            EngineGlobals, EngineTraits, ExpandEnum, GetPaths, MacroPaths, NamespaceTraits,
-        },
-        ast_resolve::Path,
+        items_crate::{ItemGlobal, ItemTrait, ItemsCrate},
+        path::ItemPath,
+        paths::{EngineGlobals, EngineTraits, ExpandEnum, GetPaths, MacroPaths, NamespaceTraits},
     },
     validate::constants::NAMESPACE,
 };
@@ -30,16 +28,16 @@ pub fn add_traits(items: &mut Vec<ItemsCrate>) {
 
     let traits = NamespaceTraits::VARIANTS.map(|tr| {
         // Add trait
-        let new_tr = Trait {
-            path: Path {
+        let new_tr = ItemTrait {
+            path: ItemPath {
                 cr_idx: entry.cr_idx,
                 path: tr.full_path(),
             },
             g_idx: entry.globals.len(),
         };
         // Add trait global
-        entry.globals.push(Global {
-            path: Path {
+        entry.globals.push(ItemGlobal {
+            path: ItemPath {
                 cr_idx: entry.cr_idx,
                 path: tr.get_global().full_path(),
             },
@@ -55,12 +53,12 @@ pub fn add_traits(items: &mut Vec<ItemsCrate>) {
 }
 
 // Add namespace mod, happends as parse-time
-pub fn entry_namespace_mod(cr: &Crate, dir: PathBuf, mods: Vec<String>) -> Mod {
+pub fn entry_namespace_mod(cr: &AstCrate, dir: PathBuf, mods: Vec<String>) -> AstMod {
     let mut m = dependency_namespace_mod(cr, dir, mods);
     // Foo structs
     for tr in NamespaceTraits::VARIANTS.iter() {
         let gl = tr.get_global();
-        let sym = Symbol {
+        let sym = AstSymbol {
             ident: gl.as_ident().to_string(),
             path: gl.full_path(),
             public: true,
@@ -70,15 +68,15 @@ pub fn entry_namespace_mod(cr: &Crate, dir: PathBuf, mods: Vec<String>) -> Mod {
     m
 }
 
-pub fn dependency_namespace_mod(cr: &Crate, dir: PathBuf, mut mods: Vec<String>) -> Mod {
+pub fn dependency_namespace_mod(cr: &AstCrate, dir: PathBuf, mut mods: Vec<String>) -> AstMod {
     mods.push(NAMESPACE.to_string());
-    Mod {
-        ty: ModType::Internal,
+    AstMod {
+        ty: AstModType::Internal,
         dir: dir.to_owned(),
         path: mods,
         mods: Vec::new(),
         // Traits
-        symbols: NamespaceTraits::VARIANTS.iter().map_vec(|tr| Symbol {
+        symbols: NamespaceTraits::VARIANTS.iter().map_vec(|tr| AstSymbol {
             ident: tr.as_ident().to_string(),
             path: tr.full_path(),
             public: true,
@@ -87,7 +85,7 @@ pub fn dependency_namespace_mod(cr: &Crate, dir: PathBuf, mut mods: Vec<String>)
         uses: cr
             .deps
             .iter()
-            .map(|(_, alias)| Symbol {
+            .map(|(_, alias)| AstSymbol {
                 ident: alias.to_string(),
                 path: vec!["crate", &alias].map_vec(|s| s.to_string()),
                 public: true,

@@ -10,11 +10,9 @@ use shared::{
 use crate::{
     codegen::{self, idents::Idents, structs::Component, util::vec_to_path},
     resolve::{
-        ast_items::{Dependency, ItemsCrate},
-        ast_paths::{
-            Crates, EngineGlobals, EnginePaths, EngineTraits, ExpandEnum, GetPaths, Paths,
-        },
-        ast_resolve::Path,
+        items_crate::{ItemsCrate, ItemsCrateDependency},
+        path::ItemPath,
+        paths::{Crates, EngineGlobals, EnginePaths, EngineTraits, ExpandEnum, GetPaths, Paths},
     },
     validate::constants::{component_var, event_var, event_variant, global_var, NAMESPACE},
 };
@@ -90,7 +88,7 @@ impl ItemsCrate {
 
     fn get_crate_path(&self, cr: &ItemsCrate, crates: &Vec<ItemsCrate>) -> syn::Path {
         vec_to_path(
-            Path {
+            ItemPath {
                 cr_idx: cr.cr_idx,
                 path: vec![if cr.cr_idx == self.cr_idx {
                     "crate".to_string()

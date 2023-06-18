@@ -14,8 +14,8 @@ use crate::{
         util::{arr_to_path, string_to_type, type_to_type, vec_to_path},
     },
     resolve::{
-        ast_items::{self, ItemsCrate},
-        ast_paths::{EngineGlobals, EnginePaths, EngineTraits, ExpandEnum, GetPaths, Paths},
+        items_crate::{self, ItemsCrate},
+        paths::{EngineGlobals, EnginePaths, EngineTraits, ExpandEnum, GetPaths, Paths},
     },
     validate::{
         ast_system::{FnArgResult, SystemValidate},
@@ -107,7 +107,7 @@ impl System {
     }
 
     pub fn from(
-        system: &ast_items::System,
+        system: &items_crate::ItemSystem,
         cr_path: &syn::Path,
         paths: &Paths,
         crates: &Vec<ItemsCrate>,
@@ -166,8 +166,6 @@ impl System {
                 validate.errs.join("\n")
             )
         }
-
-        eprintln!("{sys:#?}");
 
         sys
     }

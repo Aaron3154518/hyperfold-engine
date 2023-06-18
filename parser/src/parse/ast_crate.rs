@@ -11,11 +11,11 @@ use shared::util::{Call, Catch};
 
 use super::{
     ast_file::DirType,
-    ast_mod::{Mod, ModType},
+    ast_mod::{AstMod, AstModType},
 };
 use crate::{
     codegen::mods::{dependency_namespace_mod, entry_namespace_mod},
-    resolve::ast_paths::Paths,
+    resolve::paths::Paths,
     util::end,
 };
 
@@ -35,21 +35,21 @@ pub fn get_macros_dir() -> PathBuf {
 }
 
 #[derive(Clone, Copy, Debug)]
-enum Dependency {
+enum AstCrateDependency {
     Crate(usize),
     MacrosCrate,
 }
 
 #[derive(Debug)]
-pub struct Crate {
+pub struct AstCrate {
     pub idx: usize,
     pub name: String,
     pub dir: PathBuf,
-    pub main: Mod,
+    pub main: AstMod,
     pub deps: HashMap<usize, String>,
 }
 
-impl Crate {
+impl AstCrate {
     pub fn new(dir: PathBuf, idx: usize, is_entry: bool) -> Self {
         let rel_dir = dir.to_owned();
         let dir: PathBuf = fs::canonicalize(dir).catch(format!(
@@ -65,7 +65,7 @@ impl Crate {
                 .to_string_lossy()
                 .to_string(),
             dir: dir.to_owned(),
-            main: Mod::parse_dir(
+            main: AstMod::parse_dir(
                 dir.join("src"),
                 &vec!["crate".to_string()],
                 if is_entry {
@@ -80,10 +80,10 @@ impl Crate {
 
     fn get_crate_dependencies(
         cr_dir: PathBuf,
-        block_dirs: &HashMap<PathBuf, Dependency>,
-        crates: &Vec<Crate>,
-    ) -> (Vec<(Dependency, String)>, Vec<String>) {
-        let deps = Crate::parse_cargo_toml(cr_dir.to_owned());
+        block_dirs: &HashMap<PathBuf, AstCrateDependency>,
+        crates: &Vec<AstCrate>,
+    ) -> (Vec<(AstCrateDependency, String)>, Vec<String>) {
+        let deps = AstCrate::parse_cargo_toml(cr_dir.to_owned());
         let mut new_deps = Vec::new();
         (
             deps.into_iter()
@@ -97,10 +97,13 @@ impl Crate {
                     match block_dirs.get(&dep_dir) {
                         Some(d) => (*d, name),
                         None => match crates.iter().position(|cr| cr.dir == dep_dir) {
-                            Some(i) => (Dependency::Crate(i), name),
+                            Some(i) => (AstCrateDependency::Crate(i), name),
                             None => {
                                 new_deps.push(path);
-                                (Dependency::Crate(crates.len() + new_deps.len() - 1), name)
+                                (
+                                    AstCrateDependency::Crate(crates.len() + new_deps.len() - 1),
+                                    name,
+                                )
                             }
                         },
                     }
@@ -111,11 +114,11 @@ impl Crate {
     }
 
     pub fn parse(mut dir: PathBuf) -> (Vec<Self>, Paths) {
-        let mut crates = vec![Crate::new(dir.to_owned(), 0, true)];
+        let mut crates = vec![AstCrate::new(dir.to_owned(), 0, true)];
 
         let engine_dir = get_engine_dir();
         let macros_dir = get_macros_dir();
-        let block_dirs = [(macros_dir.to_owned(), Dependency::MacrosCrate)]
+        let block_dirs = [(macros_dir.to_owned(), AstCrateDependency::MacrosCrate)]
             .into_iter()
             .collect::<HashMap<_, _>>();
 
@@ -127,7 +130,7 @@ impl Crate {
                 |(deps, new_deps)| {
                     crate_deps.push(deps);
                     for path in new_deps {
-                        crates.push(Crate::new(cr_dir.join(path), crates.len(), false))
+                        crates.push(AstCrate::new(cr_dir.join(path), crates.len(), false))
                     }
                 },
             );
@@ -141,7 +144,7 @@ impl Crate {
 
         // Add macros crate at the end
         let macros_cr_idx = crates.len();
-        crates.push(Crate::new(macros_dir.to_owned(), macros_cr_idx, false));
+        crates.push(AstCrate::new(macros_dir.to_owned(), macros_cr_idx, false));
         crate_deps.push(Vec::new());
 
         // Insert correct dependencies
@@ -151,8 +154,8 @@ impl Crate {
                 .map(|(d, name)| {
                     (
                         match d {
-                            Dependency::Crate(i) => i,
-                            Dependency::MacrosCrate => macros_cr_idx,
+                            AstCrateDependency::Crate(i) => i,
+                            AstCrateDependency::MacrosCrate => macros_cr_idx,
                         },
                         name,
                     )

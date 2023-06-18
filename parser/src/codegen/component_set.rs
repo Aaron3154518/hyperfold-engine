@@ -2,9 +2,9 @@ use shared::util::JoinMap;
 
 use crate::{
     resolve::{
-        ast_component_set::{self, LabelOp},
-        ast_items::ItemsCrate,
-        ast_resolve::Path,
+        component_set::{self, LabelOp},
+        items_crate::ItemsCrate,
+        path::ItemPath,
     },
     validate::util::ItemIndex,
 };
@@ -22,7 +22,7 @@ pub struct ComponentSetLabels {
 }
 
 impl ComponentSetLabels {
-    pub fn validate_labels(root: &ast_component_set::LabelItem, crates: &Vec<ItemsCrate>) -> Self {
+    pub fn validate_labels(root: &component_set::LabelItem, crates: &Vec<ItemsCrate>) -> Self {
         let mut components = Vec::new();
         let expression = Self::get_labels(root, &mut components);
         let components = components.map_vec(|item_c| {
@@ -40,9 +40,9 @@ impl ComponentSetLabels {
         }
     }
 
-    fn get_labels(item: &ast_component_set::LabelItem, comps: &mut Vec<Path>) -> LabelItem {
+    fn get_labels(item: &component_set::LabelItem, comps: &mut Vec<ItemPath>) -> LabelItem {
         match item {
-            ast_component_set::LabelItem::Item { not, ty } => LabelItem::Item {
+            component_set::LabelItem::Item { not, ty } => LabelItem::Item {
                 not: *not,
                 component: {
                     comps.iter().position(|c| c == ty).unwrap_or_else(|| {
@@ -51,7 +51,7 @@ impl ComponentSetLabels {
                     })
                 },
             },
-            ast_component_set::LabelItem::Expression { op, items } => LabelItem::Expression {
+            component_set::LabelItem::Expression { op, items } => LabelItem::Expression {
                 op: *op,
                 items: items.map_vec(|item| Self::get_labels(item, comps)),
             },
@@ -67,13 +67,13 @@ pub struct ComponentSetItem {
 
 #[derive(Debug)]
 pub struct ComponentSet {
-    pub path: Path,
+    pub path: ItemPath,
     pub components: Vec<ComponentSetItem>,
     pub labels: Option<ComponentSetLabels>,
 }
 
 impl ComponentSet {
-    pub fn parse(cs: &ast_component_set::ComponentSet, crates: &Vec<ItemsCrate>) -> Self {
+    pub fn parse(cs: &component_set::ComponentSetMacro, crates: &Vec<ItemsCrate>) -> Self {
         let labels = cs
             .labels
             .as_ref()

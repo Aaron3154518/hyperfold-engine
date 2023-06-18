@@ -6,16 +6,13 @@ use syn::{spanned::Spanned, Error, Token};
 
 use crate::{
     parse::{
-        ast_crate::Crate,
-        ast_mod::{Mod, Symbol},
+        ast_crate::AstCrate,
+        ast_mod::{AstMod, AstSymbol},
     },
-    resolve::ast_resolve::resolve_path,
+    resolve::path::resolve_path,
 };
 
-use super::{
-    ast_items::ParseMacroCall,
-    ast_resolve::{resolve, Path},
-};
+use super::{parse_macro_call::ParseMacroCall, path::ItemPath};
 
 macro_rules! err {
     ($token: ident, $msg: literal) => {
@@ -185,7 +182,7 @@ impl syn::parse::Parse for Expression {
 // Flattened label set
 #[derive(Clone, Debug)]
 pub enum LabelItem {
-    Item { not: bool, ty: Path },
+    Item { not: bool, ty: ItemPath },
     Expression { op: LabelOp, items: Vec<LabelItem> },
 }
 
@@ -215,7 +212,7 @@ impl syn::parse::Parse for LabelItem {
                     |ty| match ty {
                         syn::Type::Path(p) => Ok(Self::Item {
                             not,
-                            ty: Path {
+                            ty: ItemPath {
                                 cr_idx: 0,
                                 path: p
                                     .path
@@ -255,7 +252,7 @@ impl std::fmt::Display for LabelItem {
 #[derive(Debug)]
 pub struct ComponentSetItem {
     pub var: String,
-    pub ty: Path,
+    pub ty: ItemPath,
     pub ref_cnt: usize,
     pub is_mut: bool,
 }
@@ -266,7 +263,7 @@ impl ComponentSetItem {
         return match ty {
             syn::Type::Path(ty) => Ok(Self {
                 var,
-                ty: Path {
+                ty: ItemPath {
                     cr_idx: 0,
                     path: ty
                         .path
@@ -309,16 +306,21 @@ impl syn::parse::Parse for ComponentSetItem {
 }
 
 #[derive(Debug)]
-pub struct ComponentSet {
-    pub path: Path,
+pub struct ComponentSetMacro {
+    pub path: ItemPath,
     pub args: Vec<ComponentSetItem>,
     pub labels: Option<LabelItem>,
 }
 
-impl ParseMacroCall for ComponentSet {
-    fn parse(cr: &Crate, m: &Mod, crates: &Vec<Crate>, ts: TokenStream) -> syn::Result<Self> {
+impl ParseMacroCall for ComponentSetMacro {
+    fn parse(
+        cr: &AstCrate,
+        m: &AstMod,
+        crates: &Vec<AstCrate>,
+        ts: TokenStream,
+    ) -> syn::Result<Self> {
         syn::parse2::<Self>(ts).map(|mut cs| {
-            cs.path = Path {
+            cs.path = ItemPath {
                 cr_idx: cr.idx,
                 path: [m.path.to_vec(), cs.path.path].concat(),
             };
@@ -341,8 +343,8 @@ impl ParseMacroCall for ComponentSet {
         })
     }
 
-    fn update_mod(&self, m: &mut Mod) {
-        m.symbols.push(Symbol {
+    fn update_mod(&self, m: &mut AstMod) {
+        m.symbols.push(AstSymbol {
             ident: self
                 .path
                 .path
@@ -355,7 +357,7 @@ impl ParseMacroCall for ComponentSet {
     }
 }
 
-impl syn::parse::Parse for ComponentSet {
+impl syn::parse::Parse for ComponentSetMacro {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         let mut _comma: syn::token::Comma;
 
@@ -383,7 +385,7 @@ impl syn::parse::Parse for ComponentSet {
             first_ident = parse_expect!(input, "Expected ident");
         }
 
-        let path = Path {
+        let path = ItemPath {
             cr_idx: 0,
             path: vec![first_ident.to_string()],
         };
@@ -397,7 +399,7 @@ impl syn::parse::Parse for ComponentSet {
     }
 }
 
-impl std::fmt::Display for ComponentSet {
+impl std::fmt::Display for ComponentSetMacro {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!(
             "{{\n{:#?}\n{:#?}\nLabels: {}\n}}",

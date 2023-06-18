@@ -9,7 +9,7 @@ use crate::{
 
 use shared::util::{Call, JoinMap};
 
-use super::ast_resolve::Path;
+use super::path::ItemPath;
 
 pub trait ExpandEnum<const N: usize>
 where
@@ -57,14 +57,14 @@ pub trait GetPaths<const N: usize>: ExpandEnum<N> {
             .map_vec(|s| s.to_string())
     }
 
-    fn crate_path(&self, cr_idx: usize) -> Path {
-        Path {
+    fn crate_path(&self, cr_idx: usize) -> ItemPath {
+        ItemPath {
             cr_idx,
             path: self.full_path(),
         }
     }
 
-    fn crate_paths(cr_idxs: &[usize; Crates::LEN]) -> [Path; N] {
+    fn crate_paths(cr_idxs: &[usize; Crates::LEN]) -> [ItemPath; N] {
         Self::VARIANTS.map(|v| v.crate_path(cr_idxs[v.as_crate() as usize]))
     }
 }
@@ -317,10 +317,10 @@ pub enum Crates {
 
 #[derive(Clone, Debug)]
 pub struct Paths {
-    pub macros: [Path; MacroPaths::LEN],
-    pub traits: [Path; EngineTraits::LEN],
-    pub globals: [Path; EngineGlobals::LEN],
-    pub idents: [Path; EnginePaths::LEN],
+    pub macros: [ItemPath; MacroPaths::LEN],
+    pub traits: [ItemPath; EngineTraits::LEN],
+    pub globals: [ItemPath; EngineGlobals::LEN],
+    pub idents: [ItemPath; EnginePaths::LEN],
     pub cr_idxs: [usize; Crates::LEN],
 }
 
@@ -344,19 +344,19 @@ impl Paths {
         self.cr_idxs[i as usize]
     }
 
-    pub fn get_macro(&self, i: MacroPaths) -> &Path {
+    pub fn get_macro(&self, i: MacroPaths) -> &ItemPath {
         &self.macros[i as usize]
     }
 
-    pub fn get_trait(&self, i: EngineTraits) -> &Path {
+    pub fn get_trait(&self, i: EngineTraits) -> &ItemPath {
         &self.traits[i as usize]
     }
 
-    pub fn get_global(&self, i: EngineGlobals) -> &Path {
+    pub fn get_global(&self, i: EngineGlobals) -> &ItemPath {
         &self.globals[i as usize]
     }
 
-    pub fn get_engine_path(&self, i: EnginePaths) -> &Path {
+    pub fn get_engine_path(&self, i: EnginePaths) -> &ItemPath {
         &self.idents[i as usize]
     }
 }

@@ -9,13 +9,13 @@ use std::{
     path::PathBuf,
 };
 
-use parse::ast_crate::Crate;
+use parse::ast_crate::AstCrate;
 use regex::Regex;
-use resolve::ast_resolve;
+use resolve::path;
 use shared::util::JoinMapInto;
 
 use crate::{
-    resolve::{ast_items::ItemsCrate, ast_paths::Paths},
+    resolve::{items_crate::ItemsCrate, paths::Paths},
     util::{end, format_code},
 };
 
@@ -31,14 +31,15 @@ pub mod validate;
 // 3) Validate - convert IR to data format and validate items
 // 4) Decode - convert data back to IR
 
-fn test_resolves(crates: &Vec<Crate>) {
+fn test_resolves(crates: &Vec<AstCrate>) {
     let test = |v: Vec<&str>| {
         println!(
             "{}\n{:#?}",
             v.join("::"),
-            ast_resolve::resolve(
+            path::resolve_path(
                 v.iter().map(|s| s.to_string()).collect(),
                 &crates[0],
+                &crates[0].main,
                 &crates
             )
         )
@@ -73,7 +74,7 @@ fn test_resolves(crates: &Vec<Crate>) {
 
 fn test() {
     // TODO: hardcoded
-    let (mut crates, paths) = Crate::parse(PathBuf::from("../"));
+    let (mut crates, paths) = AstCrate::parse(PathBuf::from("../"));
 
     // eprintln!("{crates:#?}");
 

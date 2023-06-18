@@ -5,14 +5,13 @@ use shared::util::Catch;
 use syn::visit::Visit;
 
 use crate::{
-    parse::ast_attrs::{get_attributes_if_active, Attribute, EcsAttribute},
+    parse::attributes::{get_attributes_if_active, Attribute, EcsAttribute},
     util::{add_path_item, end, parse_syn_path},
 };
 
-use super::ast_fn_arg::FnArg;
-
+// Ast item with an attribute
 #[derive(Debug)]
-pub enum MarkType {
+pub enum AstItemType {
     Struct,
     Enum,
     Fn { sig: syn::Signature },
@@ -20,27 +19,29 @@ pub enum MarkType {
 
 // TODO: Cfg features
 #[derive(Debug)]
-pub struct MarkedItem {
-    pub ty: MarkType,
-    pub sym: Symbol,
+pub struct MarkedAstItem {
+    pub ty: AstItemType,
+    pub sym: AstSymbol,
     pub attrs: Vec<(Vec<String>, Vec<String>)>,
 }
 
+// Call to a macro
 #[derive(Debug)]
-pub struct MacroCall {
+pub struct AstMacroCall {
     pub path: Vec<String>,
     pub args: TokenStream,
 }
 
+// Symbol with path
 #[derive(Clone, Debug)]
-pub struct Symbol {
+pub struct AstSymbol {
     pub ident: String,
     // Include ident (or alias for use stmts)
     pub path: Vec<String>,
     pub public: bool,
 }
 
-impl Symbol {
+impl AstSymbol {
     pub fn from(mut path: Vec<String>, ident: &syn::Ident, vis: &syn::Visibility) -> Self {
         path.push(ident.to_string());
         // Add to the symbol table
@@ -55,8 +56,9 @@ impl Symbol {
     }
 }
 
+// Type of module
 #[derive(Debug)]
-pub enum ModType {
+pub enum AstModType {
     Main,
     Lib,
     Mod,
@@ -64,22 +66,23 @@ pub enum ModType {
     Internal,
 }
 
+// Module
 #[derive(Debug)]
-pub struct Mod {
-    pub ty: ModType,
+pub struct AstMod {
+    pub ty: AstModType,
     pub dir: PathBuf,
     pub path: Vec<String>,
-    pub mods: Vec<Mod>,
-    pub symbols: Vec<Symbol>,
-    pub uses: Vec<Symbol>,
-    pub marked: Vec<MarkedItem>,
-    pub macro_calls: Vec<MacroCall>,
+    pub mods: Vec<AstMod>,
+    pub symbols: Vec<AstSymbol>,
+    pub uses: Vec<AstSymbol>,
+    pub marked: Vec<MarkedAstItem>,
+    pub macro_calls: Vec<AstMacroCall>,
 }
 
 // TODO: ignore private mods to avoid name collisions
 // Pass 1: parsing
-impl Mod {
-    pub fn new(dir: PathBuf, path: Vec<String>, ty: ModType) -> Self {
+impl AstMod {
+    pub fn new(dir: PathBuf, path: Vec<String>, ty: AstModType) -> Self {
         Self {
             ty,
             dir,
@@ -112,7 +115,7 @@ impl Mod {
             if let Some(m) = self
                 .mods
                 .iter()
-                .find(|m| m.path.last().expect("Empty mod path") == first)
+                .find(|m| m.path.last().is_some_and(|p| p == first))
             {
                 use_path.path = [m.path.to_vec(), use_path.path[1..].to_vec()].concat();
             }
@@ -121,7 +124,7 @@ impl Mod {
 }
 
 // File/items
-impl Mod {
+impl AstMod {
     pub fn visit_file(&mut self, i: syn::File) {
         self.visit_items(i.items);
     }
@@ -163,7 +166,7 @@ impl Mod {
         }
         .map(|(ident, vis)| {
             self.symbols
-                .push(Symbol::from(self.path.to_vec(), ident, vis))
+                .push(AstSymbol::from(self.path.to_vec(), ident, vis))
         });
 
         // Match again to parse
@@ -181,25 +184,23 @@ impl Mod {
     // Mod
     fn visit_item_mod(&mut self, i: syn::ItemMod) {
         if let Some(attrs) = get_attributes_if_active(&i.attrs, &self.path, &Vec::new()) {
-            match i.content {
+            self.mods.push(match i.content {
                 // Parse inner mod
                 Some((_, items)) => {
                     let mut new_mod = Self::new(
                         self.dir.to_owned(),
                         [self.path.to_vec(), vec![i.ident.to_string()]].concat(),
-                        ModType::Internal,
+                        AstModType::Internal,
                     );
                     new_mod.visit_items(items);
-                    self.mods.push(new_mod);
+                    new_mod
                 }
                 // Parse file mod
-                None => {
-                    self.mods.push(Self::parse_mod(
-                        self.dir.join(i.ident.to_string()),
-                        &[self.path.to_vec(), vec![i.ident.to_string()]].concat(),
-                    ));
-                }
-            }
+                None => Self::parse_mod(
+                    self.dir.join(i.ident.to_string()),
+                    &[self.path.to_vec(), vec![i.ident.to_string()]].concat(),
+                ),
+            });
         }
     }
 
@@ -207,9 +208,9 @@ impl Mod {
     fn visit_item_struct(&mut self, i: syn::ItemStruct) {
         if let Some(attrs) = get_attributes_if_active(&i.attrs, &self.path, &Vec::new()) {
             if !attrs.is_empty() {
-                self.marked.push(MarkedItem {
-                    ty: MarkType::Struct,
-                    sym: Symbol::from(self.path.to_vec(), &i.ident, &i.vis),
+                self.marked.push(MarkedAstItem {
+                    ty: AstItemType::Struct,
+                    sym: AstSymbol::from(self.path.to_vec(), &i.ident, &i.vis),
                     attrs,
                 });
             }
@@ -219,9 +220,9 @@ impl Mod {
     fn visit_item_enum(&mut self, i: syn::ItemEnum) {
         if let Some(attrs) = get_attributes_if_active(&i.attrs, &self.path, &Vec::new()) {
             if !attrs.is_empty() {
-                self.marked.push(MarkedItem {
-                    ty: MarkType::Enum,
-                    sym: Symbol::from(self.path.to_vec(), &i.ident, &i.vis),
+                self.marked.push(MarkedAstItem {
+                    ty: AstItemType::Enum,
+                    sym: AstSymbol::from(self.path.to_vec(), &i.ident, &i.vis),
                     attrs,
                 });
             }
@@ -232,9 +233,9 @@ impl Mod {
     fn visit_item_fn(&mut self, i: syn::ItemFn) {
         if let Some(attrs) = get_attributes_if_active(&i.attrs, &self.path, &Vec::new()) {
             if !attrs.is_empty() {
-                self.marked.push(MarkedItem {
-                    sym: Symbol::from(self.path.to_vec(), &i.sig.ident, &i.vis),
-                    ty: MarkType::Fn { sig: i.sig },
+                self.marked.push(MarkedAstItem {
+                    sym: AstSymbol::from(self.path.to_vec(), &i.sig.ident, &i.vis),
+                    ty: AstItemType::Fn { sig: i.sig },
                     attrs,
                 });
             }
@@ -246,7 +247,7 @@ impl Mod {
         if let Some(_) = get_attributes_if_active(&i.attrs, &self.path, &Vec::new()) {
             // Some is for macro_rules!
             if i.ident.is_none() {
-                self.macro_calls.push(MacroCall {
+                self.macro_calls.push(AstMacroCall {
                     args: i.mac.tokens.to_owned(),
                     path: parse_syn_path(&self.path, &i.mac.path),
                 });
@@ -259,7 +260,7 @@ impl Mod {
 // TODO: type redeclarations
 
 // Use paths
-impl Mod {
+impl AstMod {
     fn visit_item_use(&mut self, i: syn::ItemUse) {
         if let Some(attrs) = get_attributes_if_active(&i.attrs, &self.path, &Vec::new()) {
             let mut uses = self.visit_use_tree(i.tree, &mut Vec::new(), Vec::new());
@@ -276,8 +277,8 @@ impl Mod {
         &mut self,
         i: syn::UseTree,
         path: &mut Vec<String>,
-        items: Vec<Symbol>,
-    ) -> Vec<Symbol> {
+        items: Vec<AstSymbol>,
+    ) -> Vec<AstSymbol> {
         match i {
             syn::UseTree::Path(i) => self.visit_use_path(i, path, items),
             syn::UseTree::Name(i) => self.visit_use_name(i, path, items),
@@ -291,8 +292,8 @@ impl Mod {
         &mut self,
         i: syn::UsePath,
         path: &mut Vec<String>,
-        items: Vec<Symbol>,
-    ) -> Vec<Symbol> {
+        items: Vec<AstSymbol>,
+    ) -> Vec<AstSymbol> {
         add_path_item(&self.path, path, i.ident.to_string());
         self.visit_use_tree(*i.tree, path, items)
     }
@@ -301,10 +302,10 @@ impl Mod {
         &mut self,
         i: syn::UseName,
         path: &mut Vec<String>,
-        mut items: Vec<Symbol>,
-    ) -> Vec<Symbol> {
+        mut items: Vec<AstSymbol>,
+    ) -> Vec<AstSymbol> {
         add_path_item(&self.path, path, i.ident.to_string());
-        items.push(Symbol {
+        items.push(AstSymbol {
             ident: path.last().expect("Empty use path with 'self'").to_string(),
             path: path.to_vec(),
             public: false,
@@ -316,9 +317,9 @@ impl Mod {
         &mut self,
         i: syn::UseRename,
         path: &mut Vec<String>,
-        mut items: Vec<Symbol>,
-    ) -> Vec<Symbol> {
-        items.push(Symbol {
+        mut items: Vec<AstSymbol>,
+    ) -> Vec<AstSymbol> {
+        items.push(AstSymbol {
             ident: i.rename.to_string(),
             path: [path.to_owned(), vec![i.ident.to_string()]].concat(),
             public: false,
@@ -330,9 +331,9 @@ impl Mod {
         &mut self,
         i: syn::UseGlob,
         path: &mut Vec<String>,
-        mut items: Vec<Symbol>,
-    ) -> Vec<Symbol> {
-        items.push(Symbol {
+        mut items: Vec<AstSymbol>,
+    ) -> Vec<AstSymbol> {
+        items.push(AstSymbol {
             ident: "*".to_string(),
             path: path.to_owned(),
             public: false,
@@ -344,8 +345,8 @@ impl Mod {
         &mut self,
         i: syn::UseGroup,
         path: &mut Vec<String>,
-        items: Vec<Symbol>,
-    ) -> Vec<Symbol> {
+        items: Vec<AstSymbol>,
+    ) -> Vec<AstSymbol> {
         i.items.into_iter().fold(items, |items, i| {
             self.visit_use_tree(i, &mut path.to_vec(), items)
         })

@@ -1,18 +1,18 @@
 use syn::Pat;
 
 use crate::parse::{
-    ast_crate::Crate,
-    ast_mod::{Mod, Symbol},
+    ast_crate::AstCrate,
+    ast_mod::{AstMod, AstSymbol},
 };
 use shared::util::Catch;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
-pub struct Path {
+pub struct ItemPath {
     pub cr_idx: usize,
     pub path: Vec<String>,
 }
 
-impl Path {
+impl ItemPath {
     pub fn new() -> Self {
         Self {
             cr_idx: 0,
@@ -24,19 +24,29 @@ impl Path {
 // Err means:
 // 1) Not from a valid crate
 // 2) resolve_mod() returns Err
-pub fn resolve(mut path: Vec<String>, cr: &Crate, crates: &Vec<Crate>) -> Result<Path, Path> {
+fn resolve_path_from_crate(
+    mut path: Vec<String>,
+    cr: &AstCrate,
+    crates: &Vec<AstCrate>,
+) -> Result<ItemPath, ItemPath> {
     // println!("Resolve: {}, crate: {}", path.join("::"), cr.idx);
     let cr_idx = cr.idx;
     match path.first() {
         Some(p) => {
             match p.as_str() {
                 // Match this crate
-                "crate" => Some(resolve_mod(path.to_vec(), 1, cr, &cr.main, crates)),
+                "crate" => Some(resolve_path_from_mod(
+                    path.to_vec(),
+                    1,
+                    cr,
+                    &cr.main,
+                    crates,
+                )),
                 // Match dependency
                 _ => cr.deps.iter().find_map(|(idx, alias)| {
                     (alias == p).then(|| {
                         let cr = crates.get(*idx).expect("Invalid dependency index");
-                        resolve(
+                        resolve_path_from_crate(
                             [vec!["crate".to_string()], path[1..].to_vec()].concat(),
                             cr,
                             crates,
@@ -44,9 +54,9 @@ pub fn resolve(mut path: Vec<String>, cr: &Crate, crates: &Vec<Crate>) -> Result
                     })
                 }),
             }
-            .map_or(Err(Path { cr_idx, path }), |r| r)
+            .map_or(Err(ItemPath { cr_idx, path }), |r| r)
         }
-        None => Err(Path { cr_idx, path }),
+        None => Err(ItemPath { cr_idx, path }),
     }
 }
 
@@ -55,13 +65,13 @@ pub fn resolve(mut path: Vec<String>, cr: &Crate, crates: &Vec<Crate>) -> Result
 // 1) Does not match anything
 // 2) Matches mod but remainder doesn't match
 // 3) Matches use statement new path doesn't match
-pub fn resolve_mod(
+fn resolve_path_from_mod(
     path: Vec<String>,
     idx: usize,
-    cr: &Crate,
-    m: &Mod,
-    crates: &Vec<Crate>,
-) -> Result<Path, Path> {
+    cr: &AstCrate,
+    m: &AstMod,
+    crates: &Vec<AstCrate>,
+) -> Result<ItemPath, ItemPath> {
     // println!(
     //     "Resolve Mod: {} at {}",
     //     path.join("::"),
@@ -84,9 +94,9 @@ pub fn resolve_mod(
             // println!("Found Mod: {}", name);
             return if idx + 1 == path.len() {
                 // The path points to a mod
-                Ok(Path { cr_idx, path })
+                Ok(ItemPath { cr_idx, path })
             } else {
-                return resolve_mod(path, idx + 1, cr, m, crates);
+                return resolve_path_from_mod(path, idx + 1, cr, m, crates);
             };
         }
     }
@@ -95,7 +105,7 @@ pub fn resolve_mod(
     for sym in m.symbols.iter() {
         if sym.ident == name {
             // println!("Found Symbol: {}", sym.path.join("::"));
-            return Ok(Path {
+            return Ok(ItemPath {
                 cr_idx: cr.idx,
                 path: sym.path.to_vec(),
             });
@@ -116,16 +126,16 @@ pub fn resolve_mod(
             return resolve_path(path.to_vec(), cr, m, crates);
         }
     }
-    Err(Path { cr_idx, path })
+    Err(ItemPath { cr_idx, path })
 }
 
 // Paths that start relative to some mod item
 pub fn resolve_path(
     path: Vec<String>,
-    cr: &Crate,
-    m: &Mod,
-    crates: &Vec<Crate>,
-) -> Result<Path, Path> {
+    cr: &AstCrate,
+    m: &AstMod,
+    crates: &Vec<AstCrate>,
+) -> Result<ItemPath, ItemPath> {
     // println!("Local Resolve: {}", path.join("::"));
     let cr_idx = cr.idx;
 
@@ -135,7 +145,7 @@ pub fn resolve_path(
 
     // Can't be local
     if name == "crate" {
-        return resolve(path, cr, crates);
+        return resolve_path_from_crate(path, cr, crates);
     }
 
     // Iterate possible paths
@@ -145,10 +155,10 @@ pub fn resolve_path(
             syns.iter().find_map(|syn| {
                 // Get possible path
                 if syn.ident == "*" {
-                    resolve([syn.path.to_vec(), path.to_vec()].concat(), cr, crates)
+                    resolve_path_from_crate([syn.path.to_vec(), path.to_vec()].concat(), cr, crates)
                         .map_or(None, |p| Some(Ok(p)))
                 } else if name == &syn.ident {
-                    Some(resolve(
+                    Some(resolve_path_from_crate(
                         [syn.path.to_vec(), path[1..].to_vec()].concat(),
                         cr,
                         crates,
@@ -158,6 +168,5 @@ pub fn resolve_path(
                 }
             })
         })
-        .unwrap_or_else(|| resolve(path, cr, crates))
+        .unwrap_or_else(|| resolve_path_from_crate(path, cr, crates))
 }
-

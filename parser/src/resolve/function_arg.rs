@@ -4,20 +4,19 @@ use quote::ToTokens;
 use shared::util::{Catch, JoinMap};
 
 use crate::{
+    parse::{ast_crate::AstCrate, ast_mod::AstMod},
     resolve::{
-        ast_paths::{EnginePaths, Paths},
-        ast_resolve::{resolve_path, Path},
+        path::{resolve_path, ItemPath},
+        paths::{EnginePaths, Paths},
     },
     util::parse_syn_path,
 };
 
-use super::{ast_crate::Crate, ast_mod::Mod};
-
 #[derive(Clone, Debug)]
 pub enum FnArgType {
-    Path(Path),
-    Trait(Path),
-    Entities(Path),
+    Path(ItemPath),
+    Trait(ItemPath),
+    Entities(ItemPath),
 }
 
 impl std::fmt::Display for FnArgType {
@@ -47,15 +46,21 @@ pub struct FnArg {
 impl FnArg {
     pub fn from(
         ty: &syn::PatType,
-        cr: &Crate,
-        m: &Mod,
+        cr: &AstCrate,
+        m: &AstMod,
         paths: &Paths,
-        crates: &Vec<Crate>,
+        crates: &Vec<AstCrate>,
     ) -> Self {
         Self::parse_type(&ty.ty, cr, m, paths, crates)
     }
 
-    fn parse_type(ty: &syn::Type, cr: &Crate, m: &Mod, paths: &Paths, crates: &Vec<Crate>) -> Self {
+    fn parse_type(
+        ty: &syn::Type,
+        cr: &AstCrate,
+        m: &AstMod,
+        paths: &Paths,
+        crates: &Vec<AstCrate>,
+    ) -> Self {
         let resolve_syn_path = |path: &syn::Path| {
             let path = parse_syn_path(&m.path, path);
             let path_str = path.join("::");

@@ -7,11 +7,11 @@ use shared::{
 
 use crate::{
     codegen::{component_set::ComponentSet, system::LabelType},
-    parse::ast_fn_arg::{FnArg, FnArgType},
     resolve::{
-        ast_items::{ItemsCrate, System},
-        ast_paths::{EngineGlobals, EnginePaths, Paths},
-        ast_resolve::Path,
+        function_arg::{FnArg, FnArgType},
+        items_crate::{ItemSystem, ItemsCrate},
+        path::ItemPath,
+        paths::{EngineGlobals, EnginePaths, Paths},
     },
     validate::constants::{component_var, event_var},
 };
@@ -146,6 +146,8 @@ impl SystemValidate {
     }
 
     pub fn validate_component_set(&mut self, arg: &FnArg, cs: &ComponentSet, is_vec: bool) {
+        self.validate_ref(arg, 0);
+
         for i in cs.components.iter() {
             if !self.components.contains_key(&i.idx) {
                 self.components.insert(i.idx, ComponentRefTracker::new());

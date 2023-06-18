@@ -1,19 +1,19 @@
 use shared::util::NoneOr;
 
 use crate::resolve::{
-    ast_items::{Dependency, ItemsCrate},
-    ast_resolve::Path,
+    items_crate::{ItemsCrate, ItemsCrateDependency},
+    path::ItemPath,
 };
 
 use super::constants::NAMESPACE;
 
-impl Path {
+impl ItemPath {
     pub fn path_from(&self, cr_idx: usize, crates: &Vec<ItemsCrate>) -> Vec<String> {
         if cr_idx == self.cr_idx {
             return self.path.to_vec();
         }
 
-        let start_dep = Dependency {
+        let start_dep = ItemsCrateDependency {
             cr_idx: cr_idx,
             cr_alias: String::new(),
         };
