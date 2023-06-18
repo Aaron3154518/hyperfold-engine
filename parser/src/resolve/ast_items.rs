@@ -202,15 +202,15 @@ impl ItemsCrate {
         let last = end(&crates, 1);
         let parse_crates = &crates[..last];
 
-        // Pass 1
-        // Pass 1-1a: Parse component set macro calls
+        // Pass 1: Add symbols
+        // Step 1.1: Parse component set macro calls
         let components_path = paths.get_macro(MacroPaths::Components);
         let comp_sets = parse_crates
             .map_vec(|cr| Self::parse_macro_calls(components_path, &cr.main, cr, crates));
 
         let mut parse_crates = &mut crates[..last];
 
-        // Pass 1-1b: Update mods with component sets
+        // Step 1.2: Update mods with component sets
         let component_sets = comp_sets
             .into_iter()
             .zip(parse_crates)
@@ -219,47 +219,38 @@ impl ItemsCrate {
 
         let parse_crates = &crates[..last];
 
-        // Pass 1-2: Resolve components, globals, events, and systems
+        // Pass 2: Resolve all paths to cannonical forms
+        //     Prereq: All symbols must be added
+        // Step 2.1: Resolve components, globals, events, and systems
         let mut items = parse_crates.map_vec(|cr| {
             let mut item = ItemsCrate::new(cr, &paths, &crates);
             // Macros crate must be included as a dependency to resolve macro calls
             item.resolve_items(cr, &cr.main, &paths, &crates);
             // Remove macros crate as crate dependency
             item.remove_macros_crate(&crates);
+            item
         });
-        // Add traits
+        // Step 2.2: Add traits
         add_traits(&mut items);
 
-        // Pass 2
-        // Pass 2-1: Validate component sets with components
+        // Pass 3: Validate all items
+        // Step 3.1: Validate component sets with components
+        //     Prereq: All components must be added
         let component_sets = component_sets
             .map_vec(|cs_vec| cs_vec.map_vec(|cs| component_set::ComponentSet::parse(cs, &items)));
         for (item, cs) in items.iter_mut().zip(component_sets) {
             item.component_sets = cs;
         }
 
-        // Pass 2-2: Validate system args
+        // Step 3.2: Validate system args
+        //     Prereq: All components, globals, events, and component sets must be added
 
         items
     }
 
-    fn resolve_items<'a>(&mut self, cr: &'a Crate, paths: &Paths, crates: &Vec<Crate>) -> Vec<(&'a Mod, &'a FnArg)> {
-        let mut systems = Vec::new();
-        self.resolve_mod_items(cr, &cr.main, path, crates, &mut systems);
-        systems
-    }
-
-    fn resolve_mod_items(
-        &mut self,
-        cr: &Crate,
-        m: &Mod,
-        paths: &Paths,
-        crates: &Vec<Crate>,
-        systems: &mut Vec<(&'a Mod, &'a FnArg)>
-    ) {
+    fn resolve_items(&mut self, cr: &Crate, m: &Mod, paths: &Paths, crates: &Vec<Crate>) {
         let cr_idx = cr.idx;
 
-        let mut systs = Vec::new();
         for mi in m.marked.iter() {
             for (path, args) in mi.attrs.iter() {
                 let match_path = resolve_path(path.to_vec(), cr, m, crates).get();
@@ -293,19 +284,36 @@ impl ItemsCrate {
                             break;
                         }
                     }
-                    MarkType::Fn { args } => {
+                    MarkType::Fn { sig } => {
                         if &match_path == paths.get_macro(MacroPaths::System) {
-                            systems.push(args);
+                            self.systems.push(System {
+                                path: Path {
+                                    cr_idx,
+                                    path: mi.sym.path.to_vec(),
+                                },
+                                args: sig
+                                    .inputs
+                                    .iter()
+                                    .map(|arg| match arg {
+                                        syn::FnArg::Receiver(_) => {
+                                            panic!("'self' is not allowed as system argument")
+                                        }
+                                        syn::FnArg::Typed(ty) => {
+                                            FnArg::from(ty, cr, m, paths, crates)
+                                        }
+                                    })
+                                    .collect(),
+                                attr_args: SystemMacroArgs::from(args.to_vec()),
+                            });
                             break;
                         }
-                    } 
-                    
+                    }
                 }
             }
         }
 
         m.mods
             .iter()
-            .for_each(|m| self.parse_mod(cr, m, paths, crates));
+            .for_each(|m| self.resolve_items(cr, m, paths, crates));
     }
 }

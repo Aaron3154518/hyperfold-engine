@@ -233,8 +233,8 @@ impl Mod {
         if let Some(attrs) = get_attributes_if_active(&i.attrs, &self.path, &Vec::new()) {
             if !attrs.is_empty() {
                 self.marked.push(MarkedItem {
-                    ty: MarkType::Fn { sig: i.sig },
                     sym: Symbol::from(self.path.to_vec(), &i.sig.ident, &i.vis),
+                    ty: MarkType::Fn { sig: i.sig },
                     attrs,
                 });
             }

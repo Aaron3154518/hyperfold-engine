@@ -181,7 +181,7 @@ impl SystemValidate {
     }
 
     pub fn validate_mut(&mut self, arg: &FnArg, should_be_mut: bool) {
-        if arg.mutable != should_be_mut {
+        if arg.is_mut != should_be_mut {
             self.errs.push(format!(
                 "Type should be taken {}: \"{}\"",
                 if should_be_mut {
@@ -216,7 +216,7 @@ impl FnArg {
                     validate.validate_global(self, (p.cr_idx, i), &g.args);
                     FnArgResult::Global {
                         idx: (p.cr_idx, i),
-                        is_mut: self.mutable,
+                        is_mut: self.is_mut,
                     }
                 })
                 // Event
@@ -245,11 +245,11 @@ impl FnArg {
                 );
                 FnArgResult::Global {
                     idx: (tr.path.cr_idx, tr.g_idx),
-                    is_mut: self.mutable,
+                    is_mut: self.is_mut,
                 }
             }),
-            // Vec<Component Set>
-            FnArgType::Vec(p) => crates[p.cr_idx].find_component_set(p).map(|(i, cs)| {
+            // Entities<Component Set>
+            FnArgType::Entities(p) => crates[p.cr_idx].find_component_set(p).map(|(i, cs)| {
                 validate.validate_component_set(self, cs, true);
                 FnArgResult::ComponentSet {
                     idx: (p.cr_idx, i),

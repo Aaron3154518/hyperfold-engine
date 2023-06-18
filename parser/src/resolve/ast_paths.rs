@@ -356,7 +356,7 @@ impl Paths {
         &self.globals[i as usize]
     }
 
-    pub fn get_ident(&self, i: EnginePaths) -> &Path {
+    pub fn get_engine_path(&self, i: EnginePaths) -> &Path {
         &self.idents[i as usize]
     }
 }
