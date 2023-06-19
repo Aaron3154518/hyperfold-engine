@@ -4,6 +4,12 @@ use quote::ToTokens;
 use crate::util::parse_vec_path;
 use shared::util::NoneOr;
 
+#[derive(Clone, Debug)]
+pub struct AstAttribute {
+    attr: Vec<String>,
+    args: Vec<String>,
+}
+
 // Parse attributes from engine components
 #[derive(Copy, Clone, Debug)]
 pub enum EcsAttribute {
@@ -27,15 +33,18 @@ impl EcsAttribute {
 
 #[derive(Clone, Debug)]
 pub enum Attribute {
-    Ecs(Vec<String>, Vec<String>),
+    Ecs(AstAttribute),
     Cfg(Cfg),
 }
 
 impl Attribute {
-    fn from(value: Vec<String>) -> Self {
-        match value.join("::").as_str() {
+    fn from(attr: Vec<String>) -> Self {
+        match attr.join("::").as_str() {
             "cfg" => Self::Cfg(Cfg::Is(String::new())),
-            s => Self::Ecs(value, Vec::new()), // _ => EcsAttribute::from(value).map(|e| Self::Ecs(e, Vec::new())),
+            s => Self::Ecs(AstAttribute {
+                attr,
+                args: Vec::new(),
+            }),
         }
     }
 }
@@ -44,13 +53,13 @@ pub fn get_attributes_if_active(
     attrs: &Vec<syn::Attribute>,
     path: &Vec<String>,
     features: &Vec<String>,
-) -> Option<Vec<(Vec<String>, Vec<String>)>> {
+) -> Option<Vec<AstAttribute>> {
     let mut is_active = true;
     let new_attrs = get_attributes(attrs, path)
         .into_iter()
         .fold(Vec::new(), |mut new_attrs, a| {
             match a {
-                Attribute::Ecs(ty, args) => new_attrs.push((ty, args)),
+                Attribute::Ecs(attr) => new_attrs.push(attr),
                 Attribute::Cfg(cfg) => {
                     is_active = eval_cfg_args(&cfg, features).is_none_or_into(|b| b)
                 }
@@ -111,12 +120,12 @@ pub fn eval_cfg_args(cfg: &Cfg, features: &Vec<String>) -> Option<bool> {
 // Parses arguments to a single ast attribute
 fn parse_attr_args(mut attr_type: Attribute, attr: &syn::Attribute) -> Attribute {
     match &mut attr_type {
-        Attribute::Ecs(_, v) => match &attr.meta {
+        Attribute::Ecs(ast_attr) => match &attr.meta {
             syn::Meta::List(l) => {
                 for t in l.to_token_stream() {
                     match t {
                         proc_macro2::TokenTree::Group(g) => {
-                            *v = g
+                            ast_attr.args = g
                                 .stream()
                                 .into_iter()
                                 .filter_map(|tt| match tt {

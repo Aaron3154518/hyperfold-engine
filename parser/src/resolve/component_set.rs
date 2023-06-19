@@ -6,12 +6,15 @@ use syn::{spanned::Spanned, Error, Token};
 
 use crate::{
     parse::{
-        AstCrate, {AstMod, AstSymbol},
+        AstCrate, AstSymbolType, {AstMod, AstSymbol},
     },
     resolve::path::resolve_path,
 };
 
-use super::{parse_macro_call::ParseMacroCall, path::ItemPath};
+use super::{
+    parse_macro_call::ParseMacroCall,
+    path::{ExpectSymbol, ItemPath},
+};
 
 macro_rules! err {
     ($token: ident, $msg: literal) => {
@@ -324,7 +327,13 @@ impl ParseMacroCall for ComponentSetMacro {
                 path: [m.path.to_vec(), cs.path.path].concat(),
             };
             for item in cs.args.iter_mut() {
-                item.ty = resolve_path(item.ty.path.to_vec(), cr, m, crates).get();
+                item.ty = resolve_path(item.ty.path.to_vec(), cr, m, crates)
+                    .expect_symbol()
+                    .expect_component()
+                    .call_into(|(sym, i)| ItemPath {
+                        cr_idx: 0,
+                        path: sym.path.to_vec(),
+                    })
             }
             if let Some(root) = &mut cs.labels {
                 let mut labels = VecDeque::new();
@@ -332,7 +341,13 @@ impl ParseMacroCall for ComponentSetMacro {
                 while let Some(node) = labels.pop_front() {
                     match node {
                         LabelItem::Item { not, ty } => {
-                            *ty = resolve_path(ty.path.to_vec(), cr, m, crates).get()
+                            *ty = resolve_path(ty.path.to_vec(), cr, m, crates)
+                                .expect_symbol()
+                                .expect_component()
+                                .call_into(|(sym, i)| ItemPath {
+                                    cr_idx: 0,
+                                    path: sym.path.to_vec(),
+                                })
                         }
                         LabelItem::Expression { op, items } => labels.extend(items),
                     }
@@ -344,16 +359,17 @@ impl ParseMacroCall for ComponentSetMacro {
 
     fn update_mod(&self, m: &mut AstMod) {
         eprintln!("{self}");
-        m.symbols.push(AstSymbol {
-            ident: self
-                .path
-                .path
-                .last()
-                .expect("Empty component set path")
-                .to_string(),
-            path: self.path.path.to_vec(),
-            public: true,
-        });
+        // m.symbols.push(AstSymbol {
+        //     kind: AstSymbolType::Hardcoded,
+        //     ident: self
+        //         .path
+        //         .path
+        //         .last()
+        //         .expect("Empty component set path")
+        //         .to_string(),
+        //     path: self.path.path.to_vec(),
+        //     public: true,
+        // });
     }
 }
 

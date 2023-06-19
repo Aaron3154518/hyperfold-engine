@@ -1,7 +1,10 @@
 use syn::Pat;
 
-use crate::parse::{
-    AstCrate, {AstMod, AstSymbol},
+use crate::{
+    parse::{
+        AstCrate, {AstMod, AstSymbol},
+    },
+    util::parse_syn_path,
 };
 use shared::util::Catch;
 
@@ -20,14 +23,16 @@ impl ItemPath {
     }
 }
 
+pub type ResolveResult<'a> = Result<&'a AstSymbol, ItemPath>;
+
 // Err means:
 // 1) Not from a valid crate
 // 2) resolve_mod() returns Err
-fn resolve_path_from_crate(
+fn resolve_path_from_crate<'a>(
     mut path: Vec<String>,
-    cr: &AstCrate,
-    crates: &Vec<AstCrate>,
-) -> Result<ItemPath, ItemPath> {
+    cr: &'a AstCrate,
+    crates: &'a Vec<AstCrate>,
+) -> ResolveResult<'a> {
     // println!("Resolve: {}, crate: {}", path.join("::"), cr.idx);
     let cr_idx = cr.idx;
     match path.first() {
@@ -64,13 +69,13 @@ fn resolve_path_from_crate(
 // 1) Does not match anything
 // 2) Matches mod but remainder doesn't match
 // 3) Matches use statement new path doesn't match
-fn resolve_path_from_mod(
+fn resolve_path_from_mod<'a>(
     path: Vec<String>,
     idx: usize,
-    cr: &AstCrate,
-    m: &AstMod,
-    crates: &Vec<AstCrate>,
-) -> Result<ItemPath, ItemPath> {
+    cr: &'a AstCrate,
+    m: &'a AstMod,
+    crates: &'a Vec<AstCrate>,
+) -> ResolveResult<'a> {
     // println!(
     //     "Resolve Mod: {} at {}",
     //     path.join("::"),
@@ -86,28 +91,34 @@ fn resolve_path_from_mod(
             path.join("::")
         ))
         .to_string();
+    let is_path_end = idx == path.len() - 1;
+
     // println!("Finding: {name}");
     // Check sub modules
     for m in m.mods.iter() {
         if name == *m.path.last().expect("Mod path is empty") {
             // println!("Found Mod: {}", name);
-            return if idx + 1 == path.len() {
+            return if is_path_end {
                 // The path points to a mod
-                Ok(ItemPath { cr_idx, path })
+                Err(ItemPath { cr_idx, path })
             } else {
-                return resolve_path_from_mod(path, idx + 1, cr, m, crates);
+                resolve_path_from_mod(path, idx + 1, cr, m, crates)
             };
         }
     }
     // Check symbols
     // TODO: previously filtered public
     for sym in m.symbols.iter() {
-        if sym.ident == name {
+        if sym.path.last().is_some_and(|s| s == &name) {
             // println!("Found Symbol: {}", sym.path.join("::"));
-            return Ok(ItemPath {
-                cr_idx: cr.idx,
-                path: sym.path.to_vec(),
-            });
+            return if is_path_end {
+                Ok(sym)
+            } else {
+                Err(ItemPath {
+                    cr_idx: cr.idx,
+                    path: sym.path.to_vec(),
+                })
+            };
         }
     }
     // Check use statements
@@ -125,16 +136,17 @@ fn resolve_path_from_mod(
             return resolve_path(path.to_vec(), cr, m, crates);
         }
     }
+
     Err(ItemPath { cr_idx, path })
 }
 
 // Paths that start relative to some mod item
-pub fn resolve_path(
+pub fn resolve_path<'a>(
     path: Vec<String>,
-    cr: &AstCrate,
-    m: &AstMod,
-    crates: &Vec<AstCrate>,
-) -> Result<ItemPath, ItemPath> {
+    cr: &'a AstCrate,
+    m: &'a AstMod,
+    crates: &'a Vec<AstCrate>,
+) -> ResolveResult<'a> {
     // println!("Local Resolve: {}", path.join("::"));
     let cr_idx = cr.idx;
 
@@ -147,25 +159,57 @@ pub fn resolve_path(
         return resolve_path_from_crate(path, cr, crates);
     }
 
+    // Serach for a symbol
+    if path.len() == 1 {
+        if let Some(sym) = m
+            .symbols
+            .iter()
+            .find_map(|sym| sym.path.ends_with(&[name.to_string()]).then_some(sym))
+        {
+            return Ok(sym);
+        }
+    }
+
     // Iterate possible paths
-    [&m.symbols, &m.uses]
+    m.uses
         .iter()
-        .find_map(|syns| {
-            syns.iter().find_map(|syn| {
-                // Get possible path
-                if syn.ident == "*" {
-                    resolve_path_from_crate([syn.path.to_vec(), path.to_vec()].concat(), cr, crates)
-                        .map_or(None, |p| Some(Ok(p)))
-                } else if name == &syn.ident {
-                    Some(resolve_path_from_crate(
-                        [syn.path.to_vec(), path[1..].to_vec()].concat(),
-                        cr,
-                        crates,
-                    ))
-                } else {
-                    None
-                }
-            })
+        .find_map(|syn| {
+            // Get possible path
+            if syn.ident == "*" {
+                resolve_path_from_crate([syn.path.to_vec(), path.to_vec()].concat(), cr, crates)
+                    .map_or(None, |p| Some(Ok(p)))
+            } else if name == &syn.ident {
+                Some(resolve_path_from_crate(
+                    [syn.path.to_vec(), path[1..].to_vec()].concat(),
+                    cr,
+                    crates,
+                ))
+            } else {
+                None
+            }
         })
         .unwrap_or_else(|| resolve_path_from_crate(path, cr, crates))
+}
+
+pub fn resolve_syn_path<'a>(
+    parent_path: &Vec<String>,
+    path: &syn::Path,
+    cr: &'a AstCrate,
+    m: &'a AstMod,
+    crates: &'a Vec<AstCrate>,
+) -> ResolveResult<'a> {
+    resolve_path(parse_syn_path(&m.path, path), cr, m, crates)
+}
+
+pub trait ExpectSymbol<'a> {
+    fn expect_symbol(self) -> &'a AstSymbol;
+}
+
+impl<'a> ExpectSymbol<'a> for ResolveResult<'a> {
+    fn expect_symbol(self) -> &'a AstSymbol {
+        match self {
+            Ok(sym) => sym,
+            Err(e) => panic!("Could not resolve path: {e:#?}"),
+        }
+    }
 }

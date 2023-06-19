@@ -2,12 +2,11 @@ use std::{collections::VecDeque, path::PathBuf};
 
 use crate::{
     codegen::component_set,
-    parse::{
-        AstCrate, {AstItemType, AstMod},
-    },
+    parse::{AstCrate, AstHardcodedSymbol, AstMod, AstSymbol, AstSymbolType},
     resolve::{
         function_arg::{FnArg, FnArgType},
         path::resolve_path,
+        paths::{Crates, EnginePaths},
     },
     util::end,
 };
@@ -59,6 +58,14 @@ pub struct ItemSystem {
 pub struct ItemsCrateDependency {
     pub cr_idx: usize,
     pub cr_alias: String,
+}
+
+#[derive(Debug)]
+pub struct AstSymbolCounts {
+    pub component_cnt: usize,
+    pub global_cnt: usize,
+    pub event_cnt: usize,
+    pub component_set_cnt: usize,
 }
 
 // Pass 2: use resolving
@@ -143,41 +150,64 @@ impl ItemsCrate {
     }
 
     pub fn parse(paths: &Paths, crates: &mut Vec<AstCrate>) -> Vec<Self> {
+        // Insert hardcoded symbols
+        for sym in AstHardcodedSymbol::VARIANTS {
+            AstCrate::add_hardcoded_symbol(crates, paths, sym)
+        }
+
+        // Resolve and insert components, globals, and events
+
+        // Add namespace mod to all crates except macro
+        // Must happen after the dependencies are set
+        // let end = end(&crates, 1);
+        // for cr in crates[..end].iter_mut() {
+        //     cr.add_namespace_mod()
+        // }
+
         // Skip macros crate
-        let last = end(&crates, 1);
-        let parse_crates = &crates[..last];
+        let macro_cr_idx = paths.get_cr_idx(Crates::Macros);
+        let iter_crates = || {
+            crates
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| i != &macro_cr_idx)
+                .map(|(_, v)| v)
+        };
+        let mut iter_crates_mut = || {
+            crates
+                .iter_mut()
+                .enumerate()
+                .filter(|(i, _)| i != &macro_cr_idx)
+                .map(|(_, v)| v)
+        };
 
         // Pass 1: Add symbols
         // Step 1.1: Parse component set macro calls
         let components_path = paths.get_macro(MacroPaths::Components);
-        let comp_sets =
-            parse_crates.map_vec(|cr| parse_macro_calls(components_path, &cr.main, cr, crates));
-
-        eprintln!("{comp_sets:#?}");
-
-        let mut parse_crates = &mut crates[..last];
+        let comp_sets = iter_crates()
+            .map(|cr| parse_macro_calls(components_path, &cr.main, cr, crates))
+            .collect::<Vec<_>>();
 
         // Step 1.2: Update mods with component sets
         let component_sets = comp_sets
             .into_iter()
-            .zip(parse_crates)
+            .zip(iter_crates_mut())
             .map(|(comp_sets, cr)| update_macro_calls(comp_sets, &mut cr.main))
             .collect::<Vec<_>>();
-
-        let parse_crates = &crates[..last];
-        eprintln!("{parse_crates:#?}");
 
         // Pass 2: Resolve all paths to cannonical forms
         //     Prereq: All symbols must be added
         // Step 2.1: Resolve components, globals, events, and systems
-        let mut items = parse_crates.map_vec(|cr| {
-            let mut item = ItemsCrate::new(cr, &paths, &crates);
-            // Macros crate must be included as a dependency to resolve macro calls
-            item.resolve_items(cr, &cr.main, &paths, &crates);
-            // Remove macros crate as crate dependency
-            item.remove_macros_crate(&crates);
-            item
-        });
+        let mut items = iter_crates()
+            .map(|cr| {
+                let mut item = ItemsCrate::new(cr, &paths, &crates);
+                // Macros crate must be included as a dependency to resolve macro calls
+                item.resolve_items(cr, &cr.main, &paths, &crates);
+                // Remove macros crate as crate dependency
+                item.remove_macros_crate(paths);
+                item
+            })
+            .collect();
 
         // Step 2.2: Add traits
         Self::add_traits(&mut items);
@@ -197,11 +227,11 @@ impl ItemsCrate {
         items
     }
 
-    fn remove_macros_crate(&mut self, crates: &Vec<AstCrate>) {
+    fn remove_macros_crate(&mut self, paths: &Paths) {
         if let Some(i) = self
             .dependencies
             .iter()
-            .position(|d| d.cr_idx == crates.len() - 1)
+            .position(|d| d.cr_idx == paths.get_cr_idx(Crates::Macros))
         {
             self.dependencies.swap_remove(i);
         }
@@ -210,6 +240,7 @@ impl ItemsCrate {
     fn resolve_items(&mut self, cr: &AstCrate, m: &AstMod, paths: &Paths, crates: &Vec<AstCrate>) {
         let cr_idx = cr.idx;
 
+        /*
         for mi in m.marked.iter() {
             for (path, args) in mi.attrs.iter() {
                 let match_path = resolve_path(path.to_vec(), cr, m, crates).get();
@@ -270,6 +301,7 @@ impl ItemsCrate {
                 }
             }
         }
+        */
 
         m.mods
             .iter()

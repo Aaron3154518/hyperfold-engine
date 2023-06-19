@@ -1,50 +1,147 @@
 use std::{fs, path::PathBuf};
 
 use proc_macro2::TokenStream;
-use shared::util::Catch;
+use shared::util::{Catch, PushInto};
 use syn::visit::Visit;
 
 use crate::{
     parse::attributes::{get_attributes_if_active, Attribute, EcsAttribute},
+    resolve::{
+        path::ItemPath,
+        paths::{EnginePaths, ExpandEnum, MacroPaths, Paths},
+    },
     util::{add_path_item, end, parse_syn_path},
 };
 
-// Ast item with an attribute
+use super::attributes::AstAttribute;
+
 #[derive(Debug)]
-pub enum AstItemType {
-    Struct,
-    Enum,
-    Fn { sig: syn::Signature },
+pub struct AstStruct {
+    attrs: Vec<AstAttribute>,
 }
 
-// TODO: Cfg features
 #[derive(Debug)]
-pub struct MarkedAstItem {
-    pub ty: AstItemType,
-    pub sym: AstSymbol,
-    pub attrs: Vec<(Vec<String>, Vec<String>)>,
+pub struct AstEnum {
+    attrs: Vec<AstAttribute>,
 }
 
-// Call to a macro
+#[derive(Debug)]
+pub struct AstFunction {
+    sig: syn::Signature,
+    attrs: Vec<AstAttribute>,
+}
+
 #[derive(Debug)]
 pub struct AstMacroCall {
-    pub path: Vec<String>,
-    pub args: TokenStream,
+    args: TokenStream,
+}
+
+#[derive(Debug)]
+pub struct AstItem<Data> {
+    data: Data,
+    path: Vec<String>,
 }
 
 // Symbol with path
+#[shared::macros::expand_enum]
+pub enum AstHardcodedSymbol {
+    // Macros crate
+    ComponentMacro,
+    GlobalMacro,
+    EventMacro,
+    SystemMacro,
+    // Engine crate
+    ComponentsMacro,
+    Entities,
+}
+
+impl AstHardcodedSymbol {
+    pub fn get_path<'a>(&self, paths: &'a Paths) -> &'a ItemPath {
+        match self {
+            AstHardcodedSymbol::ComponentMacro => paths.get_macro(MacroPaths::Component),
+            AstHardcodedSymbol::GlobalMacro => paths.get_macro(MacroPaths::Global),
+            AstHardcodedSymbol::EventMacro => paths.get_macro(MacroPaths::Event),
+            AstHardcodedSymbol::SystemMacro => paths.get_macro(MacroPaths::System),
+            AstHardcodedSymbol::ComponentsMacro => paths.get_macro(MacroPaths::Components),
+            AstHardcodedSymbol::Entities => paths.get_engine_path(EnginePaths::Entities),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub enum AstSymbolType {
+    Component(usize),
+    Global(usize),
+    Event(usize),
+    System,
+    Hardcoded(AstHardcodedSymbol),
+}
+
+impl std::fmt::Display for AstSymbolType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            AstSymbolType::Component(_) => "Component",
+            AstSymbolType::Global(_) => "Global",
+            AstSymbolType::Event(_) => "Event",
+            AstSymbolType::System => "System",
+            AstSymbolType::Hardcoded(_) => "Hardcoded Path",
+        })
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct AstSymbol {
-    pub ident: String,
-    // Include ident (or alias for use stmts)
+    pub kind: AstSymbolType,
     pub path: Vec<String>,
     pub public: bool,
 }
 
 impl AstSymbol {
-    pub fn from(mut path: Vec<String>, ident: &syn::Ident, vis: &syn::Visibility) -> Self {
+    pub fn from(
+        kind: AstSymbolType,
+        mut path: Vec<String>,
+        ident: &syn::Ident,
+        vis: &syn::Visibility,
+    ) -> Self {
         path.push(ident.to_string());
         // Add to the symbol table
+        Self {
+            kind,
+            path,
+            public: match vis {
+                syn::Visibility::Public(_) => true,
+                syn::Visibility::Restricted(_) | syn::Visibility::Inherited => false,
+            },
+        }
+    }
+
+    fn panic(self, expected: AstSymbolType) {
+        panic!(
+            "When resolving '{}': Expected '{}' but found '{}'",
+            self.path.join("::"),
+            expected,
+            self.kind
+        )
+    }
+
+    pub fn expect_component(self) -> (Self, usize) {
+        match self.kind {
+            AstSymbolType::Component(i) => (self, i),
+            _ => self.panic(AstSymbolType::Component(0)),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct AstUse {
+    pub ident: String,
+    pub path: Vec<String>,
+    pub public: bool,
+}
+
+impl AstUse {
+    pub fn from(mut path: Vec<String>, ident: &syn::Ident, vis: &syn::Visibility) -> Self {
+        path.push(ident.to_string());
         Self {
             ident: ident.to_string(),
             path,
@@ -54,6 +151,14 @@ impl AstSymbol {
             },
         }
     }
+}
+
+#[derive(Debug)]
+pub struct AstItems {
+    pub structs: Vec<AstItem<AstStruct>>,
+    pub enums: Vec<AstItem<AstEnum>>,
+    pub functions: Vec<AstItem<AstFunction>>,
+    pub macro_calls: Vec<AstItem<AstMacroCall>>,
 }
 
 // Type of module
@@ -73,10 +178,9 @@ pub struct AstMod {
     pub dir: PathBuf,
     pub path: Vec<String>,
     pub mods: Vec<AstMod>,
+    pub uses: Vec<AstUse>,
     pub symbols: Vec<AstSymbol>,
-    pub uses: Vec<AstSymbol>,
-    pub marked: Vec<MarkedAstItem>,
-    pub macro_calls: Vec<AstMacroCall>,
+    pub items: AstItems,
 }
 
 // TODO: ignore private mods to avoid name collisions
@@ -88,10 +192,14 @@ impl AstMod {
             dir,
             path,
             mods: Vec::new(),
-            symbols: Vec::new(),
             uses: Vec::new(),
-            marked: Vec::new(),
-            macro_calls: Vec::new(),
+            symbols: Vec::new(),
+            items: AstItems {
+                structs: Vec::new(),
+                enums: Vec::new(),
+                functions: Vec::new(),
+                macro_calls: Vec::new(),
+            },
         }
     }
 
@@ -136,39 +244,6 @@ impl AstMod {
     }
 
     fn visit_item(&mut self, i: syn::Item) {
-        // Match once to add to symbol table
-        match &i {
-            // Use statements need to be parsed
-            syn::Item::Use(i) => None,
-            // Add to symbol table
-            syn::Item::Fn(syn::ItemFn {
-                sig: syn::Signature { ident, .. },
-                vis,
-                ..
-            })
-            | syn::Item::Mod(syn::ItemMod { ident, vis, .. })
-            | syn::Item::Enum(syn::ItemEnum { ident, vis, .. })
-            | syn::Item::Struct(syn::ItemStruct { ident, vis, .. })
-            | syn::Item::Const(syn::ItemConst { ident, vis, .. })
-            | syn::Item::ExternCrate(syn::ItemExternCrate { ident, vis, .. })
-            | syn::Item::Static(syn::ItemStatic { ident, vis, .. })
-            | syn::Item::Trait(syn::ItemTrait { ident, vis, .. })
-            | syn::Item::TraitAlias(syn::ItemTraitAlias { ident, vis, .. })
-            | syn::Item::Type(syn::ItemType { ident, vis, .. })
-            | syn::Item::Union(syn::ItemUnion { ident, vis, .. }) => Some((ident, vis)),
-
-            // Ignore completely
-            syn::Item::ForeignMod(..)
-            | syn::Item::Impl(..)
-            | syn::Item::Macro(..)
-            | syn::Item::Verbatim(..)
-            | _ => None,
-        }
-        .map(|(ident, vis)| {
-            self.symbols
-                .push(AstSymbol::from(self.path.to_vec(), ident, vis))
-        });
-
         // Match again to parse
         match i {
             syn::Item::Mod(i) => self.visit_item_mod(i),
@@ -208,10 +283,9 @@ impl AstMod {
     fn visit_item_struct(&mut self, i: syn::ItemStruct) {
         if let Some(attrs) = get_attributes_if_active(&i.attrs, &self.path, &Vec::new()) {
             if !attrs.is_empty() {
-                self.marked.push(MarkedAstItem {
-                    ty: AstItemType::Struct,
-                    sym: AstSymbol::from(self.path.to_vec(), &i.ident, &i.vis),
-                    attrs,
+                self.items.structs.push(AstItem {
+                    data: AstStruct { attrs },
+                    path: self.path.to_vec().push_into(i.ident.to_string()),
                 });
             }
         }
@@ -220,10 +294,9 @@ impl AstMod {
     fn visit_item_enum(&mut self, i: syn::ItemEnum) {
         if let Some(attrs) = get_attributes_if_active(&i.attrs, &self.path, &Vec::new()) {
             if !attrs.is_empty() {
-                self.marked.push(MarkedAstItem {
-                    ty: AstItemType::Enum,
-                    sym: AstSymbol::from(self.path.to_vec(), &i.ident, &i.vis),
-                    attrs,
+                self.items.enums.push(AstItem {
+                    data: AstEnum { attrs },
+                    path: self.path.to_vec().push_into(i.ident.to_string()),
                 });
             }
         }
@@ -233,10 +306,9 @@ impl AstMod {
     fn visit_item_fn(&mut self, i: syn::ItemFn) {
         if let Some(attrs) = get_attributes_if_active(&i.attrs, &self.path, &Vec::new()) {
             if !attrs.is_empty() {
-                self.marked.push(MarkedAstItem {
-                    sym: AstSymbol::from(self.path.to_vec(), &i.sig.ident, &i.vis),
-                    ty: AstItemType::Fn { sig: i.sig },
-                    attrs,
+                self.items.functions.push(AstItem {
+                    path: self.path.to_vec().push_into(i.sig.ident.to_string()),
+                    data: AstFunction { sig: i.sig, attrs },
                 });
             }
         }
@@ -247,9 +319,9 @@ impl AstMod {
         if let Some(_) = get_attributes_if_active(&i.attrs, &self.path, &Vec::new()) {
             // Some is for macro_rules!
             if i.ident.is_none() {
-                self.macro_calls.push(AstMacroCall {
-                    args: i.mac.tokens.to_owned(),
+                self.items.macro_calls.push(AstItem {
                     path: parse_syn_path(&self.path, &i.mac.path),
+                    data: AstMacroCall { args: i.mac.tokens },
                 });
             }
         }
@@ -277,8 +349,8 @@ impl AstMod {
         &mut self,
         i: syn::UseTree,
         path: &mut Vec<String>,
-        items: Vec<AstSymbol>,
-    ) -> Vec<AstSymbol> {
+        items: Vec<AstUse>,
+    ) -> Vec<AstUse> {
         match i {
             syn::UseTree::Path(i) => self.visit_use_path(i, path, items),
             syn::UseTree::Name(i) => self.visit_use_name(i, path, items),
@@ -292,8 +364,8 @@ impl AstMod {
         &mut self,
         i: syn::UsePath,
         path: &mut Vec<String>,
-        items: Vec<AstSymbol>,
-    ) -> Vec<AstSymbol> {
+        items: Vec<AstUse>,
+    ) -> Vec<AstUse> {
         add_path_item(&self.path, path, i.ident.to_string());
         self.visit_use_tree(*i.tree, path, items)
     }
@@ -302,10 +374,10 @@ impl AstMod {
         &mut self,
         i: syn::UseName,
         path: &mut Vec<String>,
-        mut items: Vec<AstSymbol>,
-    ) -> Vec<AstSymbol> {
+        mut items: Vec<AstUse>,
+    ) -> Vec<AstUse> {
         add_path_item(&self.path, path, i.ident.to_string());
-        items.push(AstSymbol {
+        items.push(AstUse {
             ident: path.last().expect("Empty use path with 'self'").to_string(),
             path: path.to_vec(),
             public: false,
@@ -317,9 +389,9 @@ impl AstMod {
         &mut self,
         i: syn::UseRename,
         path: &mut Vec<String>,
-        mut items: Vec<AstSymbol>,
-    ) -> Vec<AstSymbol> {
-        items.push(AstSymbol {
+        mut items: Vec<AstUse>,
+    ) -> Vec<AstUse> {
+        items.push(AstUse {
             ident: i.rename.to_string(),
             path: [path.to_owned(), vec![i.ident.to_string()]].concat(),
             public: false,
@@ -331,9 +403,9 @@ impl AstMod {
         &mut self,
         i: syn::UseGlob,
         path: &mut Vec<String>,
-        mut items: Vec<AstSymbol>,
-    ) -> Vec<AstSymbol> {
-        items.push(AstSymbol {
+        mut items: Vec<AstUse>,
+    ) -> Vec<AstUse> {
+        items.push(AstUse {
             ident: "*".to_string(),
             path: path.to_owned(),
             public: false,
@@ -345,8 +417,8 @@ impl AstMod {
         &mut self,
         i: syn::UseGroup,
         path: &mut Vec<String>,
-        items: Vec<AstSymbol>,
-    ) -> Vec<AstSymbol> {
+        items: Vec<AstUse>,
+    ) -> Vec<AstUse> {
         i.items.into_iter().fold(items, |items, i| {
             self.visit_use_tree(i, &mut path.to_vec(), items)
         })

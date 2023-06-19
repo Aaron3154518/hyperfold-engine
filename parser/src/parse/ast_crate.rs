@@ -7,15 +7,18 @@ use std::{
     path::PathBuf,
 };
 
-use shared::util::{Call, Catch, JoinMap, JoinMapInto};
+use shared::util::{Call, Catch, JoinMap, JoinMapInto, PushInto};
 
 use super::{
     ast_file::DirType,
-    ast_mod::{AstMod, AstModType},
-    AstSymbol,
+    ast_mod::{AstMod, AstModType, AstSymbolType},
+    AstHardcodedSymbol, AstSymbol,
 };
 use crate::{
-    resolve::paths::{ExpandEnum, GetPaths, NamespaceTraits, Paths},
+    resolve::{
+        path::ItemPath,
+        paths::{ExpandEnum, GetPaths, NamespaceTraits, Paths},
+    },
     util::end,
     validate::constants::NAMESPACE,
 };
@@ -130,12 +133,6 @@ impl AstCrate {
         }
 
         // TODO: Auto detect game_crate macro (assume it exists and validate later)
-        // Add namespace mod to all crates except macro
-        // Must happen after the dependencies are set
-        let end = end(&crates, 1);
-        for cr in crates[..end].iter_mut() {
-            cr.add_namespace_mod()
-        }
 
         (crates, Paths::new(engine_cr_idx, macros_cr_idx))
     }
@@ -215,55 +212,138 @@ impl AstCrate {
 
     // Adds AstMod for the namespace module generated in codegen
     fn add_namespace_mod(&mut self) {
-        let m = if self.idx == 0 {
-            self.entry_namespace_mod()
+        if self.idx == 0 {
+            self.gen_entry_namespace_mod();
         } else {
-            self.dependency_namespace_mod()
-        };
-        self.main.mods.push(m);
+            self.gen_dependency_namespace_mod();
+        }
     }
 
-    fn entry_namespace_mod(&mut self) -> AstMod {
-        let mut m = self.dependency_namespace_mod();
+    fn gen_entry_namespace_mod(&mut self) -> &mut AstMod {
+        let mut m = self.gen_dependency_namespace_mod();
         // Foo structs
-        for tr in NamespaceTraits::VARIANTS.iter() {
-            let gl = tr.get_global();
-            let sym = AstSymbol {
-                ident: gl.as_ident().to_string(),
-                path: gl.full_path(),
-                public: true,
-            };
-            m.symbols.push(sym.to_owned());
+        // for tr in NamespaceTraits::VARIANTS.iter() {
+        //     let gl = tr.get_global();
+        //     let sym = AstSymbol {
+        //         kind: AstSymbolType::Hardcoded,
+        //         ident: gl.as_ident().to_string(),
+        //         path: gl.full_path(),
+        //         public: true,
+        //     };
+        //     m.symbols.push(sym.to_owned());
+        // }
+        m
+    }
+
+    fn gen_dependency_namespace_mod(&mut self) -> &mut AstMod {
+        let mut m = self.add_mod(self.main.path.to_vec().push_into(NAMESPACE.to_string()));
+        // Traits
+        // for tr in NamespaceTraits::VARIANTS {
+        //     m.symbols.push(AstSymbol {
+        //         kind: AstSym,
+        //         path: (),
+        //         public: (),
+        //     })
+        // }
+        // m.symbols = NamespaceTraits::VARIANTS.iter().map_vec(|tr| AstSymbol {
+        //     kind: AstSymbolType::Hardcoded,
+        //     ident: tr.as_ident().to_string(),
+        //     path: tr.full_path(),
+        //     public: true,
+        // });
+        // // Use dependency
+        // m.uses = self
+        //     .deps
+        //     .iter()
+        //     .map(|(_, alias)| AstSymbol {
+        //         kind: AstSymbolType::Hardcoded,
+        //         ident: alias.to_string(),
+        //         path: vec!["crate", &alias].map_vec(|s| s.to_string()),
+        //         public: true,
+        //     })
+        //     .collect();
+        m
+    }
+
+    // Insert things into crates
+    fn get_mod_from_path<'a>(&'a mut self, path: &[String]) -> &'a mut AstMod {
+        let mut path_it = path.iter();
+        if !path_it.next().is_some_and(|s| s == "crate") {
+            panic!("No mod defined at the path: {path:#?}")
+        }
+        let mut m = &mut self.main;
+        while let Some(ident) = path_it.next() {
+            m = m
+                .mods
+                .iter_mut()
+                .find(|m| m.path.last().is_some_and(|p| p == ident))
+                .catch(format!("No mod defined at the path: {path:#?}"));
         }
         m
     }
 
-    fn dependency_namespace_mod(&mut self) -> AstMod {
-        let mut path = self.main.path.to_vec();
-        path.push(NAMESPACE.to_string());
-        AstMod {
-            ty: AstModType::Internal,
-            dir: self.dir.to_owned(),
-            path,
-            mods: Vec::new(),
-            // Traits
-            symbols: NamespaceTraits::VARIANTS.iter().map_vec(|tr| AstSymbol {
-                ident: tr.as_ident().to_string(),
-                path: tr.full_path(),
-                public: true,
-            }),
-            // Use dependency
-            uses: self
-                .deps
-                .iter()
-                .map(|(_, alias)| AstSymbol {
-                    ident: alias.to_string(),
-                    path: vec!["crate", &alias].map_vec(|s| s.to_string()),
-                    public: true,
-                })
-                .collect(),
-            marked: Vec::new(),
-            macro_calls: Vec::new(),
+    pub fn add_symbol(&mut self, sym: AstSymbol) {
+        self.get_mod_from_path(&sym.path[..end(&sym.path, 1)])
+            .symbols
+            .push(sym);
+    }
+
+    pub fn add_mod<'a>(&'a mut self, path: Vec<String>) -> &'a mut AstMod {
+        let (ident, path) = path
+            .split_last()
+            .catch(format!("Could not add mod at path: {path:#?}"));
+        let mut dir = self.dir.to_owned();
+        dir.push(ident);
+        let m = self.get_mod_from_path(&path);
+        m.mods
+            .push(AstMod::new(dir, path.to_vec(), AstModType::Internal));
+        m.mods.last_mut().catch(format!("Mod not added: {path:#?}"))
+    }
+
+    pub fn add_hardcoded_symbol(crates: &mut Vec<Self>, paths: &Paths, sym: AstHardcodedSymbol) {
+        let path = sym.get_path(paths);
+        crates[path.cr_idx].add_symbol(AstSymbol {
+            kind: AstSymbolType::Hardcoded(sym),
+            path: path.path.to_vec(),
+            public: true,
+        })
+    }
+
+    pub fn iter<'a>(&'a self, mode: AstCrateIterMode) -> AstCrateIter<'a> {
+        AstCrateIter {
+            mode,
+            stack: vec![(&self.main, 0)],
         }
+    }
+}
+
+// DFS
+pub enum AstCrateIterMode {
+    NodeFirst,
+    ChildrenFirst,
+}
+
+pub struct AstCrateIter<'a> {
+    mode: AstCrateIterMode,
+    stack: Vec<(&'a AstMod, usize)>,
+}
+
+impl<'a> Iterator for AstCrateIter<'a> {
+    type Item = &'a AstMod;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.stack
+            .last_mut()
+            .and_then(|(m, i)| match m.mods.get(*i) {
+                Some(m2) => {
+                    *i += 1;
+                    self.stack.push((m2, 0));
+                    Some(m2)
+                }
+                None => {
+                    self.stack.pop();
+                    self.next()
+                }
+            })
     }
 }

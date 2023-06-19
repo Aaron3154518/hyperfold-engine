@@ -45,25 +45,29 @@ pub fn parse_macro_calls<T>(
 where
     T: ParseMacroCall,
 {
-    eprintln!("{:#?}", m.macro_calls.map_vec(|mc| mc.path.to_vec()));
-    eprintln!(
-        "{:#?}",
-        m.macro_calls
-            .map_vec(|mc| resolve_path(mc.path.to_vec(), cr, m, crates))
-    );
+    // eprintln!("{:#?}", m.macro_calls.map_vec(|mc| mc.path.to_vec()));
+    // eprintln!(
+    //     "{:#?}",
+    //     m.macro_calls
+    //         .map_vec(|mc| resolve_path(mc.path.to_vec(), cr, m, crates))
+    // );
+    // MacroCalls {
+    //     calls: m
+    //         .macro_calls
+    //         .iter()
+    //         .filter_map(|mc| {
+    //             (&resolve_path(mc.path.to_vec(), cr, m, crates).is_ok_and(|p| &p == macro_path))
+    //                 .then_some(())
+    //                 .and_then(|_| T::parse(cr, m, crates, mc.args.clone()).ok())
+    //         })
+    //         .collect(),
+    //     mods: m
+    //         .mods
+    //         .map_vec(|m| parse_macro_calls(macro_path, m, cr, crates)),
+    // }
     MacroCalls {
-        calls: m
-            .macro_calls
-            .iter()
-            .filter_map(|mc| {
-                (&resolve_path(mc.path.to_vec(), cr, m, crates).is_ok_and(|p| &p == macro_path))
-                    .then_some(())
-                    .and_then(|_| T::parse(cr, m, crates, mc.args.clone()).ok())
-            })
-            .collect(),
-        mods: m
-            .mods
-            .map_vec(|m| parse_macro_calls(macro_path, m, cr, crates)),
+        calls: Vec::new(),
+        mods: Vec::new(),
     }
 }
 

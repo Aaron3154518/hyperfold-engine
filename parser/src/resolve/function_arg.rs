@@ -12,6 +12,8 @@ use crate::{
     util::parse_syn_path,
 };
 
+use super::path::{resolve_syn_path, ExpectSymbol};
+
 #[derive(Clone, Debug)]
 pub enum FnArgType {
     Path(ItemPath),
@@ -61,15 +63,6 @@ impl FnArg {
         paths: &Paths,
         crates: &Vec<AstCrate>,
     ) -> Self {
-        let resolve_syn_path = |path: &syn::Path| {
-            let path = parse_syn_path(&m.path, path);
-            let path_str = path.join("::");
-            resolve_path(path, cr, m, crates).catch(format!(
-                "Could not find argument type: \"{}\" in crate {}",
-                path_str, cr.idx
-            ))
-        };
-
         let ty_str = ty.to_token_stream().to_string();
         match ty {
             syn::Type::Path(p) => {
@@ -80,12 +73,14 @@ impl FnArg {
                     _ => None,
                 });
 
-                let path = resolve_syn_path(&p.path);
+                let path = resolve_syn_path(&m.path, &p.path, cr, m, crates).expect_symbol();
 
                 let ty = if &path == paths.get_engine_path(EnginePaths::Entities) {
                     match generics.as_ref().map(|args| &args[..]) {
                         Some([syn::GenericArgument::Type(syn::Type::Path(p))]) => {
-                            FnArgType::Entities(resolve_syn_path(&p.path))
+                            FnArgType::Entities(
+                                resolve_syn_path(&m.path, &p.path, cr, m, crates).expect_symbol(),
+                            )
                         }
                         v => {
                             panic!(
