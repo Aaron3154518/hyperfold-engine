@@ -201,15 +201,26 @@ pub fn resolve_syn_path<'a>(
     resolve_path(parse_syn_path(&m.path, path), cr, m, crates)
 }
 
-pub trait ExpectSymbol<'a> {
+pub trait ResolveResultTrait<'a> {
     fn expect_symbol(self) -> &'a AstSymbol;
+
+    fn match_symbol<T, F>(self, f: F) -> Option<T>
+    where
+        F: FnOnce(&'a AstSymbol) -> Option<T>;
 }
 
-impl<'a> ExpectSymbol<'a> for ResolveResult<'a> {
+impl<'a> ResolveResultTrait<'a> for ResolveResult<'a> {
     fn expect_symbol(self) -> &'a AstSymbol {
         match self {
             Ok(sym) => sym,
             Err(e) => panic!("Could not resolve path: {e:#?}"),
         }
+    }
+
+    fn match_symbol<T, F>(self, f: F) -> Option<T>
+    where
+        F: FnOnce(&'a AstSymbol) -> Option<T>,
+    {
+        self.ok().and_then(|sym| f(sym))
     }
 }

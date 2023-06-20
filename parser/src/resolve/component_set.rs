@@ -13,7 +13,7 @@ use crate::{
 
 use super::{
     parse_macro_call::ParseMacroCall,
-    path::{ExpectSymbol, ItemPath},
+    path::{ItemPath, ResolveResultTrait},
 };
 
 macro_rules! err {

@@ -17,32 +17,33 @@ use super::attributes::AstAttribute;
 
 #[derive(Debug)]
 pub struct AstStruct {
-    attrs: Vec<AstAttribute>,
+    pub attrs: Vec<AstAttribute>,
 }
 
 #[derive(Debug)]
 pub struct AstEnum {
-    attrs: Vec<AstAttribute>,
+    pub attrs: Vec<AstAttribute>,
 }
 
 #[derive(Debug)]
 pub struct AstFunction {
-    sig: syn::Signature,
-    attrs: Vec<AstAttribute>,
+    pub sig: syn::Signature,
+    pub attrs: Vec<AstAttribute>,
 }
 
 #[derive(Debug)]
 pub struct AstMacroCall {
-    args: TokenStream,
+    pub args: TokenStream,
 }
 
 #[derive(Debug)]
 pub struct AstItem<Data> {
-    data: Data,
-    path: Vec<String>,
+    pub data: Data,
+    pub path: Vec<String>,
 }
 
 // Symbol with path
+#[derive(Eq, PartialEq)]
 #[shared::macros::expand_enum]
 pub enum AstHardcodedSymbol {
     // Macros crate
@@ -74,6 +75,7 @@ pub enum AstSymbolType {
     Global(usize),
     Event(usize),
     System,
+    ComponentSet(usize),
     Hardcoded(AstHardcodedSymbol),
 }
 
@@ -84,6 +86,7 @@ impl std::fmt::Display for AstSymbolType {
             AstSymbolType::Global(_) => "Global",
             AstSymbolType::Event(_) => "Event",
             AstSymbolType::System => "System",
+            AstSymbolType::ComponentSet(_) => "ComponentSet",
             AstSymbolType::Hardcoded(_) => "Hardcoded Path",
         })
     }
@@ -115,8 +118,8 @@ impl AstSymbol {
         }
     }
 
-    fn panic(self, expected: AstSymbolType) {
-        panic!(
+    fn panic_msg(&self, expected: &str) -> String {
+        format!(
             "When resolving '{}': Expected '{}' but found '{}'",
             self.path.join("::"),
             expected,
@@ -124,11 +127,82 @@ impl AstSymbol {
         )
     }
 
-    pub fn expect_component(self) -> (Self, usize) {
+    pub fn match_component<'a>(&'a self) -> Option<(&'a Self, usize)> {
         match self.kind {
-            AstSymbolType::Component(i) => (self, i),
-            _ => self.panic(AstSymbolType::Component(0)),
+            AstSymbolType::Component(i) => Some((self, i)),
+            _ => None,
         }
+    }
+
+    pub fn expect_component<'a>(&'a self) -> (&'a Self, usize) {
+        self.match_component().catch(self.panic_msg("Component"))
+    }
+
+    pub fn match_global<'a>(&'a self) -> Option<(&'a Self, usize)> {
+        match self.kind {
+            AstSymbolType::Global(i) => Some((self, i)),
+            _ => None,
+        }
+    }
+
+    pub fn expect_global<'a>(&'a self) -> (&'a Self, usize) {
+        self.match_global().catch(self.panic_msg("Global"))
+    }
+
+    pub fn match_event<'a>(&'a self) -> Option<(&'a Self, usize)> {
+        match self.kind {
+            AstSymbolType::Event(i) => Some((self, i)),
+            _ => None,
+        }
+    }
+
+    pub fn expect_event<'a>(&'a self) -> (&'a Self, usize) {
+        self.match_event().catch(self.panic_msg("EVent"))
+    }
+
+    pub fn match_system<'a>(&'a self) -> Option<&'a Self> {
+        match self.kind {
+            AstSymbolType::System => Some(self),
+            _ => None,
+        }
+    }
+
+    pub fn expect_system<'a>(&'a self) -> &'a Self {
+        self.match_system().catch(self.panic_msg("System"))
+    }
+
+    pub fn match_component_set<'a>(&'a self) -> Option<(&'a Self, usize)> {
+        match self.kind {
+            AstSymbolType::ComponentSet(i) => Some((self, i)),
+            _ => None,
+        }
+    }
+
+    pub fn expect_component_set<'a>(&'a self) -> (&'a Self, usize) {
+        self.match_component_set()
+            .catch(self.panic_msg("Component Set"))
+    }
+
+    pub fn match_any_hardcoded<'a>(&'a self) -> Option<(&'a Self, AstHardcodedSymbol)> {
+        match self.kind {
+            AstSymbolType::Hardcoded(sym) => Some((self, sym)),
+            _ => None,
+        }
+    }
+
+    pub fn expect_any_hardcoded<'a>(&'a self) -> (&'a Self, AstHardcodedSymbol) {
+        self.match_any_hardcoded()
+            .catch(self.panic_msg("Hardcoded Path"))
+    }
+
+    pub fn match_hardcoded<'a>(&'a self, sym: AstHardcodedSymbol) -> Option<&'a Self> {
+        self.match_any_hardcoded()
+            .and_then(|(_, s)| (s == sym).then_some(self))
+    }
+
+    pub fn expect_hardcoded<'a>(&'a self, sym: AstHardcodedSymbol) -> &'a Self {
+        self.match_hardcoded(sym)
+            .catch(self.panic_msg(&format!("Hardcoded Path: {sym:#?}")))
     }
 }
 

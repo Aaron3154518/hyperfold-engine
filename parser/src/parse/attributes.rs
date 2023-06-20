@@ -6,8 +6,8 @@ use shared::util::NoneOr;
 
 #[derive(Clone, Debug)]
 pub struct AstAttribute {
-    attr: Vec<String>,
-    args: Vec<String>,
+    pub path: Vec<String>,
+    pub args: Vec<String>,
 }
 
 // Parse attributes from engine components
@@ -42,7 +42,7 @@ impl Attribute {
         match attr.join("::").as_str() {
             "cfg" => Self::Cfg(Cfg::Is(String::new())),
             s => Self::Ecs(AstAttribute {
-                attr,
+                path: attr,
                 args: Vec::new(),
             }),
         }

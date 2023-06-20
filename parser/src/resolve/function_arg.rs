@@ -1,10 +1,10 @@
 use std::{fmt::Display, path::PathBuf};
 
 use quote::ToTokens;
-use shared::util::{Catch, JoinMap};
+use shared::util::{Call, Catch, JoinMap};
 
 use crate::{
-    parse::{AstCrate, AstMod},
+    parse::{AstCrate, AstHardcodedSymbol, AstMod},
     resolve::{
         path::{resolve_path, ItemPath},
         paths::{EnginePaths, Paths},
@@ -12,7 +12,7 @@ use crate::{
     util::parse_syn_path,
 };
 
-use super::path::{resolve_syn_path, ExpectSymbol};
+use super::path::{resolve_syn_path, ResolveResultTrait};
 
 #[derive(Clone, Debug)]
 pub enum FnArgType {
@@ -73,14 +73,20 @@ impl FnArg {
                     _ => None,
                 });
 
-                let path = resolve_syn_path(&m.path, &p.path, cr, m, crates).expect_symbol();
+                let (sym, sym_type) = resolve_syn_path(&m.path, &p.path, cr, m, crates)
+                    .expect_symbol()
+                    .expect_any_hardcoded();
 
-                let ty = if &path == paths.get_engine_path(EnginePaths::Entities) {
+                let ty = if sym_type == AstHardcodedSymbol::Entities {
                     match generics.as_ref().map(|args| &args[..]) {
                         Some([syn::GenericArgument::Type(syn::Type::Path(p))]) => {
-                            FnArgType::Entities(
-                                resolve_syn_path(&m.path, &p.path, cr, m, crates).expect_symbol(),
-                            )
+                            FnArgType::Entities(ItemPath {
+                                cr_idx: 0,
+                                path: resolve_syn_path(&m.path, &p.path, cr, m, crates)
+                                    .expect_symbol()
+                                    .expect_component_set()
+                                    .call_into(|(sym, i)| sym.path.to_vec()),
+                            })
                         }
                         v => {
                             panic!(
@@ -91,7 +97,10 @@ impl FnArg {
                         }
                     }
                 } else {
-                    FnArgType::Path(path)
+                    FnArgType::Path(ItemPath {
+                        cr_idx: 0,
+                        path: sym.path.to_vec(),
+                    })
                 };
 
                 Self {
@@ -119,7 +128,13 @@ impl FnArg {
                     panic!("Trait arguments may only have one trait type: {ty_str}");
                 }
                 Self {
-                    ty: FnArgType::Trait(resolve_syn_path(&traits[0].path)),
+                    ty: FnArgType::Trait(ItemPath {
+                        cr_idx: 0,
+                        path: resolve_syn_path(&m.path, &traits[0].path, cr, m, crates)
+                            .expect_symbol()
+                            .expect_global()
+                            .call_into(|(sym, i)| sym.path.to_vec()),
+                    }),
                     is_mut: false,
                     ref_cnt: 0,
                 }

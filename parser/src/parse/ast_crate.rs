@@ -309,41 +309,49 @@ impl AstCrate {
         })
     }
 
-    pub fn iter<'a>(&'a self, mode: AstCrateIterMode) -> AstCrateIter<'a> {
-        AstCrateIter {
-            mode,
-            stack: vec![(&self.main, 0)],
+    pub fn iter_mods_mut(&self) -> MutIter {
+        MutIter::new(self)
+    }
+
+    pub fn get_mods<'a>(&'a self) -> Vec<&'a AstMod> {
+        Self::add_mods(&self.main, Vec::new())
+    }
+
+    fn add_mods<'a>(m: &'a AstMod, mut mods: Vec<&'a AstMod>) -> Vec<&'a AstMod> {
+        mods.push(m);
+        for m in m.mods.iter() {
+            mods = Self::add_mods(m, mods)
         }
+        mods
     }
 }
 
-// DFS
-pub enum AstCrateIterMode {
-    NodeFirst,
-    ChildrenFirst,
+pub struct MutIter {
+    idxs: <Vec<Vec<usize>> as IntoIterator>::IntoIter,
 }
 
-pub struct AstCrateIter<'a> {
-    mode: AstCrateIterMode,
-    stack: Vec<(&'a AstMod, usize)>,
-}
+impl MutIter {
+    fn new(cr: &AstCrate) -> Self {
+        Self {
+            idxs: Self::get_idxs(&cr.main, Vec::new(), Vec::new()).into_iter(),
+        }
+    }
 
-impl<'a> Iterator for AstCrateIter<'a> {
-    type Item = &'a AstMod;
+    fn get_idxs(m: &AstMod, curr_idxs: Vec<usize>, mut idxs: Vec<Vec<usize>>) -> Vec<Vec<usize>> {
+        idxs.push(curr_idxs.to_vec());
+        for (i, m) in m.mods.iter().enumerate() {
+            idxs = Self::get_idxs(m, curr_idxs.to_vec().push_into(i), idxs)
+        }
+        idxs
+    }
 
-    fn next(&mut self) -> Option<Self::Item> {
-        self.stack
-            .last_mut()
-            .and_then(|(m, i)| match m.mods.get(*i) {
-                Some(m2) => {
-                    *i += 1;
-                    self.stack.push((m2, 0));
-                    Some(m2)
-                }
-                None => {
-                    self.stack.pop();
-                    self.next()
-                }
-            })
+    pub fn next<'a>(&mut self, cr: &'a mut AstCrate) -> Option<&'a mut AstMod> {
+        self.idxs.next().map(|idxs| {
+            let mut m = &mut cr.main;
+            for i in idxs.iter() {
+                m = &mut m.mods[*i]
+            }
+            m
+        })
     }
 }
