@@ -4,4 +4,4 @@ mod ast_mod;
 mod attributes;
 
 pub use ast_crate::AstCrate;
-pub use ast_mod::{AstMod, HardcodedSymbol, Symbol, SymbolType};
+pub use ast_mod::{AstMod, DiscardSymbol, HardcodedSymbol, Symbol, SymbolType};

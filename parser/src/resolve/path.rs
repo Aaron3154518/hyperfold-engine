@@ -159,7 +159,7 @@ pub fn resolve_path<'a>(
         return resolve_path_from_crate(path, cr, crates);
     }
 
-    // Serach for a symbol
+    // Search for a symbol
     if path.len() == 1 {
         if let Some(sym) = m
             .symbols
@@ -170,25 +170,36 @@ pub fn resolve_path<'a>(
         }
     }
 
-    // Iterate possible paths
-    m.uses
+    // Check mods
+    if let Some(m) = m
+        .mods
         .iter()
-        .find_map(|syn| {
-            // Get possible path
-            if syn.ident == "*" {
-                resolve_path_from_crate([syn.path.to_vec(), path.to_vec()].concat(), cr, crates)
-                    .map_or(None, |p| Some(Ok(p)))
-            } else if name == &syn.ident {
-                Some(resolve_path_from_crate(
-                    [syn.path.to_vec(), path[1..].to_vec()].concat(),
-                    cr,
-                    crates,
-                ))
-            } else {
-                None
-            }
-        })
-        .unwrap_or_else(|| resolve_path_from_crate(path, cr, crates))
+        .find(|m| m.path.last().is_some_and(|s| s == name))
+    {
+        return resolve_path_from_crate([m.path.to_vec(), path[1..].to_vec()].concat(), cr, crates);
+    }
+
+    // Check possible paths
+    if let Some(res) = m.uses.iter().find_map(|syn| {
+        // Get possible path
+        if syn.ident == "*" {
+            resolve_path_from_crate([syn.path.to_vec(), path.to_vec()].concat(), cr, crates)
+                .map_or(None, |p| Some(Ok(p)))
+        } else if name == &syn.ident {
+            Some(resolve_path_from_crate(
+                [syn.path.to_vec(), path[1..].to_vec()].concat(),
+                cr,
+                crates,
+            ))
+        } else {
+            None
+        }
+    }) {
+        return res;
+    }
+
+    // Check dependencies
+    resolve_path_from_crate(path, cr, crates)
 }
 
 pub fn resolve_syn_path<'a>(

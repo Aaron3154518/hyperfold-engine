@@ -151,6 +151,6 @@ pub fn main() {
         ast_codegen::codegen(&paths, &mut items);
     }) {
         // TODO: cleanup
-        eprintln!("{e:#?}")
+        eprintln!("{e:#?}");
     }
 }

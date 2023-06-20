@@ -206,6 +206,23 @@ impl Symbol {
     }
 }
 
+// Helper function to just get the data from a resolved symbol
+pub trait DiscardSymbol<T> {
+    fn discard_symbol(self) -> T;
+}
+
+impl<T> DiscardSymbol<T> for (&Symbol, T) {
+    fn discard_symbol(self) -> T {
+        self.1
+    }
+}
+
+impl<T> DiscardSymbol<Option<T>> for Option<(&Symbol, T)> {
+    fn discard_symbol(self) -> Option<T> {
+        self.map(|sym| sym.discard_symbol())
+    }
+}
+
 // Use statement
 #[derive(Clone, Debug)]
 pub struct AstUse {

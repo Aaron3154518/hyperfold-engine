@@ -309,8 +309,12 @@ impl AstCrate {
         })
     }
 
-    pub fn iter_mods_mut(&self) -> MutIter {
+    pub fn iter_mods_mut<'a>(&'a mut self) -> MutIter<'a> {
         MutIter::new(self)
+    }
+
+    pub fn iter_mods<'a>(&'a self) -> impl Iterator<Item = &'a AstMod> {
+        self.get_mods().into_iter()
     }
 
     pub fn get_mods<'a>(&'a self) -> Vec<&'a AstMod> {
@@ -326,14 +330,16 @@ impl AstCrate {
     }
 }
 
-pub struct MutIter {
+pub struct MutIter<'a> {
+    cr: &'a mut AstCrate,
     idxs: <Vec<Vec<usize>> as IntoIterator>::IntoIter,
 }
 
-impl MutIter {
-    fn new(cr: &AstCrate) -> Self {
+impl<'a> MutIter<'a> {
+    fn new(cr: &'a mut AstCrate) -> Self {
         Self {
             idxs: Self::get_idxs(&cr.main, Vec::new(), Vec::new()).into_iter(),
+            cr,
         }
     }
 
@@ -344,14 +350,26 @@ impl MutIter {
         }
         idxs
     }
+}
 
-    pub fn next<'a>(&mut self, cr: &'a mut AstCrate) -> Option<&'a mut AstMod> {
-        self.idxs.next().map(|idxs| {
-            let mut m = &mut cr.main;
-            for i in idxs.iter() {
-                m = &mut m.mods[*i]
+impl<'a> Iterator for MutIter<'a> {
+    type Item = &'a mut AstMod;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.idxs.next() {
+            Some(idxs) => {
+                // Rust won't let us bind self to lifetime 'a
+                // Use unsafe pointers to remove lifetime checks
+                let mut m = unsafe { &mut *(&mut self.cr.main as *mut AstMod) };
+                for i in idxs {
+                    m = match m.mods.get_mut(i) {
+                        Some(m) => m,
+                        None => return None,
+                    }
+                }
+                Some(m)
             }
-            m
-        })
+            None => None,
+        }
     }
 }

@@ -1,8 +1,8 @@
 use std::{collections::VecDeque, path::PathBuf};
 
 use crate::{
-    codegen::component_set,
-    parse::{AstCrate, AstMod, HardcodedSymbol, Symbol, SymbolType},
+    // codegen::component_set::{self},
+    parse::{AstCrate, AstMod, DiscardSymbol, HardcodedSymbol, Symbol, SymbolType},
     resolve::{
         function_arg::{FnArg, FnArgType},
         path::resolve_path,
@@ -12,14 +12,14 @@ use crate::{
 };
 use proc_macro2::{token_stream::IntoIter, TokenStream, TokenTree};
 use quote::ToTokens;
-use shared::util::{Call, Catch, FindFrom, Get, Increment, JoinMap, SplitAround};
+use shared::util::{Call, Catch, FindFrom, Get, Increment, JoinMap, PushInto, SplitAround};
 
 use shared::parse_args::{ComponentMacroArgs, GlobalMacroArgs, SystemMacroArgs};
 use syn::{parenthesized, parse_macro_input, spanned::Spanned, Error, Token};
 
 use super::{
-    component_set::ComponentSetMacro,
-    parse_macro_call::{parse_macro_calls, update_macro_calls},
+    component_set::ComponentSet,
+    parse_macro_call::{parse_macro_calls, update_macro_calls, ParseMacroCall},
     path::{ItemPath, ResolveResultTrait},
     paths::{ExpandEnum, GetPaths, MacroPaths, NamespaceTraits, Paths},
 };
@@ -81,7 +81,7 @@ pub struct ItemsCrate {
     pub events: Vec<ItemEvent>,
     pub systems: Vec<ItemSystem>,
     pub dependencies: Vec<ItemsCrateDependency>,
-    pub component_sets: Vec<component_set::ComponentSet>,
+    // pub component_sets: Vec<component_set::ComponentSet>,
 }
 
 // Find items
@@ -114,15 +114,15 @@ impl ItemsCrate {
             .find_map(|(i, e)| (&e.path == p).then_some((i, e)))
     }
 
-    pub fn find_component_set<'a>(
-        &'a self,
-        p: &ItemPath,
-    ) -> Option<(usize, &'a component_set::ComponentSet)> {
-        self.component_sets
-            .iter()
-            .enumerate()
-            .find_map(|(i, cs)| (&cs.path == p).then_some((i, cs)))
-    }
+    // pub fn find_component_set<'a>(
+    //     &'a self,
+    //     p: &ItemPath,
+    // ) -> Option<(usize, &'a component_set::ComponentSet)> {
+    //     self.component_sets
+    //         .iter()
+    //         .enumerate()
+    //         .find_map(|(i, cs)| (&cs.path == p).then_some((i, cs)))
+    // }
 }
 
 // Used to ignore a macros crate when iterating
@@ -165,7 +165,7 @@ impl ItemsCrate {
                     cr_alias: alias.to_string(),
                 })
                 .collect(),
-            component_sets: Vec::new(),
+            // component_sets: Vec::new(),
         }
     }
 
@@ -184,7 +184,7 @@ impl ItemsCrate {
         let mut symbols = Vec::new();
         for cr in iter_except(crates, macro_cr_idx) {
             let mut crate_symbols = Vec::new();
-            for m in cr.get_mods() {
+            for m in cr.iter_mods() {
                 let mut mod_symbols = Vec::new();
                 // Iterate struct/enums
                 for (path, attrs) in m
@@ -198,8 +198,9 @@ impl ItemsCrate {
                     if let Some(kind) = attrs.iter().find_map(|attr| {
                         let hard_sym = match resolve_path(attr.path.to_vec(), cr, m, crates)
                             .match_symbol(Symbol::match_any_hardcoded)
+                            .discard_symbol()
                         {
-                            Some((_, hard_sym)) => hard_sym,
+                            Some(t) => t,
                             None => return None,
                         };
 
@@ -250,8 +251,41 @@ impl ItemsCrate {
 
         // Insert components, globals, and events
         for (cr, crate_symbols) in iter_except_mut(crates, macro_cr_idx).zip(symbols) {
-            let mut it = cr.iter_mods_mut();
-            while let Some(m) = it.next(cr) {}
+            for (m, mod_symbols) in cr.iter_mods_mut().zip(crate_symbols) {
+                m.symbols.extend(mod_symbols)
+            }
+        }
+
+        // Resolve component sets
+        let mut component_sets = Vec::new();
+        let mut symbols = Vec::new();
+        for cr in iter_except(crates, macro_cr_idx) {
+            let mut crate_symbols = Vec::new();
+            for m in cr.iter_mods() {
+                let mut mod_symbols = Vec::new();
+                for call in m.items.macro_calls.iter() {
+                    if let Some(_) = resolve_path(call.path.to_vec(), cr, m, crates)
+                        .match_symbol(|sym| sym.match_hardcoded(HardcodedSymbol::ComponentsMacro))
+                    {
+                        let cs = ComponentSet::parse(call.data.args.clone(), cr, m, crates);
+                        mod_symbols.push(Symbol {
+                            kind: SymbolType::ComponentSet(component_sets.len()),
+                            path: cs.path.path.to_vec(),
+                            public: true,
+                        });
+                        component_sets.push(cs);
+                    }
+                }
+                crate_symbols.push(mod_symbols);
+            }
+            symbols.push(crate_symbols);
+        }
+
+        // Insert component set symbols
+        for (cr, crate_symbols) in iter_except_mut(crates, macro_cr_idx).zip(symbols) {
+            for (m, mod_symbols) in cr.iter_mods_mut().zip(crate_symbols) {
+                m.symbols.extend(mod_symbols)
+            }
         }
 
         // Add namespace mod to all crates except macro
@@ -265,47 +299,48 @@ impl ItemsCrate {
 
         // Pass 1: Add symbols
         // Step 1.1: Parse component set macro calls
-        let components_path = paths.get_macro(MacroPaths::Components);
-        let comp_sets = iter_except(crates, macro_cr_idx)
-            .map(|cr| parse_macro_calls(components_path, &cr.main, cr, crates))
-            .collect::<Vec<_>>();
+        // let components_path = paths.get_macro(MacroPaths::Components);
+        // let comp_sets = iter_except(crates, macro_cr_idx)
+        //     .map(|cr| parse_macro_calls(components_path, &cr.main, cr, crates))
+        //     .collect::<Vec<_>>();
 
-        // Step 1.2: Update mods with component sets
-        let component_sets = iter_except_mut(crates, macro_cr_idx)
-            .zip(comp_sets)
-            .map(|(cr, comp_sets)| update_macro_calls(comp_sets, &mut cr.main))
-            .collect::<Vec<_>>();
+        // // Step 1.2: Update mods with component sets
+        // let component_sets = iter_except_mut(crates, macro_cr_idx)
+        //     .zip(comp_sets)
+        //     .map(|(cr, comp_sets)| update_macro_calls(comp_sets, &mut cr.main))
+        //     .collect::<Vec<_>>();
 
         // Pass 2: Resolve all paths to cannonical forms
         //     Prereq: All symbols must be added
         // Step 2.1: Resolve components, globals, events, and systems
-        let mut items = iter_except(crates, macro_cr_idx)
-            .map(|cr| {
-                let mut item = ItemsCrate::new(cr, &paths, &crates);
-                // Macros crate must be included as a dependency to resolve macro calls
-                item.resolve_items(cr, &cr.main, &paths, &crates);
-                // Remove macros crate as crate dependency
-                item.remove_macros_crate(paths);
-                item
-            })
-            .collect();
+        // let mut items = iter_except(crates, macro_cr_idx)
+        //     .map(|cr| {
+        //         let mut item = ItemsCrate::new(cr, &paths, &crates);
+        //         // Macros crate must be included as a dependency to resolve macro calls
+        //         item.resolve_items(cr, &cr.main, &paths, &crates);
+        //         // Remove macros crate as crate dependency
+        //         item.remove_macros_crate(paths);
+        //         item
+        //     })
+        //     .collect();
 
-        // Step 2.2: Add traits
-        Self::add_traits(&mut items);
+        // // Step 2.2: Add traits
+        // Self::add_traits(&mut items);
 
-        // Pass 3: Validate all items
-        // Step 3.1: Validate component sets with components
-        //     Prereq: All components must be added
-        let component_sets = component_sets
-            .map_vec(|cs_vec| cs_vec.map_vec(|cs| component_set::ComponentSet::parse(cs, &items)));
-        for (item, cs) in items.iter_mut().zip(component_sets) {
-            item.component_sets = cs;
-        }
+        // // Pass 3: Validate all items
+        // // Step 3.1: Validate component sets with components
+        // //     Prereq: All components must be added
+        // let component_sets = component_sets
+        //     .map_vec(|cs_vec| cs_vec.map_vec(|cs| component_set::ComponentSet::parse(cs, &items)));
+        // for (item, cs) in items.iter_mut().zip(component_sets) {
+        //     item.component_sets = cs;
+        // }
 
         // Step 3.2: Validate system args
         //     Prereq: All components, globals, events, and component sets must be added
 
-        items
+        // items
+        Vec::new()
     }
 
     fn remove_macros_crate(&mut self, paths: &Paths) {

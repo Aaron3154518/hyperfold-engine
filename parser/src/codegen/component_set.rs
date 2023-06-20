@@ -22,7 +22,7 @@ pub struct ComponentSetLabels {
 }
 
 impl ComponentSetLabels {
-    pub fn validate_labels(root: &component_set::LabelItem, crates: &Vec<ItemsCrate>) -> Self {
+    pub fn validate_labels(root: &component_set::AstLabelItem, crates: &Vec<ItemsCrate>) -> Self {
         let mut components = Vec::new();
         let expression = Self::get_labels(root, &mut components);
         let components = components.map_vec(|item_c| {
@@ -40,9 +40,9 @@ impl ComponentSetLabels {
         }
     }
 
-    fn get_labels(item: &component_set::LabelItem, comps: &mut Vec<ItemPath>) -> LabelItem {
+    fn get_labels(item: &component_set::AstLabelItem, comps: &mut Vec<ItemPath>) -> LabelItem {
         match item {
-            component_set::LabelItem::Item { not, ty } => LabelItem::Item {
+            component_set::AstLabelItem::Item { not, ty } => LabelItem::Item {
                 not: *not,
                 component: {
                     comps.iter().position(|c| c == ty).unwrap_or_else(|| {
@@ -51,7 +51,7 @@ impl ComponentSetLabels {
                     })
                 },
             },
-            component_set::LabelItem::Expression { op, items } => LabelItem::Expression {
+            component_set::AstLabelItem::Expression { op, items } => LabelItem::Expression {
                 op: *op,
                 items: items.map_vec(|item| Self::get_labels(item, comps)),
             },
@@ -73,7 +73,7 @@ pub struct ComponentSet {
 }
 
 impl ComponentSet {
-    pub fn parse(cs: &component_set::ComponentSetMacro, crates: &Vec<ItemsCrate>) -> Self {
+    pub fn parse(cs: &component_set::AstComponentSet, crates: &Vec<ItemsCrate>) -> Self {
         let labels = cs
             .labels
             .as_ref()

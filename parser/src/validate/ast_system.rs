@@ -6,7 +6,7 @@ use shared::{
 };
 
 use crate::{
-    codegen::{component_set::ComponentSet, system::LabelType},
+    codegen::system::LabelType,
     resolve::{
         function_arg::{FnArg, FnArgType},
         items_crate::{ItemSystem, ItemsCrate},
@@ -145,25 +145,25 @@ impl SystemValidate {
         self.has_event = true;
     }
 
-    pub fn validate_component_set(&mut self, arg: &FnArg, cs: &ComponentSet, is_vec: bool) {
-        self.validate_ref(arg, 0);
+    // pub fn validate_component_set(&mut self, arg: &FnArg, cs: &ComponentSet, is_vec: bool) {
+    //     self.validate_ref(arg, 0);
 
-        for i in cs.components.iter() {
-            if !self.components.contains_key(&i.idx) {
-                self.components.insert(i.idx, ComponentRefTracker::new());
-            }
+    //     for i in cs.components.iter() {
+    //         if !self.components.contains_key(&i.idx) {
+    //             self.components.insert(i.idx, ComponentRefTracker::new());
+    //         }
 
-            if let Some(refs) = self.components.get_mut(&i.idx) {
-                refs.add_ref(cs.path.path.join("::"), i.is_mut);
-            }
-        }
+    //         if let Some(refs) = self.components.get_mut(&i.idx) {
+    //             refs.add_ref(cs.path.path.join("::"), i.is_mut);
+    //         }
+    //     }
 
-        if !is_vec && self.has_comp_set {
-            self.errs.push(format!("Component set cannot be taken as an argument as another component set has already been specified: {arg}"));
-            self.errs.push("\tConsider using 'Vec<>'".to_string());
-        }
-        self.has_comp_set = self.has_comp_set || is_vec;
-    }
+    //     if !is_vec && self.has_comp_set {
+    //         self.errs.push(format!("Component set cannot be taken as an argument as another component set has already been specified: {arg}"));
+    //         self.errs.push("\tConsider using 'Vec<>'".to_string());
+    //     }
+    //     self.has_comp_set = self.has_comp_set || is_vec;
+    // }
 
     // Validate conditions
     pub fn validate_ref(&mut self, arg: &FnArg, should_be_cnt: usize) {
@@ -230,13 +230,14 @@ impl FnArg {
                 })
                 // Components Set
                 .or_else(|| {
-                    crates[p.cr_idx].find_component_set(p).map(|(i, cs)| {
-                        validate.validate_component_set(self, cs, false);
-                        FnArgResult::ComponentSet {
-                            idx: (p.cr_idx, i),
-                            is_vec: false,
-                        }
-                    })
+                    // crates[p.cr_idx].find_component_set(p).map(|(i, cs)| {
+                    //     validate.validate_component_set(self, cs, false);
+                    //     FnArgResult::ComponentSet {
+                    //         idx: (p.cr_idx, i),
+                    //         is_vec: false,
+                    //     }
+                    // })
+                    None
                 }),
             // Trait
             FnArgType::Trait(p) => crates[p.cr_idx].find_trait(p).map(|(_, tr)| {
@@ -251,13 +252,14 @@ impl FnArg {
                 }
             }),
             // Entities<Component Set>
-            FnArgType::Entities(p) => crates[p.cr_idx].find_component_set(p).map(|(i, cs)| {
-                validate.validate_component_set(self, cs, true);
-                FnArgResult::ComponentSet {
-                    idx: (p.cr_idx, i),
-                    is_vec: true,
-                }
-            }),
+            FnArgType::Entities(p) => None,
+            // crates[p.cr_idx].find_component_set(p).map(|(i, cs)| {
+            //     // validate.validate_component_set(self, cs, true);
+            //     FnArgResult::ComponentSet {
+            //         idx: (p.cr_idx, i),
+            //         is_vec: true,
+            //     }
+            // }),
         }
     }
 }

@@ -1,12 +1,12 @@
 use std::{collections::VecDeque, fmt::Display, ops::Neg};
 
 use proc_macro2::TokenStream;
-use shared::util::{Call, FindFrom, Get, JoinMap, NoneOr};
+use shared::util::{Call, Catch, FindFrom, Get, JoinMap, JoinMapInto, NoneOr, PushInto};
 use syn::{spanned::Spanned, Error, Token};
 
 use crate::{
     parse::{
-        AstCrate, SymbolType, {AstMod, Symbol},
+        AstCrate, DiscardSymbol, SymbolType, {AstMod, Symbol},
     },
     resolve::path::resolve_path,
 };
@@ -92,38 +92,38 @@ impl std::fmt::Display for LabelOp {
 }
 
 #[derive(Clone, Debug)]
-pub enum Expression {
-    Item(LabelItem),
+enum Expression {
+    Item(AstLabelItem),
     Expr {
-        first: LabelItem,
-        noops: Vec<LabelItem>,
+        first: AstLabelItem,
+        noops: Vec<AstLabelItem>,
         ops: Vec<LabelOp>,
     },
 }
 
 impl Expression {
-    pub fn to_item(self, neg: bool) -> LabelItem {
+    pub fn to_item(self, neg: bool) -> AstLabelItem {
         let mut item = match self {
             Expression::Item(i) => i,
             Expression::Expr { first, noops, ops } => {
-                let mut get_item = |items: Vec<LabelItem>, op: LabelOp| {
+                let mut get_item = |items: Vec<AstLabelItem>, op: LabelOp| {
                     if items.len() == 1 {
                         items.into_iter().next().expect("This will not fail")
                     } else {
                         // Combine expressions with the same operation
                         let items = items.into_iter().fold(Vec::new(), |mut items, item| {
                             match item {
-                                LabelItem::Item { not, ty } => {
-                                    items.push(LabelItem::Item { not, ty })
+                                AstLabelItem::Item { not, ty } => {
+                                    items.push(AstLabelItem::Item { not, ty })
                                 }
-                                LabelItem::Expression {
+                                AstLabelItem::Expression {
                                     op: exp_op,
                                     items: exp_items,
                                 } => {
                                     if op == exp_op {
                                         items.extend(exp_items);
                                     } else {
-                                        items.push(LabelItem::Expression {
+                                        items.push(AstLabelItem::Expression {
                                             op: exp_op,
                                             items: exp_items,
                                         });
@@ -132,7 +132,7 @@ impl Expression {
                             }
                             items
                         });
-                        LabelItem::Expression { op, items }
+                        AstLabelItem::Expression { op, items }
                     }
                 };
                 let mut ors = Vec::new();
@@ -183,16 +183,22 @@ impl syn::parse::Parse for Expression {
 
 // Flattened label set
 #[derive(Clone, Debug)]
-pub enum LabelItem {
-    Item { not: bool, ty: ItemPath },
-    Expression { op: LabelOp, items: Vec<LabelItem> },
+enum AstLabelItem {
+    Item {
+        not: bool,
+        ty: Vec<String>,
+    },
+    Expression {
+        op: LabelOp,
+        items: Vec<AstLabelItem>,
+    },
 }
 
-impl LabelItem {
+impl AstLabelItem {
     pub fn negate(&mut self) {
         match self {
-            LabelItem::Item { not, ty } => *not = !*not,
-            LabelItem::Expression { op, items } => {
+            AstLabelItem::Item { not, ty } => *not = !*not,
+            AstLabelItem::Expression { op, items } => {
                 op.negate();
                 items.iter_mut().for_each(|i| i.negate());
             }
@@ -200,7 +206,7 @@ impl LabelItem {
     }
 }
 
-impl syn::parse::Parse for LabelItem {
+impl syn::parse::Parse for AstLabelItem {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         let mut not = false;
         while input.parse::<Token!(!)>().is_ok() {
@@ -214,15 +220,12 @@ impl syn::parse::Parse for LabelItem {
                     |ty| match ty {
                         syn::Type::Path(p) => Ok(Self::Item {
                             not,
-                            ty: ItemPath {
-                                cr_idx: 0,
-                                path: p
-                                    .path
-                                    .segments
-                                    .iter()
-                                    .map(|s| s.ident.to_string())
-                                    .collect(),
-                            },
+                            ty: p
+                                .path
+                                .segments
+                                .iter()
+                                .map(|s| s.ident.to_string())
+                                .collect(),
                         }),
                         _ => err!(ty, "Invalid type in label"),
                     },
@@ -233,15 +236,15 @@ impl syn::parse::Parse for LabelItem {
     }
 }
 
-impl std::fmt::Display for LabelItem {
+impl std::fmt::Display for AstLabelItem {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            LabelItem::Item { not, ty } => f.write_fmt(format_args!(
+            AstLabelItem::Item { not, ty } => f.write_fmt(format_args!(
                 "{}{}",
                 if *not { "!" } else { "" },
-                ty.path.join("::")
+                ty.join("::")
             )),
-            LabelItem::Expression { op, items } => f.write_fmt(format_args!(
+            AstLabelItem::Expression { op, items } => f.write_fmt(format_args!(
                 "({})",
                 items
                     .map_vec(|i| format!("{i}"))
@@ -252,14 +255,14 @@ impl std::fmt::Display for LabelItem {
 }
 
 #[derive(Debug)]
-pub struct ComponentSetItem {
-    pub var: String,
-    pub ty: ItemPath,
-    pub ref_cnt: usize,
-    pub is_mut: bool,
+struct AstComponentSetItem {
+    var: String,
+    ty: ItemPath,
+    ref_cnt: usize,
+    is_mut: bool,
 }
 
-impl ComponentSetItem {
+impl AstComponentSetItem {
     pub fn from(var: String, ty: syn::Type) -> syn::Result<Self> {
         let span = ty.span();
         return match ty {
@@ -290,7 +293,7 @@ impl ComponentSetItem {
     }
 }
 
-impl syn::parse::Parse for ComponentSetItem {
+impl syn::parse::Parse for AstComponentSetItem {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         // var : type
         let var = match input.parse::<syn::Ident>() {
@@ -300,7 +303,7 @@ impl syn::parse::Parse for ComponentSetItem {
         if let Err(e) = input.parse::<syn::token::Colon>() {
             return err!(input, "Expected ':'", e);
         }
-        ComponentSetItem::from(
+        AstComponentSetItem::from(
             var,
             parse_expect!(input, syn::Type, "Expected variable type"),
         )
@@ -308,79 +311,20 @@ impl syn::parse::Parse for ComponentSetItem {
 }
 
 #[derive(Debug)]
-pub struct ComponentSetMacro {
-    pub path: ItemPath,
-    pub args: Vec<ComponentSetItem>,
-    pub labels: Option<LabelItem>,
+struct AstComponentSet {
+    ident: String,
+    args: Vec<AstComponentSetItem>,
+    labels: Option<AstLabelItem>,
 }
 
-impl ParseMacroCall for ComponentSetMacro {
-    fn parse(
-        cr: &AstCrate,
-        m: &AstMod,
-        crates: &Vec<AstCrate>,
-        ts: TokenStream,
-    ) -> syn::Result<Self> {
-        syn::parse2::<Self>(ts).map(|mut cs| {
-            cs.path = ItemPath {
-                cr_idx: cr.idx,
-                path: [m.path.to_vec(), cs.path.path].concat(),
-            };
-            for item in cs.args.iter_mut() {
-                item.ty = resolve_path(item.ty.path.to_vec(), cr, m, crates)
-                    .expect_symbol()
-                    .expect_component()
-                    .call_into(|(sym, i)| ItemPath {
-                        cr_idx: 0,
-                        path: sym.path.to_vec(),
-                    })
-            }
-            if let Some(root) = &mut cs.labels {
-                let mut labels = VecDeque::new();
-                labels.push_back(root);
-                while let Some(node) = labels.pop_front() {
-                    match node {
-                        LabelItem::Item { not, ty } => {
-                            *ty = resolve_path(ty.path.to_vec(), cr, m, crates)
-                                .expect_symbol()
-                                .expect_component()
-                                .call_into(|(sym, i)| ItemPath {
-                                    cr_idx: 0,
-                                    path: sym.path.to_vec(),
-                                })
-                        }
-                        LabelItem::Expression { op, items } => labels.extend(items),
-                    }
-                }
-            }
-            cs
-        })
-    }
-
-    fn update_mod(&self, m: &mut AstMod) {
-        eprintln!("{self}");
-        // m.symbols.push(AstSymbol {
-        //     kind: AstSymbolType::Hardcoded,
-        //     ident: self
-        //         .path
-        //         .path
-        //         .last()
-        //         .expect("Empty component set path")
-        //         .to_string(),
-        //     path: self.path.path.to_vec(),
-        //     public: true,
-        // });
-    }
-}
-
-impl syn::parse::Parse for ComponentSetMacro {
+impl syn::parse::Parse for AstComponentSet {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         let mut _comma: syn::token::Comma;
 
         let mut labels = None;
 
         // First ident
-        let mut first_ident = parse_expect!(input, syn::Ident, "Expected ident");
+        let mut first_ident: syn::Ident = parse_expect!(input, "Expected ident");
         if first_ident == "labels" {
             // Labels
             labels = match input.parse::<proc_macro2::Group>() {
@@ -401,25 +345,155 @@ impl syn::parse::Parse for ComponentSetMacro {
             first_ident = parse_expect!(input, "Expected ident");
         }
 
-        let path = ItemPath {
-            cr_idx: 0,
-            path: vec![first_ident.to_string()],
-        };
-
         let mut args = Vec::new();
         while let Result::Ok(_) = input.parse::<syn::token::Comma>() {
             args.push(parse_expect!(input, "Expected argument variable-type pair"));
         }
 
-        Ok(Self { path, args, labels })
+        Ok(Self {
+            ident: first_ident.to_string(),
+            args,
+            labels,
+        })
     }
 }
 
-impl std::fmt::Display for ComponentSetMacro {
+impl std::fmt::Display for AstComponentSet {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!(
             "{{\n{:#?}\n{:#?}\nLabels: {}\n}}",
-            self.path,
+            self.ident,
+            self.args,
+            self.labels
+                .as_ref()
+                .map_or(String::new(), |l| format!("{l}"))
+        ))
+    }
+}
+
+// Resolve Ast structs to actual items
+#[derive(Debug)]
+pub enum LabelItem {
+    Item { not: bool, c_idx: usize },
+    Expression { op: LabelOp, items: Vec<LabelItem> },
+}
+
+impl LabelItem {
+    fn resolve(item: AstLabelItem, cr: &AstCrate, m: &AstMod, crates: &Vec<AstCrate>) -> Self {
+        match item {
+            AstLabelItem::Item { not, ty } => Self::Item {
+                not,
+                c_idx: resolve_path(ty, cr, m, crates)
+                    .expect_symbol()
+                    .expect_component()
+                    .discard_symbol(),
+            },
+            AstLabelItem::Expression { op, items } => Self::Expression {
+                op,
+                items: items
+                    .into_iter()
+                    .map_vec(|item| Self::resolve(item, cr, m, crates)),
+            },
+        }
+    }
+}
+
+impl std::fmt::Display for LabelItem {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LabelItem::Item { not, c_idx } => {
+                f.write_fmt(format_args!("{}{c_idx}", if *not { "!" } else { "" },))
+            }
+            LabelItem::Expression { op, items } => f.write_fmt(format_args!(
+                "({})",
+                items
+                    .map_vec(|i| format!("{i}"))
+                    .join(format!(" {op} ").as_str())
+            )),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct ComponentSetItem {
+    pub var: String,
+    pub c_idx: usize,
+    pub ref_cnt: usize,
+    pub is_mut: bool,
+}
+
+impl ComponentSetItem {
+    fn resolve(
+        AstComponentSetItem {
+            var,
+            ty,
+            ref_cnt,
+            is_mut,
+        }: AstComponentSetItem,
+        cr: &AstCrate,
+        m: &AstMod,
+        crates: &Vec<AstCrate>,
+    ) -> Self {
+        Self {
+            var,
+            c_idx: resolve_path(ty.path.to_vec(), cr, m, crates)
+                .expect_symbol()
+                .expect_component()
+                .discard_symbol(),
+            ref_cnt,
+            is_mut,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct ComponentSet {
+    pub path: ItemPath,
+    pub args: Vec<ComponentSetItem>,
+    pub labels: Option<LabelItem>,
+}
+
+impl ComponentSet {
+    pub fn parse(tokens: TokenStream, cr: &AstCrate, m: &AstMod, crates: &Vec<AstCrate>) -> Self {
+        Self::resolve(
+            syn::parse2(tokens).catch(format!(
+                "Failed to parse component set in mod: {}",
+                m.path.join("::")
+            )),
+            cr,
+            m,
+            crates,
+        )
+    }
+
+    fn resolve(
+        AstComponentSet {
+            ident,
+            args,
+            labels,
+        }: AstComponentSet,
+        cr: &AstCrate,
+        m: &AstMod,
+        crates: &Vec<AstCrate>,
+    ) -> Self {
+        Self {
+            path: ItemPath {
+                cr_idx: cr.idx,
+                path: m.path.to_vec().push_into(ident),
+            },
+            args: args
+                .into_iter()
+                .map_vec(|arg| ComponentSetItem::resolve(arg, cr, m, crates)),
+            labels: labels.map(|l| LabelItem::resolve(l, cr, m, crates)),
+        }
+    }
+}
+
+impl std::fmt::Display for ComponentSet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!(
+            "{{\n{}\n{:#?}\nLabels: {}\n}}",
+            self.path.path.join("::"),
             self.args,
             self.labels
                 .as_ref()
