@@ -2,7 +2,7 @@ use syn::Pat;
 
 use crate::{
     parse::{
-        AstCrate, {AstMod, AstSymbol},
+        AstCrate, {AstMod, Symbol},
     },
     util::parse_syn_path,
 };
@@ -23,7 +23,7 @@ impl ItemPath {
     }
 }
 
-pub type ResolveResult<'a> = Result<&'a AstSymbol, ItemPath>;
+pub type ResolveResult<'a> = Result<&'a Symbol, ItemPath>;
 
 // Err means:
 // 1) Not from a valid crate
@@ -202,15 +202,15 @@ pub fn resolve_syn_path<'a>(
 }
 
 pub trait ResolveResultTrait<'a> {
-    fn expect_symbol(self) -> &'a AstSymbol;
+    fn expect_symbol(self) -> &'a Symbol;
 
     fn match_symbol<T, F>(self, f: F) -> Option<T>
     where
-        F: FnOnce(&'a AstSymbol) -> Option<T>;
+        F: FnOnce(&'a Symbol) -> Option<T>;
 }
 
 impl<'a> ResolveResultTrait<'a> for ResolveResult<'a> {
-    fn expect_symbol(self) -> &'a AstSymbol {
+    fn expect_symbol(self) -> &'a Symbol {
         match self {
             Ok(sym) => sym,
             Err(e) => panic!("Could not resolve path: {e:#?}"),
@@ -219,7 +219,7 @@ impl<'a> ResolveResultTrait<'a> for ResolveResult<'a> {
 
     fn match_symbol<T, F>(self, f: F) -> Option<T>
     where
-        F: FnOnce(&'a AstSymbol) -> Option<T>,
+        F: FnOnce(&'a Symbol) -> Option<T>,
     {
         self.ok().and_then(|sym| f(sym))
     }

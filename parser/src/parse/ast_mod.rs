@@ -42,10 +42,10 @@ pub struct AstItem<Data> {
     pub path: Vec<String>,
 }
 
-// Symbol with path
+// Symbol with path - Edit this to add new engine items
 #[derive(Eq, PartialEq)]
 #[shared::macros::expand_enum]
-pub enum AstHardcodedSymbol {
+pub enum HardcodedSymbol {
     // Macros crate
     ComponentMacro,
     GlobalMacro,
@@ -56,52 +56,52 @@ pub enum AstHardcodedSymbol {
     Entities,
 }
 
-impl AstHardcodedSymbol {
+impl HardcodedSymbol {
     pub fn get_path<'a>(&self, paths: &'a Paths) -> &'a ItemPath {
         match self {
-            AstHardcodedSymbol::ComponentMacro => paths.get_macro(MacroPaths::Component),
-            AstHardcodedSymbol::GlobalMacro => paths.get_macro(MacroPaths::Global),
-            AstHardcodedSymbol::EventMacro => paths.get_macro(MacroPaths::Event),
-            AstHardcodedSymbol::SystemMacro => paths.get_macro(MacroPaths::System),
-            AstHardcodedSymbol::ComponentsMacro => paths.get_macro(MacroPaths::Components),
-            AstHardcodedSymbol::Entities => paths.get_engine_path(EnginePaths::Entities),
+            HardcodedSymbol::ComponentMacro => paths.get_macro(MacroPaths::Component),
+            HardcodedSymbol::GlobalMacro => paths.get_macro(MacroPaths::Global),
+            HardcodedSymbol::EventMacro => paths.get_macro(MacroPaths::Event),
+            HardcodedSymbol::SystemMacro => paths.get_macro(MacroPaths::System),
+            HardcodedSymbol::ComponentsMacro => paths.get_macro(MacroPaths::Components),
+            HardcodedSymbol::Entities => paths.get_engine_path(EnginePaths::Entities),
         }
     }
 }
 
 #[derive(Clone, Debug)]
-pub enum AstSymbolType {
+pub enum SymbolType {
     Component(usize),
     Global(usize),
     Event(usize),
     System,
     ComponentSet(usize),
-    Hardcoded(AstHardcodedSymbol),
+    Hardcoded(HardcodedSymbol),
 }
 
-impl std::fmt::Display for AstSymbolType {
+impl std::fmt::Display for SymbolType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
-            AstSymbolType::Component(_) => "Component",
-            AstSymbolType::Global(_) => "Global",
-            AstSymbolType::Event(_) => "Event",
-            AstSymbolType::System => "System",
-            AstSymbolType::ComponentSet(_) => "ComponentSet",
-            AstSymbolType::Hardcoded(_) => "Hardcoded Path",
+            SymbolType::Component(_) => "Component",
+            SymbolType::Global(_) => "Global",
+            SymbolType::Event(_) => "Event",
+            SymbolType::System => "System",
+            SymbolType::ComponentSet(_) => "ComponentSet",
+            SymbolType::Hardcoded(_) => "Hardcoded Path",
         })
     }
 }
 
 #[derive(Clone, Debug)]
-pub struct AstSymbol {
-    pub kind: AstSymbolType,
+pub struct Symbol {
+    pub kind: SymbolType,
     pub path: Vec<String>,
     pub public: bool,
 }
 
-impl AstSymbol {
+impl Symbol {
     pub fn from(
-        kind: AstSymbolType,
+        kind: SymbolType,
         mut path: Vec<String>,
         ident: &syn::Ident,
         vis: &syn::Visibility,
@@ -129,7 +129,7 @@ impl AstSymbol {
 
     pub fn match_component<'a>(&'a self) -> Option<(&'a Self, usize)> {
         match self.kind {
-            AstSymbolType::Component(i) => Some((self, i)),
+            SymbolType::Component(i) => Some((self, i)),
             _ => None,
         }
     }
@@ -140,7 +140,7 @@ impl AstSymbol {
 
     pub fn match_global<'a>(&'a self) -> Option<(&'a Self, usize)> {
         match self.kind {
-            AstSymbolType::Global(i) => Some((self, i)),
+            SymbolType::Global(i) => Some((self, i)),
             _ => None,
         }
     }
@@ -151,7 +151,7 @@ impl AstSymbol {
 
     pub fn match_event<'a>(&'a self) -> Option<(&'a Self, usize)> {
         match self.kind {
-            AstSymbolType::Event(i) => Some((self, i)),
+            SymbolType::Event(i) => Some((self, i)),
             _ => None,
         }
     }
@@ -162,7 +162,7 @@ impl AstSymbol {
 
     pub fn match_system<'a>(&'a self) -> Option<&'a Self> {
         match self.kind {
-            AstSymbolType::System => Some(self),
+            SymbolType::System => Some(self),
             _ => None,
         }
     }
@@ -173,7 +173,7 @@ impl AstSymbol {
 
     pub fn match_component_set<'a>(&'a self) -> Option<(&'a Self, usize)> {
         match self.kind {
-            AstSymbolType::ComponentSet(i) => Some((self, i)),
+            SymbolType::ComponentSet(i) => Some((self, i)),
             _ => None,
         }
     }
@@ -183,29 +183,30 @@ impl AstSymbol {
             .catch(self.panic_msg("Component Set"))
     }
 
-    pub fn match_any_hardcoded<'a>(&'a self) -> Option<(&'a Self, AstHardcodedSymbol)> {
+    pub fn match_any_hardcoded<'a>(&'a self) -> Option<(&'a Self, HardcodedSymbol)> {
         match self.kind {
-            AstSymbolType::Hardcoded(sym) => Some((self, sym)),
+            SymbolType::Hardcoded(sym) => Some((self, sym)),
             _ => None,
         }
     }
 
-    pub fn expect_any_hardcoded<'a>(&'a self) -> (&'a Self, AstHardcodedSymbol) {
+    pub fn expect_any_hardcoded<'a>(&'a self) -> (&'a Self, HardcodedSymbol) {
         self.match_any_hardcoded()
             .catch(self.panic_msg("Hardcoded Path"))
     }
 
-    pub fn match_hardcoded<'a>(&'a self, sym: AstHardcodedSymbol) -> Option<&'a Self> {
+    pub fn match_hardcoded<'a>(&'a self, sym: HardcodedSymbol) -> Option<&'a Self> {
         self.match_any_hardcoded()
             .and_then(|(_, s)| (s == sym).then_some(self))
     }
 
-    pub fn expect_hardcoded<'a>(&'a self, sym: AstHardcodedSymbol) -> &'a Self {
+    pub fn expect_hardcoded<'a>(&'a self, sym: HardcodedSymbol) -> &'a Self {
         self.match_hardcoded(sym)
             .catch(self.panic_msg(&format!("Hardcoded Path: {sym:#?}")))
     }
 }
 
+// Use statement
 #[derive(Clone, Debug)]
 pub struct AstUse {
     pub ident: String,
@@ -253,7 +254,7 @@ pub struct AstMod {
     pub path: Vec<String>,
     pub mods: Vec<AstMod>,
     pub uses: Vec<AstUse>,
-    pub symbols: Vec<AstSymbol>,
+    pub symbols: Vec<Symbol>,
     pub items: AstItems,
 }
 

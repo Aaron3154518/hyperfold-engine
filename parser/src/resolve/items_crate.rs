@@ -2,7 +2,7 @@ use std::{collections::VecDeque, path::PathBuf};
 
 use crate::{
     codegen::component_set,
-    parse::{AstCrate, AstHardcodedSymbol, AstMod, AstSymbol, AstSymbolType},
+    parse::{AstCrate, AstMod, HardcodedSymbol, Symbol, SymbolType},
     resolve::{
         function_arg::{FnArg, FnArgType},
         path::resolve_path,
@@ -173,7 +173,7 @@ impl ItemsCrate {
         let macro_cr_idx = paths.get_cr_idx(Crates::Macros);
 
         // Insert hardcoded symbols
-        for sym in AstHardcodedSymbol::VARIANTS {
+        for sym in HardcodedSymbol::VARIANTS {
             AstCrate::add_hardcoded_symbol(crates, paths, sym)
         }
 
@@ -197,14 +197,14 @@ impl ItemsCrate {
                     // Search through attributes
                     if let Some(kind) = attrs.iter().find_map(|attr| {
                         let hard_sym = match resolve_path(attr.path.to_vec(), cr, m, crates)
-                            .match_symbol(AstSymbol::match_any_hardcoded)
+                            .match_symbol(Symbol::match_any_hardcoded)
                         {
                             Some((_, hard_sym)) => hard_sym,
                             None => return None,
                         };
 
                         match hard_sym {
-                            AstHardcodedSymbol::ComponentMacro => {
+                            HardcodedSymbol::ComponentMacro => {
                                 components.push(ItemComponent {
                                     path: ItemPath {
                                         cr_idx: cr.idx,
@@ -212,9 +212,9 @@ impl ItemsCrate {
                                     },
                                     args: ComponentMacroArgs::from(attr.args.to_vec()),
                                 });
-                                Some(AstSymbolType::Component(components.len() - 1))
+                                Some(SymbolType::Component(components.len() - 1))
                             }
-                            AstHardcodedSymbol::GlobalMacro => {
+                            HardcodedSymbol::GlobalMacro => {
                                 globals.push(ItemGlobal {
                                     path: ItemPath {
                                         cr_idx: cr.idx,
@@ -222,21 +222,21 @@ impl ItemsCrate {
                                     },
                                     args: GlobalMacroArgs::from(attr.args.to_vec()),
                                 });
-                                Some(AstSymbolType::Global(globals.len() - 1))
+                                Some(SymbolType::Global(globals.len() - 1))
                             }
-                            AstHardcodedSymbol::EventMacro => {
+                            HardcodedSymbol::EventMacro => {
                                 events.push(ItemEvent {
                                     path: ItemPath {
                                         cr_idx: cr.idx,
                                         path: path.to_vec(),
                                     },
                                 });
-                                Some(AstSymbolType::Event(events.len() - 1))
+                                Some(SymbolType::Event(events.len() - 1))
                             }
                             _ => None,
                         }
                     }) {
-                        mod_symbols.push(AstSymbol {
+                        mod_symbols.push(Symbol {
                             kind,
                             path: path.to_vec(),
                             public: true,

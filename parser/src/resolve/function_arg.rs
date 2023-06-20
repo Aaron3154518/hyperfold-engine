@@ -4,7 +4,7 @@ use quote::ToTokens;
 use shared::util::{Call, Catch, JoinMap};
 
 use crate::{
-    parse::{AstCrate, AstHardcodedSymbol, AstMod},
+    parse::{AstCrate, AstMod, HardcodedSymbol},
     resolve::{
         path::{resolve_path, ItemPath},
         paths::{EnginePaths, Paths},
@@ -77,7 +77,7 @@ impl FnArg {
                     .expect_symbol()
                     .expect_any_hardcoded();
 
-                let ty = if sym_type == AstHardcodedSymbol::Entities {
+                let ty = if sym_type == HardcodedSymbol::Entities {
                     match generics.as_ref().map(|args| &args[..]) {
                         Some([syn::GenericArgument::Type(syn::Type::Path(p))]) => {
                             FnArgType::Entities(ItemPath {

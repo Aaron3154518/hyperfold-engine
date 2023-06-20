@@ -11,8 +11,8 @@ use shared::util::{Call, Catch, JoinMap, JoinMapInto, PushInto};
 
 use super::{
     ast_file::DirType,
-    ast_mod::{AstMod, AstModType, AstSymbolType},
-    AstHardcodedSymbol, AstSymbol,
+    ast_mod::{AstMod, AstModType, SymbolType},
+    HardcodedSymbol, Symbol,
 };
 use crate::{
     resolve::{
@@ -282,7 +282,7 @@ impl AstCrate {
         m
     }
 
-    pub fn add_symbol(&mut self, sym: AstSymbol) {
+    pub fn add_symbol(&mut self, sym: Symbol) {
         self.get_mod_from_path(&sym.path[..end(&sym.path, 1)])
             .symbols
             .push(sym);
@@ -300,10 +300,10 @@ impl AstCrate {
         m.mods.last_mut().catch(format!("Mod not added: {path:#?}"))
     }
 
-    pub fn add_hardcoded_symbol(crates: &mut Vec<Self>, paths: &Paths, sym: AstHardcodedSymbol) {
+    pub fn add_hardcoded_symbol(crates: &mut Vec<Self>, paths: &Paths, sym: HardcodedSymbol) {
         let path = sym.get_path(paths);
-        crates[path.cr_idx].add_symbol(AstSymbol {
-            kind: AstSymbolType::Hardcoded(sym),
+        crates[path.cr_idx].add_symbol(Symbol {
+            kind: SymbolType::Hardcoded(sym),
             path: path.path.to_vec(),
             public: true,
         })

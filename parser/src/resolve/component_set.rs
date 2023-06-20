@@ -6,7 +6,7 @@ use syn::{spanned::Spanned, Error, Token};
 
 use crate::{
     parse::{
-        AstCrate, AstSymbolType, {AstMod, AstSymbol},
+        AstCrate, SymbolType, {AstMod, Symbol},
     },
     resolve::path::resolve_path,
 };
