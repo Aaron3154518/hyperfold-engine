@@ -6,7 +6,7 @@ use syn::{spanned::Spanned, Error, Token};
 
 use crate::{
     parse::{
-        AstCrate, DiscardSymbol, SymbolType, {AstMod, Symbol},
+        AstCrate, DiscardSymbol, ModInfo, SymbolType, {AstMod, Symbol},
     },
     resolve::path::resolve_path,
 };
@@ -379,11 +379,11 @@ pub enum LabelItem {
 }
 
 impl LabelItem {
-    fn resolve(item: AstLabelItem, cr: &AstCrate, m: &AstMod, crates: &Vec<AstCrate>) -> Self {
+    fn resolve(item: AstLabelItem, (m, cr, crates): ModInfo) -> Self {
         match item {
             AstLabelItem::Item { not, ty } => Self::Item {
                 not,
-                c_idx: resolve_path(ty, cr, m, crates)
+                c_idx: resolve_path(ty, (m, cr, crates))
                     .expect_symbol()
                     .expect_component()
                     .discard_symbol(),
@@ -392,7 +392,7 @@ impl LabelItem {
                 op,
                 items: items
                     .into_iter()
-                    .map_vec(|item| Self::resolve(item, cr, m, crates)),
+                    .map_vec(|item| Self::resolve(item, (m, cr, crates))),
             },
         }
     }
@@ -430,13 +430,11 @@ impl ComponentSetItem {
             ref_cnt,
             is_mut,
         }: AstComponentSetItem,
-        cr: &AstCrate,
-        m: &AstMod,
-        crates: &Vec<AstCrate>,
+        (m, cr, crates): ModInfo,
     ) -> Self {
         Self {
             var,
-            c_idx: resolve_path(ty.path.to_vec(), cr, m, crates)
+            c_idx: resolve_path(ty.path.to_vec(), (m, cr, crates))
                 .expect_symbol()
                 .expect_component()
                 .discard_symbol(),
@@ -454,15 +452,13 @@ pub struct ComponentSet {
 }
 
 impl ComponentSet {
-    pub fn parse(tokens: TokenStream, cr: &AstCrate, m: &AstMod, crates: &Vec<AstCrate>) -> Self {
+    pub fn parse(tokens: TokenStream, (m, cr, crates): ModInfo) -> Self {
         Self::resolve(
             syn::parse2(tokens).catch(format!(
                 "Failed to parse component set in mod: {}",
                 m.path.join("::")
             )),
-            cr,
-            m,
-            crates,
+            (m, cr, crates),
         )
     }
 
@@ -472,9 +468,7 @@ impl ComponentSet {
             args,
             labels,
         }: AstComponentSet,
-        cr: &AstCrate,
-        m: &AstMod,
-        crates: &Vec<AstCrate>,
+        (m, cr, crates): ModInfo,
     ) -> Self {
         Self {
             path: ItemPath {
@@ -483,8 +477,8 @@ impl ComponentSet {
             },
             args: args
                 .into_iter()
-                .map_vec(|arg| ComponentSetItem::resolve(arg, cr, m, crates)),
-            labels: labels.map(|l| LabelItem::resolve(l, cr, m, crates)),
+                .map_vec(|arg| ComponentSetItem::resolve(arg, (m, cr, crates))),
+            labels: labels.map(|l| LabelItem::resolve(l, (m, cr, crates))),
         }
     }
 }

@@ -5,3 +5,4 @@ mod attributes;
 
 pub use ast_crate::AstCrate;
 pub use ast_mod::{AstMod, AstUse, DiscardSymbol, HardcodedSymbol, Symbol, SymbolType};
+pub type ModInfo<'a> = (&'a AstMod, &'a AstCrate, &'a Vec<AstCrate>);

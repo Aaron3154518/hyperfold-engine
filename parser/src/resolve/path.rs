@@ -2,7 +2,7 @@ use syn::Pat;
 
 use crate::{
     parse::{
-        AstCrate, {AstMod, Symbol},
+        AstCrate, ModInfo, {AstMod, Symbol},
     },
     util::parse_syn_path,
 };
@@ -42,9 +42,7 @@ fn resolve_path_from_crate<'a>(
                 "crate" => Some(resolve_path_from_mod(
                     path.to_vec(),
                     1,
-                    cr,
-                    &cr.main,
-                    crates,
+                    (&cr.main, cr, crates),
                 )),
                 // Match dependency
                 _ => cr.deps.iter().find_map(|(idx, alias)| {
@@ -72,9 +70,7 @@ fn resolve_path_from_crate<'a>(
 fn resolve_path_from_mod<'a>(
     path: Vec<String>,
     idx: usize,
-    cr: &'a AstCrate,
-    m: &'a AstMod,
-    crates: &'a Vec<AstCrate>,
+    (m, cr, crates): ModInfo<'a>,
 ) -> ResolveResult<'a> {
     // println!(
     //     "Resolve Mod: {} at {}",
@@ -102,7 +98,7 @@ fn resolve_path_from_mod<'a>(
                 // The path points to a mod
                 Err(ItemPath { cr_idx, path })
             } else {
-                resolve_path_from_mod(path, idx + 1, cr, m, crates)
+                resolve_path_from_mod(path, idx + 1, (m, cr, crates))
             };
         }
     }
@@ -126,14 +122,14 @@ fn resolve_path_from_mod<'a>(
         // Glob - this is allowed to fail
         if sym.ident == "*" {
             let path = [sym.path.to_vec(), path[idx..].to_vec()].concat();
-            if let Ok(v) = resolve_path(path.to_vec(), cr, m, crates) {
+            if let Ok(v) = resolve_path(path.to_vec(), (m, cr, crates)) {
                 return Ok(v);
             }
         // Use
         } else if sym.ident == name {
             let path = [sym.path.to_vec(), path[idx + 1..].to_vec()].concat();
             // println!("Matched Use: {}", sym.path.join("::"));
-            return resolve_path(path.to_vec(), cr, m, crates);
+            return resolve_path(path.to_vec(), (m, cr, crates));
         }
     }
 
@@ -141,12 +137,7 @@ fn resolve_path_from_mod<'a>(
 }
 
 // Paths that start relative to some mod item
-pub fn resolve_path<'a>(
-    path: Vec<String>,
-    cr: &'a AstCrate,
-    m: &'a AstMod,
-    crates: &'a Vec<AstCrate>,
-) -> ResolveResult<'a> {
+pub fn resolve_path<'a>(path: Vec<String>, (m, cr, crates): ModInfo<'a>) -> ResolveResult<'a> {
     // println!("Local Resolve: {}", path.join("::"));
     let cr_idx = cr.idx;
 
@@ -205,11 +196,9 @@ pub fn resolve_path<'a>(
 pub fn resolve_syn_path<'a>(
     parent_path: &Vec<String>,
     path: &syn::Path,
-    cr: &'a AstCrate,
-    m: &'a AstMod,
-    crates: &'a Vec<AstCrate>,
+    (m, cr, crates): ModInfo<'a>,
 ) -> ResolveResult<'a> {
-    resolve_path(parse_syn_path(&m.path, path), cr, m, crates)
+    resolve_path(parse_syn_path(&m.path, path), (m, cr, crates))
 }
 
 pub trait ResolveResultTrait<'a> {

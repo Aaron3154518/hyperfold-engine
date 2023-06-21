@@ -204,62 +204,62 @@ pub enum FnArgResult {
 }
 
 impl FnArg {
-    pub fn validate(
-        &self,
-        crates: &Vec<ItemsCrate>,
-        validate: &mut SystemValidate,
-    ) -> Option<FnArgResult> {
-        match &self.ty {
-            // Global or Event or Component Set
-            FnArgType::Path(p) => crates[p.cr_idx]
-                // Global
-                .find_global(p)
-                .map(|(i, g)| {
-                    validate.validate_global(self, (p.cr_idx, i), &g.args);
-                    FnArgResult::Global {
-                        idx: (p.cr_idx, i),
-                        is_mut: self.is_mut,
-                    }
-                })
-                // Event
-                .or_else(|| {
-                    crates[p.cr_idx].find_event(p).map(|(i, _)| {
-                        validate.validate_event(self);
-                        FnArgResult::Event((p.cr_idx, i))
-                    })
-                })
-                // Components Set
-                .or_else(|| {
-                    // crates[p.cr_idx].find_component_set(p).map(|(i, cs)| {
-                    //     validate.validate_component_set(self, cs, false);
-                    //     FnArgResult::ComponentSet {
-                    //         idx: (p.cr_idx, i),
-                    //         is_vec: false,
-                    //     }
-                    // })
-                    None
-                }),
-            // Trait
-            FnArgType::Trait(p) => crates[p.cr_idx].find_trait(p).map(|(_, tr)| {
-                validate.validate_global(
-                    self,
-                    (tr.path.cr_idx, tr.g_idx),
-                    &GlobalMacroArgs::from(Vec::new()),
-                );
-                FnArgResult::Global {
-                    idx: (tr.path.cr_idx, tr.g_idx),
-                    is_mut: self.is_mut,
-                }
-            }),
-            // Entities<Component Set>
-            FnArgType::Entities(p) => None,
-            // crates[p.cr_idx].find_component_set(p).map(|(i, cs)| {
-            //     // validate.validate_component_set(self, cs, true);
-            //     FnArgResult::ComponentSet {
-            //         idx: (p.cr_idx, i),
-            //         is_vec: true,
-            //     }
-            // }),
-        }
-    }
+    // pub fn validate(
+    //     &self,
+    //     crates: &Vec<ItemsCrate>,
+    //     validate: &mut SystemValidate,
+    // ) -> Option<FnArgResult> {
+    // match &self.ty {
+    //     // Global or Event or Component Set
+    //     FnArgType::Path(p) => crates[p.cr_idx]
+    //         // Global
+    //         .find_global(p)
+    //         .map(|(i, g)| {
+    //             validate.validate_global(self, (p.cr_idx, i), &g.args);
+    //             FnArgResult::Global {
+    //                 idx: (p.cr_idx, i),
+    //                 is_mut: self.is_mut,
+    //             }
+    //         })
+    //         // Event
+    //         .or_else(|| {
+    //             crates[p.cr_idx].find_event(p).map(|(i, _)| {
+    //                 validate.validate_event(self);
+    //                 FnArgResult::Event((p.cr_idx, i))
+    //             })
+    //         })
+    //         // Components Set
+    //         .or_else(|| {
+    //             // crates[p.cr_idx].find_component_set(p).map(|(i, cs)| {
+    //             //     validate.validate_component_set(self, cs, false);
+    //             //     FnArgResult::ComponentSet {
+    //             //         idx: (p.cr_idx, i),
+    //             //         is_vec: false,
+    //             //     }
+    //             // })
+    //             None
+    //         }),
+    //     // Trait
+    //     FnArgType::Trait(p) => crates[p.cr_idx].find_trait(p).map(|(_, tr)| {
+    //         validate.validate_global(
+    //             self,
+    //             (tr.path.cr_idx, tr.g_idx),
+    //             &GlobalMacroArgs::from(Vec::new()),
+    //         );
+    //         FnArgResult::Global {
+    //             idx: (tr.path.cr_idx, tr.g_idx),
+    //             is_mut: self.is_mut,
+    //         }
+    //     }),
+    //     // Entities<Component Set>
+    //     FnArgType::Entities(p) => None,
+    //     // crates[p.cr_idx].find_component_set(p).map(|(i, cs)| {
+    //     //     // validate.validate_component_set(self, cs, true);
+    //     //     FnArgResult::ComponentSet {
+    //     //         idx: (p.cr_idx, i),
+    //     //         is_vec: true,
+    //     //     }
+    //     // }),
+    // }
+    // }
 }

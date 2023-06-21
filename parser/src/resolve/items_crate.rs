@@ -16,7 +16,7 @@ use quote::ToTokens;
 use shared::util::{Call, Catch, FindFrom, Get, Increment, JoinMap, PushInto, SplitAround};
 
 use shared::parse_args::{ComponentMacroArgs, GlobalMacroArgs, SystemMacroArgs};
-use syn::{parenthesized, parse_macro_input, spanned::Spanned, Error, Token};
+use syn::{parenthesized, parse_macro_input, spanned::Spanned, Error, PatType, Token};
 
 use super::{
     component_set::ComponentSet,
@@ -146,6 +146,27 @@ fn iter_except_mut<'a>(
         .map(|(_, v)| v)
 }
 
+#[derive(Debug)]
+pub struct Items {
+    pub components: Vec<ItemComponent>,
+    pub globals: Vec<ItemGlobal>,
+    pub events: Vec<ItemEvent>,
+    pub component_sets: Vec<ComponentSet>,
+    pub systems: Vec<ItemSystem>,
+}
+
+impl Items {
+    pub fn new() -> Self {
+        Self {
+            components: Vec::new(),
+            globals: Vec::new(),
+            events: Vec::new(),
+            component_sets: Vec::new(),
+            systems: Vec::new(),
+        }
+    }
+}
+
 // Parse AstCrate
 impl ItemsCrate {
     fn new(cr: &AstCrate, paths: &Paths, crates: &Vec<AstCrate>) -> Self {
@@ -173,15 +194,14 @@ impl ItemsCrate {
     pub fn parse(paths: &Paths, crates: &mut Vec<AstCrate>) -> Vec<Self> {
         let macro_cr_idx = paths.get_cr_idx(Crates::Macros);
 
+        let mut items = Items::new();
+
         // Insert hardcoded symbols
         for sym in HardcodedSymbol::VARIANTS {
             AstCrate::add_hardcoded_symbol(crates, paths, sym)
         }
 
         // Resolve components, globals, and events
-        let mut components = Vec::new();
-        let mut globals = Vec::new();
-        let mut events = Vec::new();
         let mut symbols = Vec::new();
         for cr in iter_except(crates, macro_cr_idx) {
             let mut crate_symbols = Vec::new();
@@ -197,7 +217,7 @@ impl ItemsCrate {
                 {
                     // Search through attributes
                     if let Some(kind) = attrs.iter().find_map(|attr| {
-                        let hard_sym = match resolve_path(attr.path.to_vec(), cr, m, crates)
+                        let hard_sym = match resolve_path(attr.path.to_vec(), (m, cr, crates))
                             .match_symbol(Symbol::match_any_hardcoded)
                             .discard_symbol()
                         {
@@ -207,33 +227,33 @@ impl ItemsCrate {
 
                         match hard_sym {
                             HardcodedSymbol::ComponentMacro => {
-                                components.push(ItemComponent {
+                                items.components.push(ItemComponent {
                                     path: ItemPath {
                                         cr_idx: cr.idx,
                                         path: path.to_vec(),
                                     },
-                                    args: ComponentMacroArgs::from(attr.args.to_vec()),
+                                    args: ComponentMacroArgs::from(&attr.args),
                                 });
-                                Some(SymbolType::Component(components.len() - 1))
+                                Some(SymbolType::Component(items.components.len() - 1))
                             }
                             HardcodedSymbol::GlobalMacro => {
-                                globals.push(ItemGlobal {
+                                items.globals.push(ItemGlobal {
                                     path: ItemPath {
                                         cr_idx: cr.idx,
                                         path: path.to_vec(),
                                     },
-                                    args: GlobalMacroArgs::from(attr.args.to_vec()),
+                                    args: GlobalMacroArgs::from(&attr.args),
                                 });
-                                Some(SymbolType::Global(globals.len() - 1))
+                                Some(SymbolType::Global(items.globals.len() - 1))
                             }
                             HardcodedSymbol::EventMacro => {
-                                events.push(ItemEvent {
+                                items.events.push(ItemEvent {
                                     path: ItemPath {
                                         cr_idx: cr.idx,
                                         path: path.to_vec(),
                                     },
                                 });
-                                Some(SymbolType::Event(events.len() - 1))
+                                Some(SymbolType::Event(items.events.len() - 1))
                             }
                             _ => None,
                         }
@@ -258,23 +278,22 @@ impl ItemsCrate {
         }
 
         // Resolve component sets
-        let mut component_sets = Vec::new();
         let mut symbols = Vec::new();
         for cr in iter_except(crates, macro_cr_idx) {
             let mut crate_symbols = Vec::new();
             for m in cr.iter_mods() {
                 let mut mod_symbols = Vec::new();
                 for call in m.items.macro_calls.iter() {
-                    if let Some(_) = resolve_path(call.path.to_vec(), cr, m, crates)
+                    if let Some(_) = resolve_path(call.path.to_vec(), (m, cr, crates))
                         .match_symbol(|sym| sym.match_hardcoded(HardcodedSymbol::ComponentsMacro))
                     {
-                        let cs = ComponentSet::parse(call.data.args.clone(), cr, m, crates);
+                        let cs = ComponentSet::parse(call.data.args.clone(), (m, cr, crates));
                         mod_symbols.push(Symbol {
-                            kind: SymbolType::ComponentSet(component_sets.len()),
+                            kind: SymbolType::ComponentSet(items.component_sets.len()),
                             path: cs.path.path.to_vec(),
                             public: true,
                         });
-                        component_sets.push(cs);
+                        items.component_sets.push(cs);
                     }
                 }
                 crate_symbols.push(mod_symbols);
@@ -309,18 +328,29 @@ impl ItemsCrate {
 
         // Insert trait symbols
         for tr in NamespaceTraits::VARIANTS {
-            let path = tr.get_global().full_path();
+            let path = tr.full_path();
+            let gl_path = tr.get_global().full_path();
             // Reference global in entry crate
-            globals.push(ItemGlobal {
+            items.globals.push(ItemGlobal {
                 path: ItemPath {
                     cr_idx: 0,
                     path: path.to_vec(),
                 },
-                args: GlobalMacroArgs::from(Vec::new()),
+                args: GlobalMacroArgs::from(&Vec::new()),
             });
             for cr in iter_except_mut(crates, macro_cr_idx) {
+                let idx = items.globals.len() - 1;
+                // Add globals to entry crates
+                if cr.idx == 0 {
+                    cr.add_symbol(Symbol {
+                        kind: SymbolType::Global(idx),
+                        path: gl_path.to_vec(),
+                        public: true,
+                    })
+                }
+                // Add traits to all crates
                 cr.add_symbol(Symbol {
-                    kind: SymbolType::Global(globals.len() - 1),
+                    kind: SymbolType::Trait(idx),
                     path: path.to_vec(),
                     public: true,
                 })
@@ -328,8 +358,57 @@ impl ItemsCrate {
         }
 
         // Resolve systems
+        let mut symbols = Vec::new();
+        // Crates
+        for cr in iter_except(crates, macro_cr_idx) {
+            let mut crate_symbols = Vec::new();
+            // Mods
+            for m in cr.iter_mods() {
+                let mut mod_symbols = Vec::new();
+                // Functions
+                for fun in m.items.functions.iter() {
+                    // Attributes
+                    for attr in fun.data.attrs.iter() {
+                        if let Some(sym) = resolve_path(attr.path.to_vec(), (m, cr, crates))
+                            .match_symbol(|sym| sym.match_hardcoded(HardcodedSymbol::SystemMacro))
+                        {
+                            let path = m.path.to_vec().push_into(fun.data.sig.ident.to_string());
+                            let attr_args = SystemMacroArgs::from(&attr.args);
+                            items.systems.push(ItemSystem {
+                                path: ItemPath {
+                                    cr_idx: cr.idx,
+                                    path: path.to_vec(),
+                                },
+                                args: FnArg::parse(
+                                    &attr_args,
+                                    &items,
+                                    &fun.data.sig,
+                                    (m, cr, crates),
+                                ),
+                                attr_args,
+                            });
+                            mod_symbols.push(Symbol {
+                                kind: SymbolType::System(items.systems.len() - 1),
+                                path,
+                                public: true,
+                            });
+                            break;
+                        }
+                    }
+                }
+                crate_symbols.push(mod_symbols);
+            }
+            symbols.push(crate_symbols);
+        }
 
         // Insert system symbols
+        for (cr, crate_symbols) in iter_except_mut(crates, macro_cr_idx).zip(symbols) {
+            for (m, mod_symbols) in cr.iter_mods_mut().zip(crate_symbols) {
+                m.symbols.extend(mod_symbols);
+            }
+        }
+
+        eprintln!("{items:#?}");
 
         // Add namespace mod to all crates except macro
         // Must happen after the dependencies are set
@@ -393,110 +472,6 @@ impl ItemsCrate {
             .position(|d| d.cr_idx == paths.get_cr_idx(Crates::Macros))
         {
             self.dependencies.swap_remove(i);
-        }
-    }
-
-    fn resolve_items(&mut self, cr: &AstCrate, m: &AstMod, paths: &Paths, crates: &Vec<AstCrate>) {
-        let cr_idx = cr.idx;
-
-        /*
-        for mi in m.marked.iter() {
-            for (path, args) in mi.attrs.iter() {
-                let match_path = resolve_path(path.to_vec(), cr, m, crates).get();
-                match &mi.ty {
-                    AstItemType::Enum | AstItemType::Struct => {
-                        if &match_path == paths.get_macro(MacroPaths::Component) {
-                            self.components.push(ItemComponent {
-                                path: ItemPath {
-                                    cr_idx,
-                                    path: mi.sym.path.to_vec(),
-                                },
-                                args: ComponentMacroArgs::from(args.to_vec()),
-                            });
-                            break;
-                        } else if &match_path == paths.get_macro(MacroPaths::Global) {
-                            self.globals.push(ItemGlobal {
-                                path: ItemPath {
-                                    cr_idx,
-                                    path: mi.sym.path.to_vec(),
-                                },
-                                args: GlobalMacroArgs::from(args.to_vec()),
-                            });
-                            break;
-                        } else if &match_path == paths.get_macro(MacroPaths::Event) {
-                            self.events.push(ItemEvent {
-                                path: ItemPath {
-                                    cr_idx,
-                                    path: mi.sym.path.to_vec(),
-                                },
-                            });
-                            break;
-                        }
-                    }
-                    AstItemType::Fn { sig } => {
-                        if &match_path == paths.get_macro(MacroPaths::System) {
-                            self.systems.push(ItemSystem {
-                                path: ItemPath {
-                                    cr_idx,
-                                    path: mi.sym.path.to_vec(),
-                                },
-                                args: sig
-                                    .inputs
-                                    .iter()
-                                    .map(|arg| match arg {
-                                        syn::FnArg::Receiver(_) => {
-                                            panic!("'self' is not allowed as system argument")
-                                        }
-                                        syn::FnArg::Typed(ty) => {
-                                            FnArg::from(ty, cr, m, paths, crates)
-                                        }
-                                    })
-                                    .collect(),
-                                attr_args: SystemMacroArgs::from(args.to_vec()),
-                            });
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-        */
-
-        m.mods
-            .iter()
-            .for_each(|m| self.resolve_items(cr, m, paths, crates));
-    }
-
-    // Add namespace traits and globals
-    fn add_traits(items: &mut Vec<ItemsCrate>) {
-        let entry = items
-            .iter_mut()
-            .find(|cr| cr.cr_idx == 0)
-            .expect("No entry crate");
-
-        let traits = NamespaceTraits::VARIANTS.map(|tr| {
-            // Add trait
-            let new_tr = ItemTrait {
-                path: ItemPath {
-                    cr_idx: entry.cr_idx,
-                    path: tr.full_path(),
-                },
-                g_idx: entry.globals.len(),
-            };
-            // Add trait global
-            entry.globals.push(ItemGlobal {
-                path: ItemPath {
-                    cr_idx: entry.cr_idx,
-                    path: tr.get_global().full_path(),
-                },
-                args: GlobalMacroArgs::from(Vec::new()),
-            });
-            new_tr
-        });
-
-        drop(entry);
-        for i in items.iter_mut() {
-            traits.iter().for_each(|tr| i.traits.push(tr.clone()));
         }
     }
 }

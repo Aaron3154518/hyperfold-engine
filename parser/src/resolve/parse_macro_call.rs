@@ -49,16 +49,16 @@ where
     // eprintln!(
     //     "{:#?}",
     //     m.macro_calls
-    //         .map_vec(|mc| resolve_path(mc.path.to_vec(), cr, m, crates))
+    //         .map_vec(|mc| resolve_path(mc.path.to_vec(), (m, cr, crates)))
     // );
     // MacroCalls {
     //     calls: m
     //         .macro_calls
     //         .iter()
     //         .filter_map(|mc| {
-    //             (&resolve_path(mc.path.to_vec(), cr, m, crates).is_ok_and(|p| &p == macro_path))
+    //             (&resolve_path(mc.path.to_vec(), (m, cr, crates)).is_ok_and(|p| &p == macro_path))
     //                 .then_some(())
-    //                 .and_then(|_| T::parse(cr, m, crates, mc.args.clone()).ok())
+    //                 .and_then(|_| T::parse((m, cr, crates), mc.args.clone()).ok())
     //         })
     //         .collect(),
     //     mods: m

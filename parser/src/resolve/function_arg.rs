@@ -1,40 +1,263 @@
-use std::{fmt::Display, path::PathBuf};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Display,
+    path::PathBuf,
+};
 
 use quote::ToTokens;
-use shared::util::{Call, Catch, JoinMap};
+use shared::{
+    parse_args::SystemMacroArgs,
+    util::{Call, Catch, JoinMap},
+};
 
 use crate::{
-    parse::{AstCrate, AstMod, HardcodedSymbol},
+    parse::{AstCrate, AstMod, DiscardSymbol, HardcodedSymbol, ModInfo},
     resolve::{
         path::{resolve_path, ItemPath},
         paths::{EnginePaths, Paths},
     },
     util::parse_syn_path,
+    validate::util::ItemIndex,
 };
 
-use super::path::{resolve_syn_path, ResolveResultTrait};
+use super::{
+    component_set::ComponentSet,
+    items_crate::{ItemComponent, ItemGlobal, Items},
+    path::{resolve_syn_path, ResolveResultTrait},
+};
+
+struct ComponentRefTracker {
+    mut_refs: Vec<String>,
+    immut_refs: Vec<String>,
+}
+
+impl ComponentRefTracker {
+    pub fn new() -> Self {
+        Self {
+            mut_refs: Vec::new(),
+            immut_refs: Vec::new(),
+        }
+    }
+
+    pub fn with_ref(mut self, set_name: String, is_mut: bool) -> Self {
+        self.add_ref(set_name, is_mut);
+        self
+    }
+
+    pub fn add_ref(&mut self, set_name: String, is_mut: bool) {
+        if is_mut {
+            self.mut_refs.push(set_name);
+        } else {
+            self.immut_refs.push(set_name);
+        }
+    }
+
+    pub fn validate(&self, comp_name: String, errs: &mut Vec<String>) {
+        let (mut_cnt, immut_cnt) = (self.mut_refs.len(), self.immut_refs.len());
+
+        if mut_cnt > 1 {
+            errs.push(format!("'{comp_name}' has multiple mutable references"));
+        }
+
+        if mut_cnt > 0 && immut_cnt > 0 {
+            errs.push(format!(
+                "'{comp_name}' has mutable and immutable references"
+            ));
+        }
+
+        if mut_cnt > 1 || (mut_cnt > 0 && immut_cnt > 0) {
+            self.note(errs)
+        }
+    }
+
+    pub fn note(&self, errs: &mut Vec<String>) {
+        if !self.mut_refs.is_empty() {
+            errs.push(format!(
+                "\tMutable references in '{}'",
+                self.mut_refs.join("', '")
+            ));
+        }
+
+        if !self.immut_refs.is_empty() {
+            errs.push(format!(
+                "\tImmutable references in '{}'",
+                self.immut_refs.join("', '")
+            ));
+        }
+    }
+}
+
+pub struct SystemValidate {
+    pub errs: Vec<String>,
+    attrs: SystemMacroArgs,
+    components: HashMap<usize, ComponentRefTracker>,
+    globals: HashSet<usize>,
+    has_event: bool,
+    has_comp_set: bool,
+}
+
+impl SystemValidate {
+    pub fn new(attrs: SystemMacroArgs) -> Self {
+        Self {
+            errs: Vec::new(),
+            attrs,
+            components: HashMap::new(),
+            globals: HashSet::new(),
+            has_event: false,
+            has_comp_set: false,
+        }
+    }
+
+    pub fn validate(&mut self, items: &Items) -> Result<(), String> {
+        for (i, refs) in self.components.iter() {
+            let c = match items.components.get(*i) {
+                Some(c) => c,
+                None => {
+                    self.errs.push(format!("Invalid Component index: {i}"));
+                    continue;
+                }
+            };
+            refs.validate(c.path.path.join("::"), &mut self.errs);
+        }
+
+        if !self.attrs.is_init {
+            if !self.has_event {
+                self.errs
+                    .push("Non-init systems must specify an event".to_string());
+            }
+        }
+
+        match self.errs.is_empty() {
+            true => Ok(()),
+            false => Err(self.errs.join("\n")),
+        }
+    }
+
+    pub fn validate_global(&mut self, arg: &FnArg, i: usize, items: &Items) {
+        let g = match items.globals.get(i) {
+            Some(g) => g,
+            None => {
+                self.errs.push(format!("Invalid Global index: {i}"));
+                return;
+            }
+        };
+
+        self.validate_ref(arg, 1);
+        if g.args.is_const {
+            self.validate_mut(arg, false);
+        }
+        if !self.globals.insert(i) {
+            self.errs.push(format!("Duplicate global: {arg}"));
+        }
+    }
+
+    pub fn validate_event(&mut self, arg: &FnArg) {
+        if self.attrs.is_init {
+            self.errs
+                .push(format!("Init system may not specify an event: {arg}"));
+            return;
+        }
+
+        self.validate_ref(arg, 1);
+        self.validate_mut(arg, false);
+        if self.has_event {
+            self.errs.push(format!("Multiple events specified: {arg}"));
+        }
+        self.has_event = true;
+    }
+
+    pub fn validate_component_set(&mut self, arg: &FnArg, i: usize, items: &Items, is_vec: bool) {
+        if self.attrs.is_init {
+            self.errs
+                .push(format!("Init system may not specify components: {arg}"));
+            return;
+        }
+
+        let cs = match items.component_sets.get(i) {
+            Some(cs) => cs,
+            None => {
+                self.errs.push(format!("Invalid Entities index: {i}"));
+                return;
+            }
+        };
+
+        self.validate_ref(arg, 0);
+
+        for item in cs.args.iter() {
+            if !self.components.contains_key(&item.c_idx) {
+                self.components
+                    .insert(item.c_idx, ComponentRefTracker::new());
+            }
+
+            if let Some(refs) = self.components.get_mut(&item.c_idx) {
+                refs.add_ref(cs.path.path.join("::"), item.is_mut);
+            }
+        }
+
+        if !is_vec && self.has_comp_set {
+            self.errs.push(format!("Component set cannot be taken as an argument as another component set has already been specified: {arg}"));
+            self.errs.push("\tConsider using 'Vec<>'".to_string());
+        }
+        self.has_comp_set = self.has_comp_set || is_vec;
+    }
+
+    // Validate conditions
+    pub fn validate_ref(&mut self, arg: &FnArg, should_be_cnt: usize) {
+        if arg.ref_cnt != should_be_cnt {
+            self.errs.push(format!(
+                "Type should be taken by {}: \"{}\"",
+                if should_be_cnt == 0 {
+                    "borrow".to_string()
+                } else if should_be_cnt == 1 {
+                    "single reference".to_string()
+                } else {
+                    format!("{} references", should_be_cnt)
+                },
+                arg
+            ))
+        }
+    }
+
+    pub fn validate_mut(&mut self, arg: &FnArg, should_be_mut: bool) {
+        if arg.is_mut != should_be_mut {
+            self.errs.push(format!(
+                "Type should be taken {}: \"{}\"",
+                if should_be_mut {
+                    "mutably"
+                } else {
+                    "immutably"
+                },
+                arg
+            ))
+        }
+    }
+}
+
+pub enum FnArgResult {
+    Global { idx: ItemIndex, is_mut: bool },
+    Event(ItemIndex),
+    ComponentSet { idx: ItemIndex, is_vec: bool },
+}
 
 #[derive(Clone, Debug)]
 pub enum FnArgType {
-    Path(ItemPath),
-    Trait(ItemPath),
-    Entities(ItemPath),
+    Event(usize),
+    Global(usize),
+    Entities(usize),
+    VecEntities(usize),
 }
 
 impl std::fmt::Display for FnArgType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let path = match self {
-            FnArgType::Path(p) | FnArgType::Trait(p) | FnArgType::Entities(p) => p.path.join("::"),
-        };
-
-        f.write_fmt(format_args!(
-            "{}",
+        f.write_str(
             match self {
-                FnArgType::Path(_) => path,
-                FnArgType::Trait(_) => format!("dyn {path}"),
-                FnArgType::Entities(_) => format!("Vec<{path}>"),
+                FnArgType::Event(i) => format!("Event {i}"),
+                FnArgType::Global(i) => format!("Global {i}"),
+                FnArgType::Entities(i) => format!("Entities {i}"),
+                FnArgType::VecEntities(i) => format!("Vec Entities {i}"),
             }
-        ))
+            .as_str(),
+        )
     }
 }
 
@@ -46,23 +269,44 @@ pub struct FnArg {
 }
 
 impl FnArg {
-    pub fn from(
-        ty: &syn::PatType,
-        cr: &AstCrate,
-        m: &AstMod,
-        paths: &Paths,
-        crates: &Vec<AstCrate>,
-    ) -> Self {
-        Self::parse_type(&ty.ty, cr, m, paths, crates)
+    pub fn parse(
+        attrs: &SystemMacroArgs,
+        items: &Items,
+        sig: &syn::Signature,
+        (m, cr, crates): ModInfo,
+    ) -> Vec<Self> {
+        let args = sig
+            .inputs
+            .iter()
+            .map(|arg| match arg {
+                syn::FnArg::Receiver(_) => {
+                    panic!("Cannot use self in function")
+                }
+                syn::FnArg::Typed(syn::PatType { ty, .. }) => {
+                    FnArg::parse_type(ty, (m, cr, crates))
+                }
+            })
+            .collect();
+        Self::validate(attrs, &args, items);
+        args
     }
 
-    fn parse_type(
-        ty: &syn::Type,
-        cr: &AstCrate,
-        m: &AstMod,
-        paths: &Paths,
-        crates: &Vec<AstCrate>,
-    ) -> Self {
+    fn validate(attrs: &SystemMacroArgs, args: &Vec<Self>, items: &Items) {
+        let mut errs = SystemValidate::new(attrs.clone());
+        for arg in args {
+            match &arg.ty {
+                FnArgType::Event(_) => errs.validate_event(arg),
+                FnArgType::Global(i) => errs.validate_global(arg, *i, items),
+                FnArgType::Entities(i) => errs.validate_component_set(arg, *i, items, false),
+                FnArgType::VecEntities(i) => errs.validate_component_set(arg, *i, items, true),
+            }
+        }
+        if let Err(msg) = errs.validate(items) {
+            panic!("{}", msg)
+        }
+    }
+
+    fn parse_type(ty: &syn::Type, (m, cr, crates): ModInfo) -> Self {
         let ty_str = ty.to_token_stream().to_string();
         match ty {
             syn::Type::Path(p) => {
@@ -73,34 +317,30 @@ impl FnArg {
                     _ => None,
                 });
 
-                let (sym, sym_type) = resolve_syn_path(&m.path, &p.path, cr, m, crates)
-                    .expect_symbol()
-                    .expect_any_hardcoded();
+                let sym = resolve_syn_path(&m.path, &p.path, (m, cr, crates)).expect_symbol();
 
-                let ty = if sym_type == HardcodedSymbol::Entities {
-                    match generics.as_ref().map(|args| &args[..]) {
-                        Some([syn::GenericArgument::Type(syn::Type::Path(p))]) => {
-                            FnArgType::Entities(ItemPath {
-                                cr_idx: 0,
-                                path: resolve_syn_path(&m.path, &p.path, cr, m, crates)
-                                    .expect_symbol()
-                                    .expect_component_set()
-                                    .call_into(|(sym, i)| sym.path.to_vec()),
-                            })
+                let ty = match sym.kind {
+                    crate::parse::SymbolType::Global(i) => FnArgType::Global(i),
+                    crate::parse::SymbolType::Event(i) => FnArgType::Event(i),
+                    crate::parse::SymbolType::ComponentSet(i) => FnArgType::Entities(i),
+                    crate::parse::SymbolType::Hardcoded(s) => match s {
+                        HardcodedSymbol::Entities => {
+                            if let Some(syn::GenericArgument::Type(syn::Type::Path(ty))) =
+                                generics.as_ref().and_then(|v| v.first())
+                            {
+                                FnArgType::VecEntities(
+                                    resolve_syn_path(&m.path, &ty.path, (m, cr, crates))
+                                        .expect_symbol()
+                                        .expect_component_set()
+                                        .discard_symbol(),
+                                )
+                            } else {
+                                panic!("Invalid argument type: {}", sym.path.join("::"))
+                            }
                         }
-                        v => {
-                            panic!(
-                                "Expected single non-ref type path inside Vec<>, found {}",
-                                v.map_or(String::new(), |args| args
-                                    .join_map(|arg| arg.to_token_stream().to_string(), ","))
-                            )
-                        }
-                    }
-                } else {
-                    FnArgType::Path(ItemPath {
-                        cr_idx: 0,
-                        path: sym.path.to_vec(),
-                    })
+                        _ => panic!("Invalid argument type: {}", sym.path.join("::")),
+                    },
+                    _ => panic!("Invalid argument type: {}", sym.path.join("::")),
                 };
 
                 Self {
@@ -110,7 +350,7 @@ impl FnArg {
                 }
             }
             syn::Type::Reference(r) => {
-                let mut fn_arg = Self::parse_type(&r.elem, cr, m, paths, crates);
+                let mut fn_arg = Self::parse_type(&r.elem, (m, cr, crates));
                 fn_arg.ref_cnt += 1;
                 fn_arg.is_mut = fn_arg.is_mut || r.mutability.is_some();
                 fn_arg
@@ -128,13 +368,12 @@ impl FnArg {
                     panic!("Trait arguments may only have one trait type: {ty_str}");
                 }
                 Self {
-                    ty: FnArgType::Trait(ItemPath {
-                        cr_idx: 0,
-                        path: resolve_syn_path(&m.path, &traits[0].path, cr, m, crates)
+                    ty: FnArgType::Global(
+                        resolve_syn_path(&m.path, &traits[0].path, (m, cr, crates))
                             .expect_symbol()
-                            .expect_global()
-                            .call_into(|(sym, i)| sym.path.to_vec()),
-                    }),
+                            .expect_trait()
+                            .discard_symbol(),
+                    ),
                     is_mut: false,
                     ref_cnt: 0,
                 }

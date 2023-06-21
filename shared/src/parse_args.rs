@@ -1,14 +1,16 @@
 // Parsing macro args
 fn parse<T>(input: syn::parse::ParseStream) -> syn::Result<T>
 where
-    T: From<Vec<String>>,
+    T: for<'a> From<&'a Vec<String>>,
 {
     let mut args = Vec::new();
     while let Ok(i) = input.parse::<syn::Ident>() {
         args.push(i.to_string());
-        let _ = input.parse::<syn::Token![,]>();
+        if let Err(e) = input.parse::<syn::Token![,]>() {
+            return Err(e);
+        }
     }
-    Ok(T::from(args))
+    Ok(T::from(&args))
 }
 
 // Component args
@@ -18,8 +20,8 @@ pub struct ComponentMacroArgs {
     pub is_singleton: bool,
 }
 
-impl From<Vec<String>> for ComponentMacroArgs {
-    fn from(vals: Vec<String>) -> Self {
+impl From<&Vec<String>> for ComponentMacroArgs {
+    fn from(vals: &Vec<String>) -> Self {
         let mut c = Self {
             is_dummy: false,
             is_singleton: false,
@@ -52,8 +54,8 @@ pub struct GlobalMacroArgs {
     pub is_const: bool,
 }
 
-impl From<Vec<String>> for GlobalMacroArgs {
-    fn from(vals: Vec<String>) -> Self {
+impl From<&Vec<String>> for GlobalMacroArgs {
+    fn from(vals: &Vec<String>) -> Self {
         let mut g = Self {
             is_dummy: false,
             is_const: false,
@@ -81,8 +83,8 @@ pub struct SystemMacroArgs {
     pub is_init: bool,
 }
 
-impl From<Vec<String>> for SystemMacroArgs {
-    fn from(vals: Vec<String>) -> Self {
+impl From<&Vec<String>> for SystemMacroArgs {
+    fn from(vals: &Vec<String>) -> Self {
         let mut s = Self { is_init: false };
         for v in vals {
             match v.as_str() {

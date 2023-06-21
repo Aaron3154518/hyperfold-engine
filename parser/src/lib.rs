@@ -38,9 +38,7 @@ fn test_resolves(crates: &Vec<AstCrate>) {
             v.join("::"),
             path::resolve_path(
                 v.iter().map(|s| s.to_string()).collect(),
-                &crates[0],
-                &crates[0].main,
-                &crates
+                (&crates[0].main, &crates[0], &crates)
             )
         )
     };

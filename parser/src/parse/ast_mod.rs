@@ -73,8 +73,9 @@ impl HardcodedSymbol {
 pub enum SymbolType {
     Component(usize),
     Global(usize),
+    Trait(usize),
     Event(usize),
-    System,
+    System(usize),
     ComponentSet(usize),
     Hardcoded(HardcodedSymbol),
 }
@@ -84,8 +85,9 @@ impl std::fmt::Display for SymbolType {
         f.write_str(match self {
             SymbolType::Component(_) => "Component",
             SymbolType::Global(_) => "Global",
+            SymbolType::Trait(_) => "Trait",
             SymbolType::Event(_) => "Event",
-            SymbolType::System => "System",
+            SymbolType::System(_) => "System",
             SymbolType::ComponentSet(_) => "ComponentSet",
             SymbolType::Hardcoded(_) => "Hardcoded Path",
         })
@@ -127,6 +129,7 @@ impl Symbol {
         )
     }
 
+    // Component
     pub fn match_component<'a>(&'a self) -> Option<(&'a Self, usize)> {
         match self.kind {
             SymbolType::Component(i) => Some((self, i)),
@@ -138,6 +141,7 @@ impl Symbol {
         self.match_component().catch(self.panic_msg("Component"))
     }
 
+    // Global
     pub fn match_global<'a>(&'a self) -> Option<(&'a Self, usize)> {
         match self.kind {
             SymbolType::Global(i) => Some((self, i)),
@@ -149,6 +153,29 @@ impl Symbol {
         self.match_global().catch(self.panic_msg("Global"))
     }
 
+    // Trait
+    pub fn match_trait<'a>(&'a self) -> Option<(&'a Self, usize)> {
+        match self.kind {
+            SymbolType::Trait(i) => Some((self, i)),
+            _ => None,
+        }
+    }
+
+    pub fn expect_trait<'a>(&'a self) -> (&'a Self, usize) {
+        self.match_trait().catch(self.panic_msg("Trait"))
+    }
+
+    // Global or Trait
+    pub fn match_global_or_trait<'a>(&'a self) -> Option<(&'a Self, usize)> {
+        self.match_global().or(self.match_trait())
+    }
+
+    pub fn expect_global_or_trait<'a>(&'a self) -> (&'a Self, usize) {
+        self.match_global_or_trait()
+            .catch(self.panic_msg("Trait or Global"))
+    }
+
+    // Event
     pub fn match_event<'a>(&'a self) -> Option<(&'a Self, usize)> {
         match self.kind {
             SymbolType::Event(i) => Some((self, i)),
@@ -160,17 +187,19 @@ impl Symbol {
         self.match_event().catch(self.panic_msg("EVent"))
     }
 
-    pub fn match_system<'a>(&'a self) -> Option<&'a Self> {
+    // System
+    pub fn match_system<'a>(&'a self) -> Option<(&'a Self, usize)> {
         match self.kind {
-            SymbolType::System => Some(self),
+            SymbolType::System(i) => Some((self, i)),
             _ => None,
         }
     }
 
-    pub fn expect_system<'a>(&'a self) -> &'a Self {
+    pub fn expect_system<'a>(&'a self) -> (&'a Self, usize) {
         self.match_system().catch(self.panic_msg("System"))
     }
 
+    // Component Set
     pub fn match_component_set<'a>(&'a self) -> Option<(&'a Self, usize)> {
         match self.kind {
             SymbolType::ComponentSet(i) => Some((self, i)),
@@ -183,6 +212,7 @@ impl Symbol {
             .catch(self.panic_msg("Component Set"))
     }
 
+    // Hardcoded
     pub fn match_any_hardcoded<'a>(&'a self) -> Option<(&'a Self, HardcodedSymbol)> {
         match self.kind {
             SymbolType::Hardcoded(sym) => Some((self, sym)),
