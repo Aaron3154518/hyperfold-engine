@@ -2,13 +2,14 @@ use std::{collections::VecDeque, path::PathBuf};
 
 use crate::{
     // codegen::component_set::{self},
-    parse::{AstCrate, AstMod, DiscardSymbol, HardcodedSymbol, Symbol, SymbolType},
+    parse::{AstCrate, AstMod, AstUse, DiscardSymbol, HardcodedSymbol, Symbol, SymbolType},
     resolve::{
         function_arg::{FnArg, FnArgType},
         path::resolve_path,
         paths::{Crates, EnginePaths},
     },
     util::end,
+    validate::constants::NAMESPACE,
 };
 use proc_macro2::{token_stream::IntoIter, TokenStream, TokenTree};
 use quote::ToTokens;
@@ -287,6 +288,48 @@ impl ItemsCrate {
                 m.symbols.extend(mod_symbols)
             }
         }
+
+        // Insert namespace mod
+        for cr in iter_except_mut(crates, macro_cr_idx) {
+            let path = cr.main.path.to_vec();
+            // Traits
+            let uses = cr
+                .deps
+                .iter()
+                .map(|(_, alias)| AstUse {
+                    ident: alias.to_string(),
+                    path: vec![alias.to_string()],
+                    public: true,
+                })
+                .collect();
+
+            let mut m = cr.add_mod(path.push_into(NAMESPACE.to_string()));
+            m.uses = uses;
+        }
+
+        // Insert trait symbols
+        for tr in NamespaceTraits::VARIANTS {
+            let path = tr.get_global().full_path();
+            // Reference global in entry crate
+            globals.push(ItemGlobal {
+                path: ItemPath {
+                    cr_idx: 0,
+                    path: path.to_vec(),
+                },
+                args: GlobalMacroArgs::from(Vec::new()),
+            });
+            for cr in iter_except_mut(crates, macro_cr_idx) {
+                cr.add_symbol(Symbol {
+                    kind: SymbolType::Global(globals.len() - 1),
+                    path: path.to_vec(),
+                    public: true,
+                })
+            }
+        }
+
+        // Resolve systems
+
+        // Insert system symbols
 
         // Add namespace mod to all crates except macro
         // Must happen after the dependencies are set
