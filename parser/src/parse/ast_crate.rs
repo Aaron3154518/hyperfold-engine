@@ -4,6 +4,7 @@ use std::{
     fs::{self, File},
     io::Read,
     iter::Map,
+    marker::PhantomData,
     path::PathBuf,
 };
 
@@ -307,7 +308,7 @@ impl AstCrate {
         })
     }
 
-    pub fn iter_mods_mut<'a>(&'a mut self) -> MutIter<'a> {
+    pub fn iter_mods_mut(&self) -> MutIter {
         MutIter::new(self)
     }
 
@@ -328,16 +329,14 @@ impl AstCrate {
     }
 }
 
-pub struct MutIter<'a> {
-    cr: &'a mut AstCrate,
+pub struct MutIter {
     idxs: <Vec<Vec<usize>> as IntoIterator>::IntoIter,
 }
 
-impl<'a> MutIter<'a> {
-    fn new(cr: &'a mut AstCrate) -> Self {
+impl MutIter {
+    pub fn new(cr: &AstCrate) -> Self {
         Self {
             idxs: Self::get_idxs(&cr.main, Vec::new(), Vec::new()).into_iter(),
-            cr,
         }
     }
 
@@ -348,17 +347,11 @@ impl<'a> MutIter<'a> {
         }
         idxs
     }
-}
 
-impl<'a> Iterator for MutIter<'a> {
-    type Item = &'a mut AstMod;
-
-    fn next(&mut self) -> Option<Self::Item> {
+    pub fn next<'a>(&mut self, cr: &'a mut AstCrate) -> Option<&'a mut AstMod> {
         match self.idxs.next() {
             Some(idxs) => {
-                // Rust won't let us bind self to lifetime 'a
-                // Use unsafe pointers to remove lifetime checks
-                let mut m = unsafe { &mut *(&mut self.cr.main as *mut AstMod) };
+                let mut m = &mut cr.main;
                 for i in idxs {
                     m = match m.mods.get_mut(i) {
                         Some(m) => m,

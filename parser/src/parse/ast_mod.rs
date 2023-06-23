@@ -11,6 +11,7 @@ use crate::{
         paths::{EnginePaths, ExpandEnum, MacroPaths, Paths},
     },
     util::{add_path_item, end, parse_syn_path},
+    validate::util::MsgResult,
 };
 
 use super::attributes::AstAttribute;
@@ -128,128 +129,102 @@ impl Symbol {
             self.kind
         )
     }
+}
 
-    // Component
-    pub fn match_component<'a>(&'a self) -> Option<(&'a Self, usize)> {
-        match self.kind {
-            SymbolType::Component(i) => Some((self, i)),
-            _ => None,
-        }
+pub trait MatchSymbol<'a> {
+    fn expect_component(self) -> MsgResult<(&'a Symbol, usize)>;
+
+    fn expect_global(self) -> MsgResult<(&'a Symbol, usize)>;
+
+    fn expect_trait(self) -> MsgResult<(&'a Symbol, usize)>;
+
+    fn expect_global_or_trait(self) -> MsgResult<(&'a Symbol, usize)>;
+
+    fn expect_event(self) -> MsgResult<(&'a Symbol, usize)>;
+
+    fn expect_system(self) -> MsgResult<(&'a Symbol, usize)>;
+
+    fn expect_component_set(self) -> MsgResult<(&'a Symbol, usize)>;
+
+    fn expect_any_hardcoded(self) -> MsgResult<(&'a Symbol, HardcodedSymbol)>;
+
+    fn expect_hardcoded(self, sym: HardcodedSymbol) -> MsgResult<&'a Symbol>;
+}
+
+impl<'a> MatchSymbol<'a> for MsgResult<&'a Symbol> {
+    fn expect_component(self) -> MsgResult<(&'a Symbol, usize)> {
+        self.and_then(|arg| match arg.kind {
+            SymbolType::Component(i) => Ok((arg, i)),
+            _ => Err(arg.panic_msg("Component")),
+        })
     }
 
-    pub fn expect_component<'a>(&'a self) -> (&'a Self, usize) {
-        self.match_component().catch(self.panic_msg("Component"))
+    fn expect_global(self) -> MsgResult<(&'a Symbol, usize)> {
+        self.and_then(|arg| match arg.kind {
+            SymbolType::Global(i) => Ok((arg, i)),
+            _ => Err(arg.panic_msg("Global")),
+        })
     }
 
-    // Global
-    pub fn match_global<'a>(&'a self) -> Option<(&'a Self, usize)> {
-        match self.kind {
-            SymbolType::Global(i) => Some((self, i)),
-            _ => None,
-        }
+    fn expect_trait(self) -> MsgResult<(&'a Symbol, usize)> {
+        self.and_then(|arg| match arg.kind {
+            SymbolType::Trait(i) => Ok((arg, i)),
+            _ => Err(arg.panic_msg("Trait")),
+        })
     }
 
-    pub fn expect_global<'a>(&'a self) -> (&'a Self, usize) {
-        self.match_global().catch(self.panic_msg("Global"))
+    fn expect_global_or_trait(self) -> MsgResult<(&'a Symbol, usize)> {
+        self.and_then(|arg| match arg.kind {
+            SymbolType::Global(i) | SymbolType::Trait(i) => Ok((arg, i)),
+            _ => Err(arg.panic_msg("Trait or Global")),
+        })
     }
 
-    // Trait
-    pub fn match_trait<'a>(&'a self) -> Option<(&'a Self, usize)> {
-        match self.kind {
-            SymbolType::Trait(i) => Some((self, i)),
-            _ => None,
-        }
+    fn expect_event(self) -> MsgResult<(&'a Symbol, usize)> {
+        self.and_then(|arg| match arg.kind {
+            SymbolType::Event(i) => Ok((arg, i)),
+            _ => Err(arg.panic_msg("Event")),
+        })
     }
 
-    pub fn expect_trait<'a>(&'a self) -> (&'a Self, usize) {
-        self.match_trait().catch(self.panic_msg("Trait"))
+    fn expect_system(self) -> MsgResult<(&'a Symbol, usize)> {
+        self.and_then(|arg| match arg.kind {
+            SymbolType::System(i) => Ok((arg, i)),
+            _ => Err(arg.panic_msg("System")),
+        })
     }
 
-    // Global or Trait
-    pub fn match_global_or_trait<'a>(&'a self) -> Option<(&'a Self, usize)> {
-        self.match_global().or(self.match_trait())
+    fn expect_component_set(self) -> MsgResult<(&'a Symbol, usize)> {
+        self.and_then(|arg| match arg.kind {
+            SymbolType::ComponentSet(i) => Ok((arg, i)),
+            _ => Err(arg.panic_msg("Component Set")),
+        })
     }
 
-    pub fn expect_global_or_trait<'a>(&'a self) -> (&'a Self, usize) {
-        self.match_global_or_trait()
-            .catch(self.panic_msg("Trait or Global"))
+    fn expect_any_hardcoded(self) -> MsgResult<(&'a Symbol, HardcodedSymbol)> {
+        self.and_then(|arg| match arg.kind {
+            SymbolType::Hardcoded(sym) => Ok((arg, sym)),
+            _ => Err(arg.panic_msg("Hardcoded Path")),
+        })
     }
 
-    // Event
-    pub fn match_event<'a>(&'a self) -> Option<(&'a Self, usize)> {
-        match self.kind {
-            SymbolType::Event(i) => Some((self, i)),
-            _ => None,
-        }
-    }
-
-    pub fn expect_event<'a>(&'a self) -> (&'a Self, usize) {
-        self.match_event().catch(self.panic_msg("EVent"))
-    }
-
-    // System
-    pub fn match_system<'a>(&'a self) -> Option<(&'a Self, usize)> {
-        match self.kind {
-            SymbolType::System(i) => Some((self, i)),
-            _ => None,
-        }
-    }
-
-    pub fn expect_system<'a>(&'a self) -> (&'a Self, usize) {
-        self.match_system().catch(self.panic_msg("System"))
-    }
-
-    // Component Set
-    pub fn match_component_set<'a>(&'a self) -> Option<(&'a Self, usize)> {
-        match self.kind {
-            SymbolType::ComponentSet(i) => Some((self, i)),
-            _ => None,
-        }
-    }
-
-    pub fn expect_component_set<'a>(&'a self) -> (&'a Self, usize) {
-        self.match_component_set()
-            .catch(self.panic_msg("Component Set"))
-    }
-
-    // Hardcoded
-    pub fn match_any_hardcoded<'a>(&'a self) -> Option<(&'a Self, HardcodedSymbol)> {
-        match self.kind {
-            SymbolType::Hardcoded(sym) => Some((self, sym)),
-            _ => None,
-        }
-    }
-
-    pub fn expect_any_hardcoded<'a>(&'a self) -> (&'a Self, HardcodedSymbol) {
-        self.match_any_hardcoded()
-            .catch(self.panic_msg("Hardcoded Path"))
-    }
-
-    pub fn match_hardcoded<'a>(&'a self, sym: HardcodedSymbol) -> Option<&'a Self> {
-        self.match_any_hardcoded()
-            .and_then(|(_, s)| (s == sym).then_some(self))
-    }
-
-    pub fn expect_hardcoded<'a>(&'a self, sym: HardcodedSymbol) -> &'a Self {
-        self.match_hardcoded(sym)
-            .catch(self.panic_msg(&format!("Hardcoded Path: {sym:#?}")))
+    fn expect_hardcoded(self, sym: HardcodedSymbol) -> MsgResult<&'a Symbol> {
+        self.expect_any_hardcoded()
+            .and_then(|(s, h_sym)| match h_sym == sym {
+                true => Ok(s),
+                false => Err(s.panic_msg(&format!("Hardcoded Path: {s:#?}"))),
+            })
     }
 }
 
 // Helper function to just get the data from a resolved symbol
 pub trait DiscardSymbol<T> {
-    fn discard_symbol(self) -> T;
+    fn discard_symbol(self) -> MsgResult<T>;
 }
 
-impl<T> DiscardSymbol<T> for (&Symbol, T) {
-    fn discard_symbol(self) -> T {
-        self.1
-    }
-}
-
-impl<T> DiscardSymbol<Option<T>> for Option<(&Symbol, T)> {
-    fn discard_symbol(self) -> Option<T> {
-        self.map(|sym| sym.discard_symbol())
+impl<T> DiscardSymbol<T> for MsgResult<(&Symbol, T)> {
+    fn discard_symbol(self) -> MsgResult<T> {
+        self.map(|(_, t)| t)
     }
 }
 

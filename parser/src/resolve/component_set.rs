@@ -6,9 +6,10 @@ use syn::{spanned::Spanned, Error, Token};
 
 use crate::{
     parse::{
-        AstCrate, DiscardSymbol, ModInfo, SymbolType, {AstMod, Symbol},
+        AstCrate, DiscardSymbol, MatchSymbol, ModInfo, SymbolType, {AstMod, Symbol},
     },
     resolve::path::resolve_path,
+    validate::util::{CombineMsgs, MsgResult, MsgsResult, ToMsgsResult, ZipMsgs},
 };
 
 use super::{
@@ -379,21 +380,19 @@ pub enum LabelItem {
 }
 
 impl LabelItem {
-    fn resolve(item: AstLabelItem, (m, cr, crates): ModInfo) -> Self {
+    fn resolve(item: AstLabelItem, (m, cr, crates): ModInfo) -> MsgsResult<Self> {
         match item {
-            AstLabelItem::Item { not, ty } => Self::Item {
-                not,
-                c_idx: resolve_path(ty, (m, cr, crates))
-                    .expect_symbol()
-                    .expect_component()
-                    .discard_symbol(),
-            },
-            AstLabelItem::Expression { op, items } => Self::Expression {
-                op,
-                items: items
-                    .into_iter()
-                    .map_vec(|item| Self::resolve(item, (m, cr, crates))),
-            },
+            AstLabelItem::Item { not, ty } => resolve_path(ty, (m, cr, crates))
+                .expect_symbol()
+                .expect_component()
+                .discard_symbol()
+                .to_msg_vec()
+                .map(|c_idx| Self::Item { not, c_idx }),
+            AstLabelItem::Expression { op, items } => items
+                .into_iter()
+                .map_vec(|item| Self::resolve(item, (m, cr, crates)))
+                .combine_msgs()
+                .map(|items| Self::Expression { op, items }),
         }
     }
 }
@@ -431,16 +430,17 @@ impl ComponentSetItem {
             is_mut,
         }: AstComponentSetItem,
         (m, cr, crates): ModInfo,
-    ) -> Self {
-        Self {
-            var,
-            c_idx: resolve_path(ty.path.to_vec(), (m, cr, crates))
-                .expect_symbol()
-                .expect_component()
-                .discard_symbol(),
-            ref_cnt,
-            is_mut,
-        }
+    ) -> MsgResult<Self> {
+        resolve_path(ty.path.to_vec(), (m, cr, crates))
+            .expect_symbol()
+            .expect_component()
+            .discard_symbol()
+            .map(|c_idx| Self {
+                var,
+                c_idx,
+                ref_cnt,
+                is_mut,
+            })
     }
 }
 
@@ -452,14 +452,15 @@ pub struct ComponentSet {
 }
 
 impl ComponentSet {
-    pub fn parse(tokens: TokenStream, (m, cr, crates): ModInfo) -> Self {
-        Self::resolve(
-            syn::parse2(tokens).catch(format!(
-                "Failed to parse component set in mod: {}",
-                m.path.join("::")
-            )),
-            (m, cr, crates),
-        )
+    pub fn parse(tokens: TokenStream, (m, cr, crates): ModInfo) -> MsgsResult<Self> {
+        syn::parse2(tokens)
+            .map_err(|_| {
+                vec![format!(
+                    "Failed to parse component set in mod: {}",
+                    m.path.join("::")
+                )]
+            })
+            .and_then(|cs| Self::resolve(cs, (m, cr, crates)))
     }
 
     fn resolve(
@@ -469,17 +470,21 @@ impl ComponentSet {
             labels,
         }: AstComponentSet,
         (m, cr, crates): ModInfo,
-    ) -> Self {
-        Self {
-            path: ItemPath {
-                cr_idx: cr.idx,
-                path: m.path.to_vec().push_into(ident),
-            },
-            args: args
-                .into_iter()
-                .map_vec(|arg| ComponentSetItem::resolve(arg, (m, cr, crates))),
-            labels: labels.map(|l| LabelItem::resolve(l, (m, cr, crates))),
-        }
+    ) -> MsgsResult<Self> {
+        args.into_iter()
+            .map_vec(|arg| ComponentSetItem::resolve(arg, (m, cr, crates)))
+            .combine_msgs()
+            .zip(labels.map_or(Ok(None), |l| {
+                LabelItem::resolve(l, (m, cr, crates)).map(|t| Some(t))
+            }))
+            .map(|(args, labels)| Self {
+                path: ItemPath {
+                    cr_idx: cr.idx,
+                    path: m.path.to_vec().push_into(ident),
+                },
+                args,
+                labels,
+            })
     }
 }
 

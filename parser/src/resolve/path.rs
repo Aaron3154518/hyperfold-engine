@@ -5,6 +5,7 @@ use crate::{
         AstCrate, ModInfo, {AstMod, Symbol},
     },
     util::parse_syn_path,
+    validate::util::MsgResult,
 };
 use shared::util::Catch;
 
@@ -202,25 +203,14 @@ pub fn resolve_syn_path<'a>(
 }
 
 pub trait ResolveResultTrait<'a> {
-    fn expect_symbol(self) -> &'a Symbol;
-
-    fn match_symbol<T, F>(self, f: F) -> Option<T>
-    where
-        F: FnOnce(&'a Symbol) -> Option<T>;
+    fn expect_symbol(self) -> MsgResult<&'a Symbol>;
 }
 
 impl<'a> ResolveResultTrait<'a> for ResolveResult<'a> {
-    fn expect_symbol(self) -> &'a Symbol {
+    fn expect_symbol(self) -> MsgResult<&'a Symbol> {
         match self {
-            Ok(sym) => sym,
-            Err(e) => panic!("Could not resolve path: {e:#?}"),
+            Ok(sym) => Ok(sym),
+            Err(e) => Err(format!("Could not resolve path: {e:#?}")),
         }
-    }
-
-    fn match_symbol<T, F>(self, f: F) -> Option<T>
-    where
-        F: FnOnce(&'a Symbol) -> Option<T>,
-    {
-        self.ok().and_then(|sym| f(sym))
     }
 }

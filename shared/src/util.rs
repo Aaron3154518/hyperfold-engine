@@ -492,3 +492,33 @@ impl<T> PushInto<T> for Vec<T> {
         self
     }
 }
+
+// then_some for Result
+pub trait ThenOk<T, E> {
+    fn result(&self, t: T, e: E) -> Result<T, E>;
+
+    fn then_result<Ft, Fe>(&self, t: Ft, e: Fe) -> Result<T, E>
+    where
+        Ft: FnOnce() -> T,
+        Fe: FnOnce() -> E;
+}
+
+impl<T, E> ThenOk<T, E> for bool {
+    fn result(&self, t: T, e: E) -> Result<T, E> {
+        match self {
+            true => Ok(t),
+            false => Err(e),
+        }
+    }
+
+    fn then_result<Ft, Fe>(&self, t: Ft, e: Fe) -> Result<T, E>
+    where
+        Ft: FnOnce() -> T,
+        Fe: FnOnce() -> E,
+    {
+        match self {
+            true => Ok(t()),
+            false => Err(e()),
+        }
+    }
+}

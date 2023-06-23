@@ -4,12 +4,11 @@ where
     T: for<'a> From<&'a Vec<String>>,
 {
     let mut args = Vec::new();
-    while let Ok(i) = input.parse::<syn::Ident>() {
+    while input.parse::<syn::Ident>().is_ok_and(|i| {
         args.push(i.to_string());
-        if let Err(e) = input.parse::<syn::Token![,]>() {
-            return Err(e);
-        }
-    }
+        true
+    }) && input.parse::<syn::Token![,]>().is_ok()
+    {}
     Ok(T::from(&args))
 }
 
