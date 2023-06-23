@@ -290,8 +290,15 @@ impl ItemsCrate {
                         .expect_symbol()
                         .expect_hardcoded(HardcodedSymbol::ComponentsMacro)
                     {
-                        let cs =
-                            ComponentSet::parse(call.data.args.clone(), (m, cr, crates)).unwrap();
+                        let cs = match ComponentSet::parse(call.data.args.clone(), (m, cr, crates))
+                        {
+                            Ok(cs) => cs,
+                            Err(e) => panic!(
+                                "While parsing Component Set in '{}'\n{}",
+                                m.path.join("::"),
+                                e.join("\n")
+                            ),
+                        };
                         mod_symbols.push(Symbol {
                             kind: SymbolType::ComponentSet(items.component_sets.len()),
                             path: cs.path.path.to_vec(),
