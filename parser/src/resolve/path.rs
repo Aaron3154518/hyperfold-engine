@@ -210,7 +210,7 @@ impl<'a> ResolveResultTrait<'a> for ResolveResult<'a> {
     fn expect_symbol(self) -> MsgResult<&'a Symbol> {
         match self {
             Ok(sym) => Ok(sym),
-            Err(e) => Err(format!("Could not resolve path: {e:#?}")),
+            Err(e) => Err(format!("Could not resolve path: {}", e.path.join("::"))),
         }
     }
 }
