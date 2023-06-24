@@ -415,7 +415,8 @@ impl ItemsCrate {
         }
 
         if !errs.is_empty() {
-            panic!("{}", errs.join("\n"))
+            eprintln!("{}", errs.join("\n"));
+            panic!("")
         }
 
         // Add namespace mod to all crates except macro

@@ -24,6 +24,7 @@ use super::{
     component_set::ComponentSet,
     items_crate::{ItemComponent, ItemGlobal, Items},
     path::{resolve_syn_path, ResolveResultTrait},
+    paths::GetPaths,
 };
 
 struct ComponentRefTracker {
@@ -56,13 +57,11 @@ impl ComponentRefTracker {
         let (mut_cnt, immut_cnt) = (self.mut_refs.len(), self.immut_refs.len());
 
         if mut_cnt > 1 {
-            errs.push(format!("'{comp_name}' has multiple mutable references"));
+            errs.push(format!("Multiple mutable references to '{comp_name}'"));
         }
 
         if mut_cnt > 0 && immut_cnt > 0 {
-            errs.push(format!(
-                "'{comp_name}' has mutable and immutable references"
-            ));
+            errs.push(format!("Mutable and immutable references to '{comp_name}'"));
         }
 
         if mut_cnt > 1 || (mut_cnt > 0 && immut_cnt > 0) {
@@ -183,6 +182,7 @@ impl SystemValidate {
 
         self.validate_ref(arg, 0);
 
+        let mut singletons = Vec::new();
         for item in cs.args.iter() {
             if !self.components.contains_key(&item.c_idx) {
                 self.components
@@ -192,13 +192,38 @@ impl SystemValidate {
             if let Some(refs) = self.components.get_mut(&item.c_idx) {
                 refs.add_ref(cs.path.path.join("::"), item.is_mut);
             }
+
+            if let Some(c) = items.components.get(item.c_idx) {
+                if c.args.is_singleton {
+                    singletons.push(c.path.path.join("::"))
+                }
+            }
         }
 
-        if !is_vec && self.has_comp_set {
-            self.errs.push(format!("Component set cannot be taken as an argument as another component set has already been specified: {arg}"));
-            self.errs.push("\tConsider using 'Vec<>'".to_string());
+        if is_vec && !singletons.is_empty() {
+            self.errs.push(format!(
+                "Singletons may not be used with Entity<>: {}",
+                cs.path.path.join("::")
+            ));
+            self.errs
+                .push(format!("\tSingletons: {}", singletons.join(", ")))
         }
-        self.has_comp_set = self.has_comp_set || is_vec;
+
+        // Sets with singletons don't count as vectors
+        if singletons.is_empty() {
+            if !is_vec && self.has_comp_set {
+                self.errs.push(format!(
+                    "A second component set was specified: '{}'",
+                    cs.path.path.join("::")
+                ));
+                self.errs.push(format!(
+                    "\tConsider using '{}<{}>'",
+                    EnginePaths::Entities.as_ident(),
+                    cs.path.path.join("::")
+                ));
+            }
+            self.has_comp_set = self.has_comp_set || is_vec;
+        }
     }
 
     // Validate conditions
@@ -334,16 +359,18 @@ impl FnArg {
                         crate::parse::SymbolType::ComponentSet(i) => Ok(FnArgType::Entities(i)),
                         crate::parse::SymbolType::Hardcoded(s) => match s {
                             HardcodedSymbol::Entities => {
-                                if let Some(syn::GenericArgument::Type(syn::Type::Path(ty))) =
-                                    generics.as_ref().and_then(|v| v.first())
-                                {
-                                    resolve_syn_path(&m.path, &ty.path, (m, cr, crates))
-                                        .expect_symbol()
-                                        .expect_component_set()
-                                        .discard_symbol()
-                                        .map(|i| FnArgType::VecEntities(i))
-                                } else {
-                                    Err(format!("Invalid argument type: {}", sym.path.join("::")))
+                                match generics.as_ref().and_then(|v| v.first()) {
+                                    Some(syn::GenericArgument::Type(syn::Type::Path(ty))) => {
+                                        resolve_syn_path(&m.path, &ty.path, (m, cr, crates))
+                                            .expect_symbol()
+                                            .expect_component_set()
+                                            .discard_symbol()
+                                            .map(|i| FnArgType::VecEntities(i))
+                                    }
+                                    _ => Err(format!(
+                                        "Invalid argument type: {}",
+                                        sym.path.join("::")
+                                    )),
                                 }
                             }
                             _ => Err(format!("Invalid argument type: {}", sym.path.join("::"))),
