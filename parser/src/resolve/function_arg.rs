@@ -21,7 +21,7 @@ use crate::{
 };
 
 use super::{
-    component_set::ComponentSet,
+    component_set::{ComponentSet, LabelItem, LabelOp},
     items_crate::{ItemComponent, ItemGlobal, Items},
     path::{resolve_syn_path, ResolveResultTrait},
     paths::GetPaths,
@@ -92,7 +92,6 @@ pub struct SystemValidate {
     components: HashMap<usize, ComponentRefTracker>,
     globals: HashSet<usize>,
     has_event: bool,
-    has_comp_set: bool,
 }
 
 impl SystemValidate {
@@ -103,7 +102,6 @@ impl SystemValidate {
             components: HashMap::new(),
             globals: HashSet::new(),
             has_event: false,
-            has_comp_set: false,
         }
     }
 
@@ -166,6 +164,8 @@ impl SystemValidate {
     }
 
     pub fn validate_component_set(&mut self, arg: &FnArg, i: usize, items: &Items, is_vec: bool) {
+        let entities = EnginePaths::Entities.as_ident();
+
         if self.attrs.is_init {
             self.errs
                 .push(format!("Init system may not specify components: {arg}"));
@@ -175,10 +175,14 @@ impl SystemValidate {
         let cs = match items.component_sets.get(i) {
             Some(cs) => cs,
             None => {
-                self.errs.push(format!("Invalid Entities index: {i}"));
+                self.errs.push(format!("Invalid component set index: {i}"));
                 return;
             }
         };
+
+        let path = cs.path.path.join("::");
+
+        let mut errs = vec![format!("In entity set argument: {path} {{")];
 
         self.validate_ref(arg, 0);
 
@@ -190,39 +194,36 @@ impl SystemValidate {
             }
 
             if let Some(refs) = self.components.get_mut(&item.c_idx) {
-                refs.add_ref(cs.path.path.join("::"), item.is_mut);
+                refs.add_ref(path.to_string(), item.is_mut);
             }
 
             if let Some(c) = items.components.get(item.c_idx) {
                 if c.args.is_singleton {
-                    singletons.push(c.path.path.join("::"))
+                    singletons.push(c.path.path.join("::"));
                 }
             }
         }
 
-        if is_vec && !singletons.is_empty() {
-            self.errs.push(format!(
-                "Singletons may not be used with Entity<>: {}",
-                cs.path.path.join("::")
-            ));
-            self.errs
-                .push(format!("\tSingletons: {}", singletons.join(", ")))
+        if let Some(labels) = &cs.labels {
+            let map = labels.get_symbols();
+            eprintln!("{labels}:");
+            eprintln!("{map:#?}");
         }
 
-        // Sets with singletons don't count as vectors
-        if singletons.is_empty() {
-            if !is_vec && self.has_comp_set {
-                self.errs.push(format!(
-                    "A second component set was specified: '{}'",
-                    cs.path.path.join("::")
-                ));
-                self.errs.push(format!(
-                    "\tConsider using '{}<{}>'",
-                    EnginePaths::Entities.as_ident(),
-                    cs.path.path.join("::")
-                ));
-            }
-            self.has_comp_set = self.has_comp_set || is_vec;
+        if is_vec && !singletons.is_empty() {
+            errs.push(format!(
+                "\tEntity set has singletons and may not be wrapped with {entities}<>"
+            ));
+            errs.push(format!("\tSingletons: {}", singletons.join(", ")))
+        } else if !is_vec && singletons.is_empty() {
+            errs.push(format!(
+                "\tEntity set has no singletons and must be wrapped with {entities}<>"
+            ));
+            // TODO: Print unknown singletons
+        }
+
+        if errs.len() > 1 {
+            self.errs.extend(errs.push_into("}".to_string()));
         }
     }
 
