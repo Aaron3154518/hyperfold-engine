@@ -7,7 +7,7 @@ use std::{
 use quote::ToTokens;
 use shared::{
     parse_args::SystemMacroArgs,
-    util::{Call, Catch, JoinMap, PushInto},
+    util::{Call, Catch, JoinMap, PushInto, ThenOk},
 };
 
 use crate::{
@@ -17,7 +17,7 @@ use crate::{
         paths::{EnginePaths, Paths},
     },
     util::parse_syn_path,
-    validate::util::ItemIndex,
+    validate::util::{ItemIndex, MsgsResult},
 };
 
 use super::{
@@ -108,7 +108,7 @@ impl SystemValidate {
         }
     }
 
-    pub fn validate(&mut self, items: &Items) -> Result<(), String> {
+    pub fn validate(&mut self, path: String, items: &Items) -> Vec<String> {
         for (i, refs) in self.components.iter() {
             let c = match items.components.get(*i) {
                 Some(c) => c,
@@ -127,10 +127,10 @@ impl SystemValidate {
             }
         }
 
-        match self.errs.is_empty() {
-            true => Ok(()),
-            false => Err(self.errs.join("\n")),
+        if !self.errs.is_empty() {
+            self.errs.insert(0, format!("In system: '{path}':"));
         }
+        self.errs.to_vec()
     }
 
     pub fn validate_global(&mut self, arg: &FnArg, i: usize, items: &Items) {
@@ -274,7 +274,7 @@ impl FnArg {
         items: &Items,
         sig: &syn::Signature,
         (m, cr, crates): ModInfo,
-    ) -> Vec<Self> {
+    ) -> MsgsResult<Vec<Self>> {
         let mut validator = SystemValidate::new(attrs.clone());
         // Parse
         let args = sig
@@ -308,14 +308,11 @@ impl FnArg {
             }
         }
         // Throw errors
-        if let Err(msg) = validator.validate(items) {
-            panic!(
-                "In system: '{}':\n{}",
-                m.path.to_vec().push_into(sig.ident.to_string()).join("::"),
-                msg
-            )
-        }
-        args
+        let errs = validator.validate(
+            m.path.to_vec().push_into(sig.ident.to_string()).join("::"),
+            items,
+        );
+        errs.is_empty().result(args, errs)
     }
 
     fn parse_type(ty: &syn::Type, (m, cr, crates): ModInfo) -> Result<Self, String> {

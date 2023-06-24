@@ -11,11 +11,13 @@ use crate::{
         paths::{Crates, EnginePaths},
     },
     util::end,
-    validate::constants::NAMESPACE,
+    validate::{constants::NAMESPACE, util::ToMsgsResult},
 };
 use proc_macro2::{token_stream::IntoIter, TokenStream, TokenTree};
 use quote::ToTokens;
-use shared::util::{Call, Catch, FindFrom, Get, Increment, JoinMap, PushInto, SplitAround};
+use shared::util::{
+    Call, Catch, FindFrom, Get, HandleErr, Increment, JoinMap, JoinMapInto, PushInto, SplitAround,
+};
 
 use shared::parse_args::{ComponentMacroArgs, GlobalMacroArgs, SystemMacroArgs};
 use syn::{parenthesized, parse_macro_input, spanned::Spanned, Error, PatType, Token};
@@ -196,6 +198,7 @@ impl ItemsCrate {
     pub fn parse(paths: &Paths, crates: &mut Vec<AstCrate>) -> Vec<Self> {
         let macro_cr_idx = paths.get_cr_idx(Crates::Macros);
 
+        let mut errs = Vec::new();
         let mut items = Items::new();
 
         // Insert hardcoded symbols
@@ -204,70 +207,64 @@ impl ItemsCrate {
         }
 
         // Resolve components, globals, and events
-        let mut symbols = Vec::new();
-        for cr in iter_except(crates, macro_cr_idx) {
-            let mut crate_symbols = Vec::new();
-            for m in cr.iter_mods() {
-                let mut mod_symbols = Vec::new();
-                // Iterate struct/enums
-                for (path, attrs) in m
-                    .items
+        let symbols = iter_except(crates, macro_cr_idx).map_vec(|cr| {
+            cr.iter_mods().map_vec(|m| {
+                m.items
                     .structs
                     .iter()
                     .map(|s| (&s.path, &s.data.attrs))
                     .chain(m.items.enums.iter().map(|e| (&e.path, &e.data.attrs)))
-                {
-                    // Search through attributes
-                    if let Some(kind) = attrs.iter().find_map(|attr| {
-                        resolve_path(attr.path.to_vec(), (m, cr, crates))
-                            .expect_symbol()
-                            .expect_any_hardcoded()
-                            .discard_symbol()
-                            .ok()
-                            .and_then(|hard_sym| match hard_sym {
-                                HardcodedSymbol::ComponentMacro => {
-                                    items.components.push(ItemComponent {
-                                        path: ItemPath {
-                                            cr_idx: cr.idx,
-                                            path: path.to_vec(),
-                                        },
-                                        args: ComponentMacroArgs::from(&attr.args),
-                                    });
-                                    Some(SymbolType::Component(items.components.len() - 1))
-                                }
-                                HardcodedSymbol::GlobalMacro => {
-                                    items.globals.push(ItemGlobal {
-                                        path: ItemPath {
-                                            cr_idx: cr.idx,
-                                            path: path.to_vec(),
-                                        },
-                                        args: GlobalMacroArgs::from(&attr.args),
-                                    });
-                                    Some(SymbolType::Global(items.globals.len() - 1))
-                                }
-                                HardcodedSymbol::EventMacro => {
-                                    items.events.push(ItemEvent {
-                                        path: ItemPath {
-                                            cr_idx: cr.idx,
-                                            path: path.to_vec(),
-                                        },
-                                    });
-                                    Some(SymbolType::Event(items.events.len() - 1))
-                                }
-                                _ => None,
+                    .filter_map_vec(|(path, attrs)| {
+                        // Search through attributes
+                        attrs
+                            .iter()
+                            .find_map(|attr| {
+                                resolve_path(attr.path.to_vec(), (m, cr, crates))
+                                    .expect_symbol()
+                                    .expect_any_hardcoded()
+                                    .discard_symbol()
+                                    .ok()
+                                    .and_then(|hard_sym| match hard_sym {
+                                        HardcodedSymbol::ComponentMacro => {
+                                            items.components.push(ItemComponent {
+                                                path: ItemPath {
+                                                    cr_idx: cr.idx,
+                                                    path: path.to_vec(),
+                                                },
+                                                args: ComponentMacroArgs::from(&attr.args),
+                                            });
+                                            Some(SymbolType::Component(items.components.len() - 1))
+                                        }
+                                        HardcodedSymbol::GlobalMacro => {
+                                            items.globals.push(ItemGlobal {
+                                                path: ItemPath {
+                                                    cr_idx: cr.idx,
+                                                    path: path.to_vec(),
+                                                },
+                                                args: GlobalMacroArgs::from(&attr.args),
+                                            });
+                                            Some(SymbolType::Global(items.globals.len() - 1))
+                                        }
+                                        HardcodedSymbol::EventMacro => {
+                                            items.events.push(ItemEvent {
+                                                path: ItemPath {
+                                                    cr_idx: cr.idx,
+                                                    path: path.to_vec(),
+                                                },
+                                            });
+                                            Some(SymbolType::Event(items.events.len() - 1))
+                                        }
+                                        _ => None,
+                                    })
                             })
-                    }) {
-                        mod_symbols.push(Symbol {
-                            kind,
-                            path: path.to_vec(),
-                            public: true,
-                        });
-                    }
-                }
-                crate_symbols.push(mod_symbols);
-            }
-            symbols.push(crate_symbols);
-        }
+                            .map(|kind| Symbol {
+                                kind,
+                                path: path.to_vec(),
+                                public: true,
+                            })
+                    })
+            })
+        });
 
         // Insert components, globals, and events
         for (cr, crate_symbols) in iter_except_mut(crates, macro_cr_idx).zip(symbols) {
@@ -280,37 +277,34 @@ impl ItemsCrate {
         }
 
         // Resolve component sets
-        let mut symbols = Vec::new();
-        for cr in iter_except(crates, macro_cr_idx) {
-            let mut crate_symbols = Vec::new();
-            for m in cr.iter_mods() {
-                let mut mod_symbols = Vec::new();
-                for call in m.items.macro_calls.iter() {
-                    if let Ok(_) = resolve_path(call.path.to_vec(), (m, cr, crates))
+        let symbols = iter_except(crates, macro_cr_idx).map_vec(|cr| {
+            cr.iter_mods().map_vec(|m| {
+                m.items.macro_calls.filter_map_vec(|call| {
+                    resolve_path(call.path.to_vec(), (m, cr, crates))
                         .expect_symbol()
                         .expect_hardcoded(HardcodedSymbol::ComponentsMacro)
-                    {
-                        let cs = match ComponentSet::parse(call.data.args.clone(), (m, cr, crates))
-                        {
-                            Ok(cs) => cs,
-                            Err(e) => panic!(
-                                "While parsing Component Set in '{}'\n{}",
-                                m.path.join("::"),
-                                e.join("\n")
-                            ),
-                        };
-                        mod_symbols.push(Symbol {
-                            kind: SymbolType::ComponentSet(items.component_sets.len()),
-                            path: cs.path.path.to_vec(),
-                            public: true,
-                        });
-                        items.component_sets.push(cs);
-                    }
-                }
-                crate_symbols.push(mod_symbols);
-            }
-            symbols.push(crate_symbols);
-        }
+                        .ok()
+                        .and_then(|_| {
+                            ComponentSet::parse(call.data.args.clone(), (m, cr, crates))
+                                .handle_err(|es| {
+                                    errs.push(String::new());
+                                    errs.extend(es);
+                                })
+                                .map(|cs| {
+                                    let path = cs.path.path.to_vec();
+                                    items.component_sets.push(cs);
+                                    Symbol {
+                                        kind: SymbolType::ComponentSet(
+                                            items.component_sets.len() - 1,
+                                        ),
+                                        path,
+                                        public: true,
+                                    }
+                                })
+                        })
+                })
+            })
+        });
 
         // Insert component set symbols
         for (cr, crate_symbols) in iter_except_mut(crates, macro_cr_idx).zip(symbols) {
@@ -372,49 +366,43 @@ impl ItemsCrate {
         }
 
         // Resolve systems
-        let mut symbols = Vec::new();
-        // Crates
-        for cr in iter_except(crates, macro_cr_idx) {
-            let mut crate_symbols = Vec::new();
-            // Mods
-            for m in cr.iter_mods() {
-                let mut mod_symbols = Vec::new();
-                // Functions
-                for fun in m.items.functions.iter() {
-                    // Attributes
-                    for attr in fun.data.attrs.iter() {
-                        if let Ok(sym) = resolve_path(attr.path.to_vec(), (m, cr, crates))
+        let symbols = iter_except(crates, macro_cr_idx).map_vec(|cr| {
+            cr.iter_mods().map_vec(|m| {
+                m.items.functions.iter().filter_map_vec(|fun| {
+                    fun.data.attrs.iter().find_map(|attr| {
+                        resolve_path(attr.path.to_vec(), (m, cr, crates))
                             .expect_symbol()
                             .expect_hardcoded(HardcodedSymbol::SystemMacro)
-                        {
-                            let path = m.path.to_vec().push_into(fun.data.sig.ident.to_string());
-                            let attr_args = SystemMacroArgs::from(&attr.args);
-                            items.systems.push(ItemSystem {
-                                path: ItemPath {
-                                    cr_idx: cr.idx,
-                                    path: path.to_vec(),
-                                },
-                                args: FnArg::parse(
-                                    &attr_args,
-                                    &items,
-                                    &fun.data.sig,
-                                    (m, cr, crates),
-                                ),
-                                attr_args,
-                            });
-                            mod_symbols.push(Symbol {
-                                kind: SymbolType::System(items.systems.len() - 1),
-                                path,
-                                public: true,
-                            });
-                            break;
-                        }
-                    }
-                }
-                crate_symbols.push(mod_symbols);
-            }
-            symbols.push(crate_symbols);
-        }
+                            .ok()
+                            .and_then(|sym| {
+                                let path =
+                                    m.path.to_vec().push_into(fun.data.sig.ident.to_string());
+                                let attr_args = SystemMacroArgs::from(&attr.args);
+                                FnArg::parse(&attr_args, &items, &fun.data.sig, (m, cr, crates))
+                                    .handle_err(|es| {
+                                        errs.push(String::new());
+                                        errs.extend(es);
+                                    })
+                                    .map(|args| {
+                                        items.systems.push(ItemSystem {
+                                            path: ItemPath {
+                                                cr_idx: cr.idx,
+                                                path: path.to_vec(),
+                                            },
+                                            args,
+                                            attr_args,
+                                        });
+                                        Symbol {
+                                            kind: SymbolType::System(items.systems.len() - 1),
+                                            path,
+                                            public: true,
+                                        }
+                                    })
+                            })
+                    })
+                })
+            })
+        });
 
         // Insert system symbols
         for (cr, crate_symbols) in iter_except_mut(crates, macro_cr_idx).zip(symbols) {
@@ -426,7 +414,9 @@ impl ItemsCrate {
             }
         }
 
-        eprintln!("{items:#?}");
+        if !errs.is_empty() {
+            panic!("{}", errs.join("\n"))
+        }
 
         // Add namespace mod to all crates except macro
         // Must happen after the dependencies are set
