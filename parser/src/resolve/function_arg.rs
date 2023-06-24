@@ -16,13 +16,14 @@ use crate::{
         path::{resolve_path, ItemPath},
         paths::{EnginePaths, Paths},
     },
-    util::parse_syn_path,
+    util::{parse_syn_path, TAB},
     validate::util::{ItemIndex, MsgsResult},
 };
 
 use super::{
     component_set::{ComponentSet, LabelItem, LabelOp},
     items_crate::{ItemComponent, ItemGlobal, Items},
+    labels::MustBe,
     path::{resolve_syn_path, ResolveResultTrait},
     paths::GetPaths,
 };
@@ -72,14 +73,14 @@ impl ComponentRefTracker {
     pub fn note(&self, errs: &mut Vec<String>) {
         if !self.mut_refs.is_empty() {
             errs.push(format!(
-                "\tMutable references in '{}'",
+                "{TAB}Mutable references in '{}'",
                 self.mut_refs.join("', '")
             ));
         }
 
         if !self.immut_refs.is_empty() {
             errs.push(format!(
-                "\tImmutable references in '{}'",
+                "{TAB}Immutable references in '{}'",
                 self.immut_refs.join("', '")
             ));
         }
@@ -204,22 +205,53 @@ impl SystemValidate {
             }
         }
 
+        let mut unknown_singleton_labels = Vec::new();
+        let mut impossible_labels = Vec::new();
         if let Some(labels) = &cs.labels {
-            let map = labels.get_symbols();
-            eprintln!("{labels}:");
-            eprintln!("{map:#?}");
+            let symbs = labels.get_symbols();
+            for (i, must_be) in symbs {
+                let c = match items.components.get(i) {
+                    Some(c) => c,
+                    None => {
+                        errs.push(format!("Invalid label index: {i}"));
+                        continue;
+                    }
+                };
+                let path = c.path.path.join("::");
+                match must_be {
+                    MustBe::True => {
+                        if c.args.is_singleton {
+                            singletons.push(path);
+                        }
+                    }
+                    MustBe::False => (),
+                    MustBe::Unknown => {
+                        if c.args.is_singleton {
+                            unknown_singleton_labels.push(path);
+                        }
+                    }
+                    MustBe::Impossible => impossible_labels.push(path),
+                }
+            }
         }
 
-        if is_vec && !singletons.is_empty() {
+        if !impossible_labels.is_empty() {
             errs.push(format!(
-                "\tEntity set has singletons and may not be wrapped with {entities}<>"
+                "{TAB}Labels cannot be both required and forbidden: {}",
+                impossible_labels.join(", ")
             ));
-            errs.push(format!("\tSingletons: {}", singletons.join(", ")))
-        } else if !is_vec && singletons.is_empty() {
+        }
+
+        if !is_vec && singletons.is_empty() {
             errs.push(format!(
-                "\tEntity set has no singletons and must be wrapped with {entities}<>"
+                "{TAB}Entity set has no singletons and must be wrapped with {entities}<>"
             ));
-            // TODO: Print unknown singletons
+            if !unknown_singleton_labels.is_empty() {
+                errs.push(format!(
+                    "{TAB}{TAB}Some singleton labels are specified but not required: {}",
+                    unknown_singleton_labels.join(", ")
+                ))
+            }
         }
 
         if errs.len() > 1 {

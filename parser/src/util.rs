@@ -3,6 +3,8 @@ use std::{iter::Map, path::PathBuf};
 use regex::Regex;
 use shared::util::SplitCollect;
 
+pub const TAB: &str = "  ";
+
 #[inline]
 pub fn end<T>(v: &Vec<T>, off: usize) -> usize {
     v.len().max(off) - off
