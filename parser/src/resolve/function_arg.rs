@@ -9,6 +9,7 @@ use shared::{
     parse_args::SystemMacroArgs,
     util::{Call, Catch, JoinMap, PushInto, ThenOk},
 };
+use syn::parse::Lookahead1;
 
 use crate::{
     parse::{AstCrate, AstMod, DiscardSymbol, HardcodedSymbol, MatchSymbol, ModInfo},
@@ -208,7 +209,9 @@ impl SystemValidate {
         let mut unknown_singleton_labels = Vec::new();
         let mut impossible_labels = Vec::new();
         if let Some(labels) = &cs.labels {
-            let symbs = labels.get_symbols();
+            // Integrate required components
+            let symbs = labels.get_symbols(cs.args.iter().map(|c| (c.c_idx, true)).collect());
+
             for (i, must_be) in symbs {
                 let c = match items.components.get(i) {
                     Some(c) => c,
@@ -219,12 +222,12 @@ impl SystemValidate {
                 };
                 let path = c.path.path.join("::");
                 match must_be {
-                    MustBe::True => {
+                    MustBe::Value(true) => {
                         if c.args.is_singleton {
                             singletons.push(path);
                         }
                     }
-                    MustBe::False => (),
+                    MustBe::Value(false) => (),
                     MustBe::Unknown => {
                         if c.args.is_singleton {
                             unknown_singleton_labels.push(path);
@@ -237,7 +240,7 @@ impl SystemValidate {
 
         if !impossible_labels.is_empty() {
             errs.push(format!(
-                "{TAB}Labels cannot be both required and forbidden: {}",
+                "{TAB}Labels cannot be both required and forbidden:\n{TAB}{TAB}{}",
                 impossible_labels.join(", ")
             ));
         }
@@ -248,7 +251,7 @@ impl SystemValidate {
             ));
             if !unknown_singleton_labels.is_empty() {
                 errs.push(format!(
-                    "{TAB}{TAB}Some singleton labels are specified but not required: {}",
+                    "{TAB}{TAB}Some singleton labels were specified but not required:\n{TAB}{TAB}{TAB}{}",
                     unknown_singleton_labels.join(", ")
                 ))
             }
