@@ -13,6 +13,8 @@ use crate::{
 };
 
 use super::{
+    items_crate::ItemComponent,
+    labels::SymbolMap,
     parse_macro_call::ParseMacroCall,
     path::{ItemPath, ResolveResultTrait},
 };
@@ -449,6 +451,7 @@ pub struct ComponentSet {
     pub path: ItemPath,
     pub args: Vec<ComponentSetItem>,
     pub labels: Option<LabelItem>,
+    pub symbols: SymbolMap,
 }
 
 impl ComponentSet {
@@ -477,13 +480,19 @@ impl ComponentSet {
             .zip(labels.map_or(Ok(None), |l| {
                 LabelItem::resolve(l, (m, cr, crates)).map(|t| Some(t))
             }))
-            .map(|(args, labels)| Self {
-                path: ItemPath {
-                    cr_idx: cr.idx,
-                    path: m.path.to_vec().push_into(ident),
-                },
-                args,
-                labels,
+            .map(|(args, labels)| {
+                let symbols = labels.as_ref().map_or(SymbolMap::new(), |l| {
+                    l.get_symbols(args.iter().map(|c| (c.c_idx, true)).collect())
+                });
+                Self {
+                    path: ItemPath {
+                        cr_idx: cr.idx,
+                        path: m.path.to_vec().push_into(ident),
+                    },
+                    args,
+                    labels,
+                    symbols,
+                }
             })
     }
 }

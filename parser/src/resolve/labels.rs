@@ -64,7 +64,7 @@ impl MustBe {
     }
 }
 
-type SymbolMap = HashMap<usize, MustBe>;
+pub type SymbolMap = HashMap<usize, MustBe>;
 
 impl LabelItem {
     fn combine_symbols(

@@ -209,11 +209,8 @@ impl SystemValidate {
         let mut unknown_singleton_labels = Vec::new();
         let mut impossible_labels = Vec::new();
         if let Some(labels) = &cs.labels {
-            // Integrate required components
-            let symbs = labels.get_symbols(cs.args.iter().map(|c| (c.c_idx, true)).collect());
-
-            for (i, must_be) in symbs {
-                let c = match items.components.get(i) {
+            for (i, must_be) in &cs.symbols {
+                let c = match items.components.get(*i) {
                     Some(c) => c,
                     None => {
                         errs.push(format!("Invalid label index: {i}"));
