@@ -9,7 +9,7 @@ use crate::{
         AstCrate, DiscardSymbol, MatchSymbol, ModInfo, SymbolType, {AstMod, Symbol},
     },
     resolve::path::resolve_path,
-    validate::util::{CombineMsgs, MsgResult, MsgsResult, ToMsgsResult, ZipMsgs},
+    resolve::util::{CombineMsgs, MsgResult, MsgsResult, ToMsgsResult, ZipMsgs},
 };
 
 use super::{

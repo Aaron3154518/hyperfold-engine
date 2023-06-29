@@ -13,12 +13,12 @@ use syn::parse::Lookahead1;
 
 use crate::{
     parse::{AstCrate, AstMod, DiscardSymbol, HardcodedSymbol, MatchSymbol, ModInfo},
+    resolve::util::{ItemIndex, MsgsResult},
     resolve::{
         path::{resolve_path, ItemPath},
         paths::{EnginePaths, Paths},
     },
     util::{parse_syn_path, TAB},
-    validate::util::{ItemIndex, MsgsResult},
 };
 
 use super::{

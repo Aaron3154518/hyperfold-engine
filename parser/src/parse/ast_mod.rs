@@ -6,12 +6,9 @@ use syn::visit::Visit;
 
 use crate::{
     parse::attributes::{get_attributes_if_active, Attribute, EcsAttribute},
-    resolve::{
-        path::ItemPath,
-        paths::{EnginePaths, ExpandEnum, MacroPaths, Paths},
-    },
+    resolve::util::MsgResult,
+    resolve::{EnginePaths, ExpandEnum, ItemPath, MacroPaths, Paths},
     util::{add_path_item, end, parse_syn_path},
-    validate::util::MsgResult,
 };
 
 use super::attributes::AstAttribute;

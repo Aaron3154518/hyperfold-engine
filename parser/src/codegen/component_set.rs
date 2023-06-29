@@ -1,12 +1,12 @@
 use shared::util::JoinMap;
 
 use crate::{
+    resolve::util::ItemIndex,
     resolve::{
         component_set::{self, LabelOp},
         items_crate::ItemsCrate,
         path::ItemPath,
     },
-    validate::util::ItemIndex,
 };
 
 #[derive(Debug)]

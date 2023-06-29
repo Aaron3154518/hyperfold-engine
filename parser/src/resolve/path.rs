@@ -4,8 +4,8 @@ use crate::{
     parse::{
         AstCrate, ModInfo, {AstMod, Symbol},
     },
+    resolve::util::MsgResult,
     util::parse_syn_path,
-    validate::util::MsgResult,
 };
 use shared::util::Catch;
 

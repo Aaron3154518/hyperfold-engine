@@ -16,12 +16,9 @@ use super::{
     HardcodedSymbol, Symbol,
 };
 use crate::{
-    resolve::{
-        path::ItemPath,
-        paths::{ExpandEnum, GetPaths, NamespaceTraits, Paths},
-    },
+    resolve::constants::NAMESPACE,
+    resolve::{ExpandEnum, GetPaths, ItemPath, NamespaceTraits, Paths},
     util::end,
-    validate::constants::NAMESPACE,
 };
 
 // TODO: hardcoded

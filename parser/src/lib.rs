@@ -13,22 +13,16 @@ use std::{
 
 use parse::AstCrate;
 use regex::Regex;
-use resolve::{
-    component_set::{LabelItem, LabelOp},
-    path,
-};
+use resolve::{resolve_path, ItemsCrate, LabelItem, LabelOp, MustBe, Paths};
 use shared::{hash_map, util::JoinMapInto};
+use util::{end, format_code};
 
-use crate::{
-    resolve::{items_crate::ItemsCrate, labels::MustBe, paths::Paths},
-    util::{end, format_code},
-};
-
-pub mod codegen;
+// pub mod codegen;
+pub mod codegen2;
 pub mod parse;
 pub mod resolve;
 pub mod util;
-pub mod validate;
+// pub mod validate;
 
 // Process:
 // 1) Parse AST, get mod/crate structure, use statements, and important syntax items
@@ -102,7 +96,7 @@ fn test_resolves(crates: &Vec<AstCrate>) {
         println!(
             "{}\n{:#?}",
             v.join("::"),
-            path::resolve_path(
+            resolve_path(
                 v.iter().map(|s| s.to_string()).collect(),
                 (&crates[0].main, &crates[0], &crates)
             )

@@ -2,6 +2,8 @@ pub const NAMESPACE: &str = "_engine";
 pub const SEP: &str = ";";
 pub const DATA_FILE: &str = "hyperfold_data.txt";
 pub const EID: &str = "id";
+pub const INDEX: &str = "hyperfold_engine_index.txt";
+pub const INDEX_SEP: &str = "\t";
 
 pub fn component_var(cr_idx: usize, c_idx: usize) -> String {
     format!("c{}_{}", cr_idx, c_idx)

@@ -4,7 +4,7 @@ use std::{
     path::PathBuf,
 };
 
-use parser::codegen::ast_codegen::{INDEX, INDEX_SEP};
+use parser::resolve::constants::{INDEX, INDEX_SEP};
 use proc_macro::TokenStream;
 use quote::quote;
 use shared::{

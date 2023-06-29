@@ -1,17 +1,18 @@
 use std::{collections::VecDeque, path::PathBuf};
 
 use crate::{
+    codegen2::CratePaths,
     // codegen::component_set::{self},
     parse::{
         AstCrate, AstMod, AstUse, DiscardSymbol, HardcodedSymbol, MatchSymbol, Symbol, SymbolType,
     },
+    resolve::{constants::NAMESPACE, util::ToMsgsResult},
     resolve::{
         function_arg::{FnArg, FnArgType},
         path::resolve_path,
         paths::{Crates, EnginePaths},
     },
     util::end,
-    validate::{constants::NAMESPACE, util::ToMsgsResult},
 };
 use proc_macro2::{token_stream::IntoIter, TokenStream, TokenTree};
 use quote::ToTokens;
@@ -413,6 +414,22 @@ impl ItemsCrate {
                 }
             }
         }
+
+        // Get paths from each crate to every other crate
+        let paths = CratePaths::new(crates);
+        eprintln!("{paths:#?}");
+
+        // Generate globals struct code
+
+        // Generate components struct code
+
+        // Generate events struct/enum code
+
+        // Generate component set code for building vectors
+
+        // Generate system call code
+
+        // Generate app struct
 
         if !errs.is_empty() {
             eprintln!("{}", errs.join("\n"));

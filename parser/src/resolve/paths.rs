@@ -2,9 +2,9 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
 use crate::{
-    codegen::{idents::Idents, util::vec_to_path},
+    codegen2::{util::vec_to_path, CratePaths},
+    resolve::constants::NAMESPACE,
     util::end,
-    validate::constants::NAMESPACE,
 };
 
 use shared::util::{Call, JoinMap};

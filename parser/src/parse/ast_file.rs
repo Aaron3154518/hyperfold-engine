@@ -3,7 +3,7 @@ use std::{fs, path::PathBuf};
 use syn::visit::Visit;
 
 use super::{ast_mod::AstModType, AstMod};
-use crate::validate::constants::NAMESPACE;
+use crate::resolve::constants::NAMESPACE;
 
 #[derive(Debug)]
 pub enum DirType {
