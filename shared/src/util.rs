@@ -1,5 +1,7 @@
 use std::{
+    iter::Enumerate,
     ops::{Add, AddAssign},
+    slice::Iter,
     str::pattern::Pattern,
 };
 
@@ -155,56 +157,77 @@ where
     }
 }
 
-pub trait JoinMap<'a, T, I>
-where
-    T: 'a,
-    I: JoinMapInto<&'a T>,
-{
-    fn get_iter(&'a self) -> I;
+pub trait JoinMap<'a, T: 'a> {
+    fn get_iter(&'a self) -> Iter<'a, T>;
+
+    fn get_enumerate(&'a self) -> Enumerate<Iter<'a, T>> {
+        self.get_iter().enumerate()
+    }
 
     fn map_vec<U, F>(&'a self, f: F) -> Vec<U>
     where
-        F: FnMut(&T) -> U,
+        F: FnMut(&'a T) -> U,
     {
         self.get_iter().map_vec(f)
     }
 
+    fn enumerate_map_vec<U, F>(&'a self, f: F) -> Vec<U>
+    where
+        F: FnMut((usize, &'a T)) -> U,
+    {
+        self.get_enumerate().map_vec(f)
+    }
+
     fn filter_map_vec<U, F>(&'a self, f: F) -> Vec<U>
     where
-        F: FnMut(&T) -> Option<U>,
+        F: FnMut(&'a T) -> Option<U>,
     {
         self.get_iter().filter_map_vec(f)
     }
 
+    fn enumerate_filter_map_vec<U, F>(&'a self, f: F) -> Vec<U>
+    where
+        F: FnMut((usize, &'a T)) -> Option<U>,
+    {
+        self.get_enumerate().filter_map_vec(f)
+    }
+
     fn join_map<F>(&'a self, f: F, sep: &str) -> String
     where
-        F: FnMut(&T) -> String,
+        F: FnMut(&'a T) -> String,
     {
         self.map_vec(f).join(sep)
     }
 
+    fn enumerate_join_map<F>(&'a self, f: F, sep: &str) -> String
+    where
+        F: FnMut((usize, &'a T)) -> String,
+    {
+        self.enumerate_map_vec(f).join(sep)
+    }
+
     fn unzip_vec<U, V, F>(&'a self, f: F) -> (Vec<U>, Vec<V>)
     where
-        F: FnMut(&T) -> (U, V),
+        F: FnMut(&'a T) -> (U, V),
     {
         self.get_iter().unzip_vec(f)
     }
 }
 
-impl<'a, T> JoinMap<'a, T, std::slice::Iter<'a, T>> for Vec<T> {
-    fn get_iter(&'a self) -> std::slice::Iter<'a, T> {
+impl<'a, T: 'a> JoinMap<'a, T> for Vec<T> {
+    fn get_iter(&'a self) -> Iter<'a, T> {
         self.iter()
     }
 }
 
-impl<'a, T, const N: usize> JoinMap<'a, T, std::slice::Iter<'a, T>> for [T; N] {
-    fn get_iter(&'a self) -> std::slice::Iter<'a, T> {
+impl<'a, T: 'a, const N: usize> JoinMap<'a, T> for [T; N] {
+    fn get_iter(&'a self) -> Iter<'a, T> {
         self.iter()
     }
 }
 
-impl<'a, T> JoinMap<'a, T, std::slice::Iter<'a, T>> for [T] {
-    fn get_iter(&'a self) -> std::slice::Iter<'a, T> {
+impl<'a, T: 'a> JoinMap<'a, T> for [T] {
+    fn get_iter(&'a self) -> Iter<'a, T> {
         self.iter()
     }
 }

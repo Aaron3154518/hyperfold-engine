@@ -28,9 +28,6 @@ pub fn codegen(paths: &Paths, crates: &mut Vec<ItemsCrate>) {
     // Sort by crate index
     crates.sort_by_key(|cr| cr.cr_idx);
 
-    // Write codegen
-    for cr in crates.iter() {}
-
     // Create index file
     fs::write(
         temp_dir().join(INDEX),

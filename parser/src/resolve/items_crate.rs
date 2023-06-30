@@ -1,12 +1,15 @@
-use std::{collections::VecDeque, path::PathBuf};
+use std::{collections::VecDeque, env::temp_dir, fs, path::PathBuf};
 
 use crate::{
-    codegen2::CratePaths,
+    codegen2::{Codegen, CratePaths},
     // codegen::component_set::{self},
     parse::{
         AstCrate, AstMod, AstUse, DiscardSymbol, HardcodedSymbol, MatchSymbol, Symbol, SymbolType,
     },
-    resolve::{constants::NAMESPACE, util::ToMsgsResult},
+    resolve::{
+        constants::{INDEX, INDEX_SEP, NAMESPACE},
+        util::ToMsgsResult,
+    },
     resolve::{
         function_arg::{FnArg, FnArgType},
         path::resolve_path,
@@ -420,6 +423,7 @@ impl ItemsCrate {
         eprintln!("{paths:#?}");
 
         // Generate globals struct code
+        let globs = Codegen::globals(0, &items.globals, &paths);
 
         // Generate components struct code
 
@@ -430,6 +434,39 @@ impl ItemsCrate {
         // Generate system call code
 
         // Generate app struct
+
+        // Write codegen to file
+        match globs {
+            Ok(globs) => {
+                let code = vec![globs.to_string(), String::new()];
+
+                let out =
+                    PathBuf::from(std::env::var("OUT_DIR").expect("No out directory specified"));
+
+                // Create index file
+                fs::write(
+                    temp_dir().join(INDEX),
+                    iter_except(&crates, macro_cr_idx)
+                        .zip(code)
+                        .enumerate()
+                        .map_vec(|(i, (cr, code))| {
+                            // Write to file
+                            let file = out.join(format!("{}.rs", i));
+                            fs::write(file.to_owned(), code)
+                                .catch(format!("Could not write to: {}", file.display()));
+                            format!(
+                                "{}{}{}",
+                                cr.dir.to_string_lossy().to_string(),
+                                INDEX_SEP,
+                                file.display()
+                            )
+                        })
+                        .join("\n"),
+                )
+                .catch(format!("Could not write to index file: {INDEX}"))
+            }
+            Err(err) => errs.extend(err),
+        }
 
         if !errs.is_empty() {
             eprintln!("{}", errs.join("\n"));
