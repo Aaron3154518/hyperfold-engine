@@ -16,8 +16,9 @@ use super::{
     HardcodedSymbol, Symbol,
 };
 use crate::{
+    codegen2::Crates,
     resolve::constants::NAMESPACE,
-    resolve::{ExpandEnum, GetPaths, ItemPath, NamespaceTraits, Paths},
+    resolve::{Crate, ExpandEnum, GetPaths, ItemPath, NamespaceTraits},
     util::end,
 };
 
@@ -34,12 +35,6 @@ fn get_engine_dir() -> PathBuf {
 
 fn get_macros_dir() -> PathBuf {
     get_engine_dir().join("macros")
-}
-
-#[derive(Clone, Copy, Debug)]
-enum AstCrateDependency {
-    Crate(usize),
-    MacrosCrate,
 }
 
 #[derive(Debug)]
@@ -80,20 +75,17 @@ impl AstCrate {
         }
     }
 
-    pub fn parse(mut dir: PathBuf) -> (Vec<Self>, Paths) {
+    pub fn parse(mut dir: PathBuf) -> Crates {
         let mut crates = vec![AstCrate::new(dir.to_owned(), 0, true)];
 
         let engine_dir = get_engine_dir();
         let macros_dir = get_macros_dir();
-        let block_dirs = [(macros_dir.to_owned(), AstCrateDependency::MacrosCrate)]
-            .into_iter()
-            .collect::<HashMap<_, _>>();
 
         let mut crate_deps = Vec::new();
         let mut i = 0;
         while i < crates.len() {
             let cr_dir = crates[i].dir.to_owned();
-            Self::get_crate_dependencies(cr_dir.to_owned(), &block_dirs, &crates).call_into(
+            Self::get_crate_dependencies(cr_dir.to_owned(), &crates).call_into(
                 |(deps, new_deps)| {
                     crate_deps.push(deps);
                     for path in new_deps {
@@ -108,38 +100,28 @@ impl AstCrate {
             .iter()
             .find_map(|cr| (cr.dir == engine_dir).then_some(cr.idx))
             .expect("Could not find engine crate");
-
-        // Add macros crate at the end
-        let macros_cr_idx = crates.len();
-        crates.push(AstCrate::new(macros_dir.to_owned(), macros_cr_idx, false));
-        crate_deps.push(Vec::new());
+        let macros_cr_idx = crates
+            .iter()
+            .find_map(|cr| (cr.dir == macros_dir).then_some(cr.idx))
+            .expect("Could not find macros crate");
 
         // Insert correct dependencies
         for (cr, deps) in crates.iter_mut().zip(crate_deps.into_iter()) {
-            cr.deps = deps
-                .into_iter()
-                .map(|(d, name)| {
-                    (
-                        match d {
-                            AstCrateDependency::Crate(i) => i,
-                            AstCrateDependency::MacrosCrate => macros_cr_idx,
-                        },
-                        name,
-                    )
-                })
-                .collect()
+            cr.deps = deps.into_iter().collect();
         }
 
-        // TODO: Auto detect game_crate macro (assume it exists and validate later)
+        let mut crate_idxs = [0; Crate::LEN];
+        crate_idxs[Crate::Main as usize] = 0;
+        crate_idxs[Crate::Engine as usize] = engine_cr_idx;
+        crate_idxs[Crate::Macros as usize] = macros_cr_idx;
 
-        (crates, Paths::new(engine_cr_idx, macros_cr_idx))
+        Crates::new(crates, crate_idxs)
     }
 
     fn get_crate_dependencies(
         cr_dir: PathBuf,
-        block_dirs: &HashMap<PathBuf, AstCrateDependency>,
         crates: &Vec<AstCrate>,
-    ) -> (Vec<(AstCrateDependency, String)>, Vec<String>) {
+    ) -> (Vec<(usize, String)>, Vec<String>) {
         let deps = AstCrate::parse_cargo_toml(cr_dir.to_owned());
         let mut new_deps = Vec::new();
         (
@@ -151,18 +133,12 @@ impl AstCrate {
                         cr_dir.display(),
                         path
                     ));
-                    match block_dirs.get(&dep_dir) {
-                        Some(d) => (*d, name),
-                        None => match crates.iter().position(|cr| cr.dir == dep_dir) {
-                            Some(i) => (AstCrateDependency::Crate(i), name),
-                            None => {
-                                new_deps.push(path);
-                                (
-                                    AstCrateDependency::Crate(crates.len() + new_deps.len() - 1),
-                                    name,
-                                )
-                            }
-                        },
+                    match crates.iter().position(|cr| cr.dir == dep_dir) {
+                        Some(i) => (i, name),
+                        None => {
+                            new_deps.push(path);
+                            (crates.len() + new_deps.len() - 1, name)
+                        }
                     }
                 })
                 .collect(),
@@ -296,13 +272,13 @@ impl AstCrate {
         m.mods.last_mut().catch(format!("Mod not added: {path:#?}"))
     }
 
-    pub fn add_hardcoded_symbol(crates: &mut Vec<Self>, paths: &Paths, sym: HardcodedSymbol) {
-        let path = sym.get_path(paths);
-        crates[path.cr_idx].add_symbol(Symbol {
+    pub fn add_hardcoded_symbol(crates: &mut Crates, sym: HardcodedSymbol) {
+        let path = sym.get_path();
+        crates.get_crate_mut(path.get_crate()).add_symbol(Symbol {
             kind: SymbolType::Hardcoded(sym),
-            path: path.path.to_vec(),
+            path: path.full_path(),
             public: true,
-        })
+        });
     }
 
     pub fn iter_mods_mut(&self) -> MutIter {

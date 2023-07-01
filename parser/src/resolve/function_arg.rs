@@ -16,7 +16,7 @@ use crate::{
     resolve::util::{ItemIndex, MsgsResult},
     resolve::{
         path::{resolve_path, ItemPath},
-        paths::{EnginePaths, Paths},
+        paths::EnginePaths,
     },
     util::{parse_syn_path, TAB},
 };
@@ -166,7 +166,7 @@ impl SystemValidate {
     }
 
     pub fn validate_component_set(&mut self, arg: &FnArg, i: usize, items: &Items, is_vec: bool) {
-        let entities = EnginePaths::Entities.as_ident();
+        let entities = EnginePaths::Entities.get_ident();
 
         if self.attrs.is_init {
             self.errs

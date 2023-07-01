@@ -2,36 +2,27 @@ use shared::util::{Get2D, JoinMap, JoinMapInto, NoneOr};
 
 use crate::parse::AstCrate;
 use crate::resolve::constants::NAMESPACE;
+use crate::resolve::util::MsgResult;
+use crate::resolve::{Crate, ExpandEnum, GetPaths, ItemPath};
+
+use super::util::vec_to_path;
 
 #[derive(Debug)]
-pub struct CratePaths {
+pub struct Crates {
     paths: Vec<Vec<Option<Vec<String>>>>,
+    crate_idxs: [usize; Crate::LEN],
+    crates: Vec<AstCrate>,
 }
 
-impl CratePaths {
-    pub fn new(crates: &Vec<AstCrate>) -> Self {
+impl Crates {
+    pub fn new(crates: Vec<AstCrate>, crate_idxs: [usize; Crate::LEN]) -> Self {
         let mut paths = crates.map_vec(|_| Vec::new());
-        paths[0] = (0..crates.len()).map_vec(|j| Self::find_path(&mut paths, 0, j, crates));
-        Self { paths }
-    }
-
-    pub fn get_path(&self, start_idx: usize, end_idx: usize) -> Option<Vec<String>> {
-        self.paths.get(start_idx, end_idx).and_then(|v| v.clone())
-    }
-
-    pub fn prepend_path(
-        &self,
-        start_idx: usize,
-        end_idx: usize,
-        path: &Vec<String>,
-    ) -> Option<Vec<String>> {
-        let i = if path.starts_with(&["crate".to_string()]) {
-            1
-        } else {
-            0
-        };
-        self.get_path(start_idx, end_idx)
-            .map(|pre| [pre, path[i..].to_vec()].concat())
+        paths[0] = (0..crates.len()).map_vec(|j| Self::find_path(&mut paths, 0, j, &crates));
+        Self {
+            paths,
+            crate_idxs,
+            crates,
+        }
     }
 
     fn find_path(
@@ -69,5 +60,72 @@ impl CratePaths {
         }
 
         min_cr.map(|(_, path)| path)
+    }
+
+    // Create crate paths
+    pub fn get_crate_path(&self, start_idx: usize, end_idx: usize) -> Option<Vec<String>> {
+        self.paths.get(start_idx, end_idx).and_then(|v| v.clone())
+    }
+
+    pub fn get_path(&self, start_idx: usize, path: &ItemPath) -> MsgResult<Vec<String>> {
+        let i = if path.path.starts_with(&["crate".to_string()]) {
+            1
+        } else {
+            0
+        };
+        self.get_crate_path(start_idx, path.cr_idx).map_or(
+            Err(format!(
+                "No path from crate {start_idx} to crate {}",
+                path.cr_idx
+            )),
+            |pre| Ok([pre, path.path[i..].to_vec()].concat()),
+        )
+    }
+
+    pub fn path_from(&self, start_idx: usize, path: impl GetPaths) -> MsgResult<Vec<String>> {
+        self.get_path(
+            start_idx,
+            &ItemPath {
+                cr_idx: self.get_crate_index(path.get_crate()),
+                path: path.full_path(),
+            },
+        )
+    }
+
+    // Get crates
+    pub fn get_crates<'a>(&'a self) -> &'a Vec<AstCrate> {
+        &self.crates
+    }
+
+    pub fn get_crate<'a>(&'a self, cr: Crate) -> &'a AstCrate {
+        &self.crates[self.get_crate_index(cr)]
+    }
+
+    pub fn get_crate_mut<'a>(&'a mut self, cr: Crate) -> &'a mut AstCrate {
+        let i = self.get_crate_index(cr);
+        &mut self.crates[i]
+    }
+
+    pub fn get_crate_index(&self, cr: Crate) -> usize {
+        self.crate_idxs[cr as usize]
+    }
+
+    // Iterate crates except macros crate
+    pub fn iter<'a>(&'a self) -> impl Iterator<Item = &'a AstCrate> {
+        let macros_cr_idx = self.get_crate_index(Crate::Macros);
+        self.crates
+            .iter()
+            .enumerate()
+            .filter(move |(i, _)| i != &macros_cr_idx)
+            .map(|(_, v)| v)
+    }
+
+    pub fn iter_mut<'a>(&'a mut self) -> impl Iterator<Item = &'a mut AstCrate> {
+        let macros_cr_idx = self.get_crate_index(Crate::Macros);
+        self.crates
+            .iter_mut()
+            .enumerate()
+            .filter(move |(i, _)| i != &macros_cr_idx)
+            .map(|(_, v)| v)
     }
 }

@@ -48,16 +48,52 @@ impl<T> CombineMsgs<Vec<T>> for Vec<MsgsResult<T>> {
     }
 }
 
-pub trait ZipMsgs<T, U> {
-    fn zip(self, other: MsgsResult<U>) -> MsgsResult<(T, U)>;
+macro_rules! msgs_zip {
+    (($tr: ident), ($v0: ident, $vn: ident)) => {
+        pub trait $tr<$v0, $vn> {
+            fn zip(self, $vn: MsgsResult<$vn>) -> MsgsResult<($v0, $vn)>;
+        }
+
+        impl<$v0, $vn> $tr<$v0, $vn> for MsgsResult<$v0> {
+            fn zip(self, $vn: MsgsResult<$vn>) -> MsgsResult<($v0, $vn)> {
+                match (self, $vn) {
+                    (Ok($v0), Ok($vn)) => Ok(($v0, $vn)),
+                    (Ok(_), Err(e)) | (Err(e), Ok(_)) => Err(e),
+                    (Err(e1), Err(e2)) => Err([e1, e2].concat()),
+                }
+            }
+        }
+    };
+
+    (($tr: ident, $tr1: ident $(,$trs: ident)*), ($v0: ident, $vn: ident, $vn1: ident $(,$vs: ident)*)) => {
+        msgs_zip!(($tr1 $(,$trs)*), ($v0, $vn1 $(,$vs)*));
+
+        pub trait $tr<$v0 $(,$vs)*, $vn1, $vn> {
+            fn zip(self $(,$vs: MsgsResult<$vs>)*, $vn1: MsgsResult<$vn1>, $vn: MsgsResult<$vn>)
+                -> MsgsResult<($v0 $(,$vs)*, $vn1, $vn)>;
+        }
+
+        impl<$v0 $(,$vs)*, $vn1, $vn> $tr<$v0 $(,$vs)*, $vn1, $vn> for MsgsResult<$v0> {
+            fn zip(self $(,$vs: MsgsResult<$vs>)*, $vn1: MsgsResult<$vn1>, $vn: MsgsResult<$vn>)
+                -> MsgsResult<($v0 $(,$vs)*, $vn1, $vn)> {
+                    match (<Self as $tr1<$v0 $(,$vs)*, $vn1>>::zip(self $(,$vs)*, $vn1), $vn) {
+                        (Ok(($v0 $(,$vs)*, $vn1)), Ok($vn)) => Ok(($v0 $(,$vs)*, $vn1, $vn)),
+                        (Ok(_), Err(e)) | (Err(e), Ok(_)) => Err(e),
+                        (Err(e1), Err(e2)) => Err([e1, e2].concat())
+                    }
+                }
+        }
+    };
 }
 
-impl<T, U> ZipMsgs<T, U> for MsgsResult<T> {
-    fn zip(self, other: MsgsResult<U>) -> MsgsResult<(T, U)> {
-        match (self, other) {
-            (Ok(t), Ok(u)) => Ok((t, u)),
-            (Ok(_), Err(e)) | (Err(e), Ok(_)) => Err(e),
-            (Err(e_t), Err(e_u)) => Err([e_t, e_u].concat()),
-        }
-    }
+msgs_zip!(
+    (Zip6Msgs, Zip5Msgs, Zip4Msgs, Zip3Msgs, Zip2Msgs),
+    (T, A, B, C, D, E)
+);
+
+#[macro_export]
+macro_rules! zip_msgs {
+    ($v0: ident $(,$vs: ident)*, $body: block) => {
+        $v0.zip($($vs),*).map(|($v0 $(,$vs)*)| $body)
+    };
 }

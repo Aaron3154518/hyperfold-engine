@@ -7,7 +7,7 @@ use syn::visit::Visit;
 use crate::{
     parse::attributes::{get_attributes_if_active, Attribute, EcsAttribute},
     resolve::util::MsgResult,
-    resolve::{EnginePaths, ExpandEnum, ItemPath, MacroPaths, Paths},
+    resolve::{EnginePaths, ExpandEnum, GetPaths, ItemPath, MacroPaths},
     util::{add_path_item, end, parse_syn_path},
 };
 
@@ -55,14 +55,14 @@ pub enum HardcodedSymbol {
 }
 
 impl HardcodedSymbol {
-    pub fn get_path<'a>(&self, paths: &'a Paths) -> &'a ItemPath {
+    pub fn get_path(&self) -> &dyn GetPaths {
         match self {
-            HardcodedSymbol::ComponentMacro => paths.get_macro(MacroPaths::Component),
-            HardcodedSymbol::GlobalMacro => paths.get_macro(MacroPaths::Global),
-            HardcodedSymbol::EventMacro => paths.get_macro(MacroPaths::Event),
-            HardcodedSymbol::SystemMacro => paths.get_macro(MacroPaths::System),
-            HardcodedSymbol::ComponentsMacro => paths.get_macro(MacroPaths::Components),
-            HardcodedSymbol::Entities => paths.get_engine_path(EnginePaths::Entities),
+            HardcodedSymbol::ComponentMacro => &MacroPaths::Component,
+            HardcodedSymbol::GlobalMacro => &MacroPaths::Global,
+            HardcodedSymbol::EventMacro => &MacroPaths::Event,
+            HardcodedSymbol::SystemMacro => &MacroPaths::System,
+            HardcodedSymbol::ComponentsMacro => &MacroPaths::Components,
+            HardcodedSymbol::Entities => &EnginePaths::Entities,
         }
     }
 }

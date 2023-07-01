@@ -6,7 +6,7 @@ build = "build.rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-[dependencies]
+[dependencies] 
 macros = { path = "./macros", dependency = "" }
 shared = { path = "./shared" }
 num-derive = "0.3.3"

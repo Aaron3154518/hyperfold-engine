@@ -4,6 +4,6 @@ mod globals;
 mod idents;
 pub mod util;
 
-pub use crate_paths::CratePaths;
+pub use crate_paths::Crates;
 
 pub struct Codegen;

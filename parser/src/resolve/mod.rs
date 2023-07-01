@@ -13,6 +13,6 @@ pub use items_crate::{ItemComponent, ItemEvent, ItemGlobal, ItemsCrate};
 pub use labels::MustBe;
 pub use path::{resolve_path, ItemPath};
 pub use paths::{
-    EngineGlobals, EnginePaths, EngineTraits, ExpandEnum, GetPaths, MacroPaths, NamespaceTraits,
-    Paths,
+    Crate, EngineGlobals, EnginePaths, EngineTraits, ExpandEnum, GetPaths, MacroPaths,
+    NamespaceTraits,
 };

@@ -13,7 +13,7 @@ use std::{
 
 use parse::AstCrate;
 use regex::Regex;
-use resolve::{resolve_path, ItemsCrate, LabelItem, LabelOp, MustBe, Paths};
+use resolve::{resolve_path, ItemsCrate, LabelItem, LabelOp, MustBe};
 use shared::{hash_map, util::JoinMapInto};
 use util::{end, format_code};
 
@@ -132,11 +132,11 @@ fn test_resolves(crates: &Vec<AstCrate>) {
 
 fn test() {
     // TODO: hardcoded
-    let (mut crates, paths) = AstCrate::parse(PathBuf::from("../"));
+    let mut crates = AstCrate::parse(PathBuf::from("../"));
 
     // eprintln!("{crates:#?}");
 
-    let mut items = ItemsCrate::parse(&paths, &mut crates);
+    let mut items = ItemsCrate::parse(&mut crates);
 
     // eprintln!("{items:#?}");
 }

@@ -2,14 +2,14 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
 use crate::{
-    codegen2::{util::vec_to_path, CratePaths},
+    codegen2::{util::vec_to_path, Crates},
     resolve::constants::NAMESPACE,
     util::end,
 };
 
-use shared::util::{Call, JoinMap};
+use shared::util::{Call, JoinMap, PushInto};
 
-use super::path::ItemPath;
+use super::{path::ItemPath, util::MsgResult};
 
 pub trait ExpandEnum<const N: usize>
 where
@@ -19,53 +19,25 @@ where
     const VARIANTS: [Self; N];
 }
 
-pub trait GetPaths<const N: usize>: ExpandEnum<N> {
-    // crate
-    fn as_crate(&self) -> Crates;
+// All named crate indices
+#[shared::macros::expand_enum]
+pub enum Crate {
+    Main,
+    Engine,
+    Macros,
+}
 
-    // ident
-    fn as_ident(&self) -> &str;
+pub trait GetPaths {
+    fn get_crate(&self) -> Crate;
 
-    fn to_ident(&self) -> syn::Ident {
-        format_ident!("{}", self.as_ident())
-    }
+    fn get_ident(&self) -> &str;
 
-    // path
-    fn as_path(&self) -> Vec<&str> {
-        Vec::new()
-    }
+    fn get_path(&self) -> Vec<&str>;
 
-    fn to_path(&self) -> syn::Path {
-        vec_to_path(self.path_stem())
-    }
-
-    fn construct_path(&self, path: &syn::Path) -> TokenStream {
-        self.to_path().call(|i| quote!(#path::#i))
-    }
-
-    // path::ident
-    fn path_stem(&self) -> Vec<String> {
-        let mut v = self.as_path();
-        v.push(self.as_ident());
-        v.map_vec(|s| s.to_string())
-    }
-
-    // crate::path::ident
     fn full_path(&self) -> Vec<String> {
-        [vec!["crate"], self.as_path(), vec![self.as_ident()]]
-            .concat()
+        self.get_path()
+            .push_into(self.get_ident())
             .map_vec(|s| s.to_string())
-    }
-
-    fn crate_path(&self, cr_idx: usize) -> ItemPath {
-        ItemPath {
-            cr_idx,
-            path: self.full_path(),
-        }
-    }
-
-    fn crate_paths(cr_idxs: &[usize; Crates::LEN]) -> [ItemPath; N] {
-        Self::VARIANTS.map(|v| v.crate_path(cr_idxs[v.as_crate() as usize]))
     }
 }
 
@@ -82,17 +54,17 @@ pub enum MacroPaths {
     Components,
 }
 
-impl GetPaths<{ Self::LEN }> for MacroPaths {
-    fn as_crate(&self) -> Crates {
+impl GetPaths for MacroPaths {
+    fn get_crate(&self) -> Crate {
         match self {
             MacroPaths::Component | MacroPaths::Global | MacroPaths::Event | MacroPaths::System => {
-                Crates::Macros
+                Crate::Macros
             }
-            MacroPaths::Components => Crates::Engine,
+            MacroPaths::Components => Crate::Engine,
         }
     }
 
-    fn as_ident(&self) -> &str {
+    fn get_ident(&self) -> &str {
         match self {
             MacroPaths::Component => "component",
             MacroPaths::Global => "global",
@@ -102,7 +74,7 @@ impl GetPaths<{ Self::LEN }> for MacroPaths {
         }
     }
 
-    fn as_path(&self) -> Vec<&str> {
+    fn get_path(&self) -> Vec<&str> {
         match self {
             MacroPaths::Component | MacroPaths::Global | MacroPaths::Event | MacroPaths::System => {
                 Vec::new()
@@ -119,19 +91,19 @@ pub enum EngineTraits {
     AddEvent,
 }
 
-impl GetPaths<{ Self::LEN }> for EngineTraits {
-    fn as_crate(&self) -> Crates {
-        Crates::Engine
+impl GetPaths for EngineTraits {
+    fn get_crate(&self) -> Crate {
+        Crate::Engine
     }
 
-    fn as_ident(&self) -> &str {
+    fn get_ident(&self) -> &str {
         match self {
             EngineTraits::AddComponent => "AddComponent",
             EngineTraits::AddEvent => "AddEvent",
         }
     }
 
-    fn as_path(&self) -> Vec<&str> {
+    fn get_path(&self) -> Vec<&str> {
         match self {
             EngineTraits::AddComponent => vec![ECS, "components"],
             EngineTraits::AddEvent => vec![ECS, "events"],
@@ -151,15 +123,15 @@ pub enum EngineGlobals {
     Screen,
 }
 
-impl GetPaths<{ Self::LEN }> for EngineGlobals {
-    fn as_crate(&self) -> Crates {
+impl GetPaths for EngineGlobals {
+    fn get_crate(&self) -> Crate {
         match self {
-            EngineGlobals::CFoo | EngineGlobals::EFoo => Crates::Main,
-            _ => Crates::Engine,
+            EngineGlobals::CFoo | EngineGlobals::EFoo => Crate::Main,
+            _ => Crate::Engine,
         }
     }
 
-    fn as_ident(&self) -> &str {
+    fn get_ident(&self) -> &str {
         match self {
             EngineGlobals::CFoo => "CFoo",
             EngineGlobals::EFoo => "EFoo",
@@ -171,7 +143,7 @@ impl GetPaths<{ Self::LEN }> for EngineGlobals {
         }
     }
 
-    fn as_path(&self) -> Vec<&str> {
+    fn get_path(&self) -> Vec<&str> {
         match self {
             EngineGlobals::CFoo | EngineGlobals::EFoo => vec![NAMESPACE],
             EngineGlobals::EntityTrash => vec![ECS, "entities"],
@@ -215,12 +187,12 @@ pub enum EnginePaths {
     SDL2Image,
 }
 
-impl GetPaths<{ Self::LEN }> for EnginePaths {
-    fn as_crate(&self) -> Crates {
-        Crates::Engine
+impl GetPaths for EnginePaths {
+    fn get_crate(&self) -> Crate {
+        Crate::Engine
     }
 
-    fn as_ident(&self) -> &str {
+    fn get_ident(&self) -> &str {
         match self {
             EnginePaths::Container => "Container",
             EnginePaths::Label => "Label",
@@ -246,7 +218,7 @@ impl GetPaths<{ Self::LEN }> for EnginePaths {
         }
     }
 
-    fn as_path(&self) -> Vec<&str> {
+    fn get_path(&self) -> Vec<&str> {
         match self {
             EnginePaths::Container
             | EnginePaths::Label
@@ -290,73 +262,19 @@ impl NamespaceTraits {
     }
 }
 
-impl GetPaths<{ Self::LEN }> for NamespaceTraits {
-    fn as_crate(&self) -> Crates {
-        Crates::Engine
+impl GetPaths for NamespaceTraits {
+    fn get_crate(&self) -> Crate {
+        Crate::Engine
     }
 
-    fn as_ident(&self) -> &str {
+    fn get_ident(&self) -> &str {
         match self {
-            NamespaceTraits::AddComponent => EngineTraits::AddComponent.as_ident(),
-            NamespaceTraits::AddEvent => EngineTraits::AddEvent.as_ident(),
+            NamespaceTraits::AddComponent => EngineTraits::AddComponent.get_ident(),
+            NamespaceTraits::AddEvent => EngineTraits::AddEvent.get_ident(),
         }
     }
 
-    fn as_path(&self) -> Vec<&str> {
+    fn get_path(&self) -> Vec<&str> {
         vec![NAMESPACE]
-    }
-}
-
-// All named crate indices
-#[shared::macros::expand_enum]
-pub enum Crates {
-    Main,
-    Engine,
-    Macros,
-}
-
-#[derive(Clone, Debug)]
-pub struct Paths {
-    pub macros: [ItemPath; MacroPaths::LEN],
-    pub traits: [ItemPath; EngineTraits::LEN],
-    pub globals: [ItemPath; EngineGlobals::LEN],
-    pub idents: [ItemPath; EnginePaths::LEN],
-    pub cr_idxs: [usize; Crates::LEN],
-}
-
-impl Paths {
-    pub fn new(engine_cr_idx: usize, macros_cr_idx: usize) -> Self {
-        let mut cr_idxs = [0; Crates::LEN];
-        cr_idxs[Crates::Main as usize] = 0;
-        cr_idxs[Crates::Engine as usize] = engine_cr_idx;
-        cr_idxs[Crates::Macros as usize] = macros_cr_idx;
-
-        Self {
-            macros: MacroPaths::crate_paths(&cr_idxs),
-            traits: EngineTraits::crate_paths(&cr_idxs),
-            globals: EngineGlobals::crate_paths(&cr_idxs),
-            idents: EnginePaths::crate_paths(&cr_idxs),
-            cr_idxs,
-        }
-    }
-
-    pub fn get_cr_idx(&self, i: Crates) -> usize {
-        self.cr_idxs[i as usize]
-    }
-
-    pub fn get_macro(&self, i: MacroPaths) -> &ItemPath {
-        &self.macros[i as usize]
-    }
-
-    pub fn get_trait(&self, i: EngineTraits) -> &ItemPath {
-        &self.traits[i as usize]
-    }
-
-    pub fn get_global(&self, i: EngineGlobals) -> &ItemPath {
-        &self.globals[i as usize]
-    }
-
-    pub fn get_engine_path(&self, i: EnginePaths) -> &ItemPath {
-        &self.idents[i as usize]
     }
 }

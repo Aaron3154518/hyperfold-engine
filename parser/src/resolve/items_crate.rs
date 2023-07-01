@@ -1,7 +1,7 @@
 use std::{collections::VecDeque, env::temp_dir, fs, path::PathBuf};
 
 use crate::{
-    codegen2::{Codegen, CratePaths},
+    codegen2::{Codegen, Crates},
     // codegen::component_set::{self},
     parse::{
         AstCrate, AstMod, AstUse, DiscardSymbol, HardcodedSymbol, MatchSymbol, Symbol, SymbolType,
@@ -13,7 +13,7 @@ use crate::{
     resolve::{
         function_arg::{FnArg, FnArgType},
         path::resolve_path,
-        paths::{Crates, EnginePaths},
+        paths::{Crate, EnginePaths},
     },
     util::end,
 };
@@ -30,7 +30,7 @@ use super::{
     component_set::ComponentSet,
     parse_macro_call::{parse_macro_calls, update_macro_calls, ParseMacroCall},
     path::{ItemPath, ResolveResultTrait},
-    paths::{ExpandEnum, GetPaths, MacroPaths, NamespaceTraits, Paths},
+    paths::{ExpandEnum, GetPaths, MacroPaths, NamespaceTraits},
 };
 
 #[derive(Debug)]
@@ -177,7 +177,7 @@ impl Items {
 
 // Parse AstCrate
 impl ItemsCrate {
-    fn new(cr: &AstCrate, paths: &Paths, crates: &Vec<AstCrate>) -> Self {
+    fn new(cr: &AstCrate, crates: &Vec<AstCrate>) -> Self {
         Self {
             dir: cr.dir.to_owned(),
             cr_name: cr.name.to_string(),
@@ -199,19 +199,17 @@ impl ItemsCrate {
         }
     }
 
-    pub fn parse(paths: &Paths, crates: &mut Vec<AstCrate>) -> Vec<Self> {
-        let macro_cr_idx = paths.get_cr_idx(Crates::Macros);
-
+    pub fn parse(crates: &mut Crates) -> Vec<Self> {
         let mut errs = Vec::new();
         let mut items = Items::new();
 
         // Insert hardcoded symbols
         for sym in HardcodedSymbol::VARIANTS {
-            AstCrate::add_hardcoded_symbol(crates, paths, sym)
+            AstCrate::add_hardcoded_symbol(crates, sym)
         }
 
         // Resolve components, globals, and events
-        let symbols = iter_except(crates, macro_cr_idx).map_vec(|cr| {
+        let symbols = crates.iter().map_vec(|cr| {
             cr.iter_mods().map_vec(|m| {
                 m.items
                     .structs
@@ -223,7 +221,7 @@ impl ItemsCrate {
                         attrs
                             .iter()
                             .find_map(|attr| {
-                                resolve_path(attr.path.to_vec(), (m, cr, crates))
+                                resolve_path(attr.path.to_vec(), (m, cr, crates.get_crates()))
                                     .expect_symbol()
                                     .expect_any_hardcoded()
                                     .discard_symbol()
@@ -271,7 +269,7 @@ impl ItemsCrate {
         });
 
         // Insert components, globals, and events
-        for (cr, crate_symbols) in iter_except_mut(crates, macro_cr_idx).zip(symbols) {
+        for (cr, crate_symbols) in crates.iter_mut().zip(symbols) {
             let mut mods = cr.iter_mods_mut();
             for mod_symbols in crate_symbols {
                 if let Some(m) = mods.next(cr) {
@@ -281,37 +279,38 @@ impl ItemsCrate {
         }
 
         // Resolve component sets
-        let symbols = iter_except(crates, macro_cr_idx).map_vec(|cr| {
+        let symbols = crates.iter().map_vec(|cr| {
             cr.iter_mods().map_vec(|m| {
                 m.items.macro_calls.filter_map_vec(|call| {
-                    resolve_path(call.path.to_vec(), (m, cr, crates))
+                    resolve_path(call.path.to_vec(), (m, cr, crates.get_crates()))
                         .expect_symbol()
                         .expect_hardcoded(HardcodedSymbol::ComponentsMacro)
                         .ok()
                         .and_then(|_| {
-                            ComponentSet::parse(call.data.args.clone(), (m, cr, crates))
-                                .handle_err(|es| {
-                                    errs.push(String::new());
-                                    errs.extend(es);
-                                })
-                                .map(|cs| {
-                                    let path = cs.path.path.to_vec();
-                                    items.component_sets.push(cs);
-                                    Symbol {
-                                        kind: SymbolType::ComponentSet(
-                                            items.component_sets.len() - 1,
-                                        ),
-                                        path,
-                                        public: true,
-                                    }
-                                })
+                            ComponentSet::parse(
+                                call.data.args.clone(),
+                                (m, cr, crates.get_crates()),
+                            )
+                            .handle_err(|es| {
+                                errs.push(String::new());
+                                errs.extend(es);
+                            })
+                            .map(|cs| {
+                                let path = cs.path.path.to_vec();
+                                items.component_sets.push(cs);
+                                Symbol {
+                                    kind: SymbolType::ComponentSet(items.component_sets.len() - 1),
+                                    path,
+                                    public: true,
+                                }
+                            })
                         })
                 })
             })
         });
 
         // Insert component set symbols
-        for (cr, crate_symbols) in iter_except_mut(crates, macro_cr_idx).zip(symbols) {
+        for (cr, crate_symbols) in crates.iter_mut().zip(symbols) {
             let mut mods = cr.iter_mods_mut();
             for mod_symbols in crate_symbols {
                 if let Some(m) = mods.next(cr) {
@@ -321,7 +320,7 @@ impl ItemsCrate {
         }
 
         // Insert namespace mod
-        for cr in iter_except_mut(crates, macro_cr_idx) {
+        for cr in crates.iter_mut() {
             let path = cr.main.path.to_vec();
             // Traits
             let uses = cr
@@ -350,7 +349,7 @@ impl ItemsCrate {
                 },
                 args: GlobalMacroArgs::from(&Vec::new()),
             });
-            for cr in iter_except_mut(crates, macro_cr_idx) {
+            for cr in crates.iter_mut() {
                 let idx = items.globals.len() - 1;
                 // Add globals to entry crates
                 if cr.idx == 0 {
@@ -370,11 +369,11 @@ impl ItemsCrate {
         }
 
         // Resolve systems
-        let symbols = iter_except(crates, macro_cr_idx).map_vec(|cr| {
+        let symbols = crates.iter().map_vec(|cr| {
             cr.iter_mods().map_vec(|m| {
                 m.items.functions.iter().filter_map_vec(|fun| {
                     fun.data.attrs.iter().find_map(|attr| {
-                        resolve_path(attr.path.to_vec(), (m, cr, crates))
+                        resolve_path(attr.path.to_vec(), (m, cr, crates.get_crates()))
                             .expect_symbol()
                             .expect_hardcoded(HardcodedSymbol::SystemMacro)
                             .ok()
@@ -382,26 +381,31 @@ impl ItemsCrate {
                                 let path =
                                     m.path.to_vec().push_into(fun.data.sig.ident.to_string());
                                 let attr_args = SystemMacroArgs::from(&attr.args);
-                                FnArg::parse(&attr_args, &items, &fun.data.sig, (m, cr, crates))
-                                    .handle_err(|es| {
-                                        errs.push(String::new());
-                                        errs.extend(es);
-                                    })
-                                    .map(|args| {
-                                        items.systems.push(ItemSystem {
-                                            path: ItemPath {
-                                                cr_idx: cr.idx,
-                                                path: path.to_vec(),
-                                            },
-                                            args,
-                                            attr_args,
-                                        });
-                                        Symbol {
-                                            kind: SymbolType::System(items.systems.len() - 1),
-                                            path,
-                                            public: true,
-                                        }
-                                    })
+                                FnArg::parse(
+                                    &attr_args,
+                                    &items,
+                                    &fun.data.sig,
+                                    (m, cr, crates.get_crates()),
+                                )
+                                .handle_err(|es| {
+                                    errs.push(String::new());
+                                    errs.extend(es);
+                                })
+                                .map(|args| {
+                                    items.systems.push(ItemSystem {
+                                        path: ItemPath {
+                                            cr_idx: cr.idx,
+                                            path: path.to_vec(),
+                                        },
+                                        args,
+                                        attr_args,
+                                    });
+                                    Symbol {
+                                        kind: SymbolType::System(items.systems.len() - 1),
+                                        path,
+                                        public: true,
+                                    }
+                                })
                             })
                     })
                 })
@@ -409,7 +413,7 @@ impl ItemsCrate {
         });
 
         // Insert system symbols
-        for (cr, crate_symbols) in iter_except_mut(crates, macro_cr_idx).zip(symbols) {
+        for (cr, crate_symbols) in crates.iter_mut().zip(symbols) {
             let mut mods = cr.iter_mods_mut();
             for mod_symbols in crate_symbols {
                 if let Some(m) = mods.next(cr) {
@@ -418,12 +422,8 @@ impl ItemsCrate {
             }
         }
 
-        // Get paths from each crate to every other crate
-        let paths = CratePaths::new(crates);
-        eprintln!("{paths:#?}");
-
         // Generate globals struct code
-        let globs = Codegen::globals(0, &items.globals, &paths);
+        let globs = Codegen::globals(0, &items.globals, &crates);
 
         // Generate components struct code
 
@@ -446,7 +446,8 @@ impl ItemsCrate {
                 // Create index file
                 fs::write(
                     temp_dir().join(INDEX),
-                    iter_except(&crates, macro_cr_idx)
+                    crates
+                        .iter()
                         .zip(code)
                         .enumerate()
                         .map_vec(|(i, (cr, code))| {
@@ -473,68 +474,6 @@ impl ItemsCrate {
             panic!("")
         }
 
-        // Add namespace mod to all crates except macro
-        // Must happen after the dependencies are set
-        // let end = end(&crates, 1);
-        // for cr in crates[..end].iter_mut() {
-        //     cr.add_namespace_mod()
-        // }
-
-        // Skip macros crate
-
-        // Pass 1: Add symbols
-        // Step 1.1: Parse component set macro calls
-        // let components_path = paths.get_macro(MacroPaths::Components);
-        // let comp_sets = iter_except(crates, macro_cr_idx)
-        //     .map(|cr| parse_macro_calls(components_path, &cr.main, cr, crates))
-        //     .collect::<Vec<_>>();
-
-        // // Step 1.2: Update mods with component sets
-        // let component_sets = iter_except_mut(crates, macro_cr_idx)
-        //     .zip(comp_sets)
-        //     .map(|(cr, comp_sets)| update_macro_calls(comp_sets, &mut cr.main))
-        //     .collect::<Vec<_>>();
-
-        // Pass 2: Resolve all paths to cannonical forms
-        //     Prereq: All symbols must be added
-        // Step 2.1: Resolve components, globals, events, and systems
-        // let mut items = iter_except(crates, macro_cr_idx)
-        //     .map(|cr| {
-        //         let mut item = ItemsCrate::new(cr, &paths, &crates);
-        //         // Macros crate must be included as a dependency to resolve macro calls
-        //         item.resolve_items(cr, &cr.main, &paths, &crates);
-        //         // Remove macros crate as crate dependency
-        //         item.remove_macros_crate(paths);
-        //         item
-        //     })
-        //     .collect();
-
-        // // Step 2.2: Add traits
-        // Self::add_traits(&mut items);
-
-        // // Pass 3: Validate all items
-        // // Step 3.1: Validate component sets with components
-        // //     Prereq: All components must be added
-        // let component_sets = component_sets
-        //     .map_vec(|cs_vec| cs_vec.map_vec(|cs| component_set::ComponentSet::parse(cs, &items)));
-        // for (item, cs) in items.iter_mut().zip(component_sets) {
-        //     item.component_sets = cs;
-        // }
-
-        // Step 3.2: Validate system args
-        //     Prereq: All components, globals, events, and component sets must be added
-
-        // items
         Vec::new()
-    }
-
-    fn remove_macros_crate(&mut self, paths: &Paths) {
-        if let Some(i) = self
-            .dependencies
-            .iter()
-            .position(|d| d.cr_idx == paths.get_cr_idx(Crates::Macros))
-        {
-            self.dependencies.swap_remove(i);
-        }
     }
 }
