@@ -4,6 +4,7 @@ use shared::util::{JoinMap, JoinMapInto};
 
 use crate::{
     codegen2::{idents::CodegenIdents, util::vec_to_path},
+    match_ok,
     resolve::{
         constants::global_var,
         util::{CombineMsgs, MsgsResult},
@@ -12,6 +13,34 @@ use crate::{
 };
 
 use super::{Codegen, Crates};
+
+struct CodegenArgs {
+    struct_name: syn::Ident,
+    vars: Vec<syn::Ident>,
+    types: Vec<syn::Path>,
+}
+
+fn codegen(
+    CodegenArgs {
+        struct_name,
+        vars,
+        types,
+    }: CodegenArgs,
+) -> TokenStream {
+    quote!(
+        pub struct #struct_name {
+            #(#vars: #types),*
+        }
+
+        impl #struct_name {
+            pub new() -> Self {
+                Self {
+                    #(#vars: #types::new()),*
+                }
+            }
+        }
+    )
+}
 
 impl Codegen {
     pub fn globals(
@@ -25,20 +54,12 @@ impl Codegen {
             .map_vec(|g| crates.get_path(cr_idx, &g.path).map(|v| vec_to_path(v)))
             .combine_msgs();
 
-        types.map(|types| {
-            quote!(
-                pub struct #struct_name {
-                    #(#vars: #types),*
-                }
-
-                impl #struct_name {
-                    pub new() -> Self {
-                        Self {
-                            #(#vars: #types::new()),*
-                        }
-                    }
-                }
-            )
+        match_ok!(types, {
+            codegen(CodegenArgs {
+                struct_name,
+                vars,
+                types,
+            })
         })
     }
 }

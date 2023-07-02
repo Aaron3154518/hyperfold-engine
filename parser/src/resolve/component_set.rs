@@ -9,7 +9,7 @@ use crate::{
         AstCrate, DiscardSymbol, MatchSymbol, ModInfo, SymbolType, {AstMod, Symbol},
     },
     resolve::path::resolve_path,
-    resolve::util::{CombineMsgs, MsgResult, MsgsResult, ToMsgsResult, ZipMsgs},
+    resolve::util::{CombineMsgs, MsgResult, MsgsResult, ToMsgsResult},
 };
 
 use super::{
@@ -17,6 +17,7 @@ use super::{
     labels::SymbolMap,
     parse_macro_call::ParseMacroCall,
     path::{ItemPath, ResolveResultTrait},
+    util::Zip2Msgs,
 };
 
 macro_rules! err {

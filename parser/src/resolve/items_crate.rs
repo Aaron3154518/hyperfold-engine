@@ -2,13 +2,13 @@ use std::{collections::VecDeque, env::temp_dir, fs, path::PathBuf};
 
 use crate::{
     codegen2::{Codegen, Crates},
-    // codegen::component_set::{self},
+    match_ok,
     parse::{
         AstCrate, AstMod, AstUse, DiscardSymbol, HardcodedSymbol, MatchSymbol, Symbol, SymbolType,
     },
     resolve::{
         constants::{INDEX, INDEX_SEP, NAMESPACE},
-        util::ToMsgsResult,
+        util::{ToMsgsResult, Zip2Msgs},
     },
     resolve::{
         function_arg::{FnArg, FnArgType},
@@ -423,9 +423,10 @@ impl ItemsCrate {
         }
 
         // Generate globals struct code
-        let globs = Codegen::globals(0, &items.globals, &crates);
+        let globals = Codegen::globals(0, &items.globals, &crates);
 
         // Generate components struct code
+        let components = Codegen::components(0, &items.components, &crates);
 
         // Generate events struct/enum code
 
@@ -436,38 +437,19 @@ impl ItemsCrate {
         // Generate app struct
 
         // Write codegen to file
-        match globs {
-            Ok(globs) => {
-                let code = vec![globs.to_string(), String::new()];
-
-                let out =
-                    PathBuf::from(std::env::var("OUT_DIR").expect("No out directory specified"));
-
-                // Create index file
-                fs::write(
-                    temp_dir().join(INDEX),
-                    crates
-                        .iter()
-                        .zip(code)
-                        .enumerate()
-                        .map_vec(|(i, (cr, code))| {
-                            // Write to file
-                            let file = out.join(format!("{}.rs", i));
-                            fs::write(file.to_owned(), code)
-                                .catch(format!("Could not write to: {}", file.display()));
-                            format!(
-                                "{}{}{}",
-                                cr.dir.to_string_lossy().to_string(),
-                                INDEX_SEP,
-                                file.display()
-                            )
-                        })
-                        .join("\n"),
-                )
-                .catch(format!("Could not write to index file: {INDEX}"))
-            }
-            Err(err) => errs.extend(err),
-        }
+        match_ok!(
+            globals,
+            components,
+            {
+                write_codegen(CodegenArgs {
+                    crates,
+                    globals,
+                    components,
+                })
+            },
+            err,
+            { errs.extend(err) }
+        );
 
         if !errs.is_empty() {
             eprintln!("{}", errs.join("\n"));
@@ -476,4 +458,48 @@ impl ItemsCrate {
 
         Vec::new()
     }
+}
+
+struct CodegenArgs<'a> {
+    crates: &'a Crates,
+    globals: TokenStream,
+    components: TokenStream,
+}
+
+fn write_codegen<'a>(
+    CodegenArgs {
+        crates,
+        globals,
+        components,
+    }: CodegenArgs<'a>,
+) {
+    let code = vec![
+        format!("{}\n{}", globals.to_string(), components.to_string()),
+        String::new(),
+    ];
+
+    let out = PathBuf::from(std::env::var("OUT_DIR").expect("No out directory specified"));
+
+    // Create index file
+    fs::write(
+        temp_dir().join(INDEX),
+        crates
+            .iter()
+            .zip(code)
+            .enumerate()
+            .map_vec(|(i, (cr, code))| {
+                // Write to file
+                let file = out.join(format!("{}.rs", i));
+                fs::write(file.to_owned(), code)
+                    .catch(format!("Could not write to: {}", file.display()));
+                format!(
+                    "{}{}{}",
+                    cr.dir.to_string_lossy().to_string(),
+                    INDEX_SEP,
+                    file.display()
+                )
+            })
+            .join("\n"),
+    )
+    .catch(format!("Could not write to index file: {INDEX}"))
 }

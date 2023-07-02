@@ -50,10 +50,12 @@ impl<T> CombineMsgs<Vec<T>> for Vec<MsgsResult<T>> {
 
 macro_rules! msgs_zip {
     (($tr: ident), ($v0: ident, $vn: ident)) => {
+        #[allow(non_snake_case)]
         pub trait $tr<$v0, $vn> {
             fn zip(self, $vn: MsgsResult<$vn>) -> MsgsResult<($v0, $vn)>;
         }
 
+        #[allow(non_snake_case)]
         impl<$v0, $vn> $tr<$v0, $vn> for MsgsResult<$v0> {
             fn zip(self, $vn: MsgsResult<$vn>) -> MsgsResult<($v0, $vn)> {
                 match (self, $vn) {
@@ -68,11 +70,13 @@ macro_rules! msgs_zip {
     (($tr: ident, $tr1: ident $(,$trs: ident)*), ($v0: ident, $vn: ident, $vn1: ident $(,$vs: ident)*)) => {
         msgs_zip!(($tr1 $(,$trs)*), ($v0, $vn1 $(,$vs)*));
 
+        #[allow(non_snake_case)]
         pub trait $tr<$v0 $(,$vs)*, $vn1, $vn> {
             fn zip(self $(,$vs: MsgsResult<$vs>)*, $vn1: MsgsResult<$vn1>, $vn: MsgsResult<$vn>)
                 -> MsgsResult<($v0 $(,$vs)*, $vn1, $vn)>;
         }
 
+        #[allow(non_snake_case)]
         impl<$v0 $(,$vs)*, $vn1, $vn> $tr<$v0 $(,$vs)*, $vn1, $vn> for MsgsResult<$v0> {
             fn zip(self $(,$vs: MsgsResult<$vs>)*, $vn1: MsgsResult<$vn1>, $vn: MsgsResult<$vn>)
                 -> MsgsResult<($v0 $(,$vs)*, $vn1, $vn)> {
@@ -92,8 +96,26 @@ msgs_zip!(
 );
 
 #[macro_export]
-macro_rules! zip_msgs {
-    ($v0: ident $(,$vs: ident)*, $body: block) => {
-        $v0.zip($($vs),*).map(|($v0 $(,$vs)*)| $body)
+macro_rules! match_ok {
+    ($v: ident, $ok: block) => {
+        $v.map(|$v| $ok)
+    };
+
+    ($v: ident, $ok: block, $e: ident, $err: block) => {
+        match $v {
+            Ok(v) => Ok($ok),
+            Err($e) => Err($err),
+        }
+    };
+
+    ($v0: ident $(,$vs: ident)*, $ok: block) => {
+        $v0.zip($($vs),*).map(|($v0 $(,$vs)*)| $ok)
+    };
+
+    ($v0: ident $(,$vs: ident)*, $ok: block, $e: ident, $err: block) => {
+        match $v0.zip($($vs),*) {
+            Ok(($v0 $(,$vs)*)) => Ok($ok),
+            Err($e) => Err($err)
+        }
     };
 }

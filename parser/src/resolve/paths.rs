@@ -35,8 +35,8 @@ pub trait GetPaths {
     fn get_path(&self) -> Vec<&str>;
 
     fn full_path(&self) -> Vec<String> {
-        self.get_path()
-            .push_into(self.get_ident())
+        [vec!["crate"], self.get_path().push_into(self.get_ident())]
+            .concat()
             .map_vec(|s| s.to_string())
     }
 }

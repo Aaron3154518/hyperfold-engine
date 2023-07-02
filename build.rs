@@ -140,11 +140,11 @@ pub fn main() {
 
     if let Err(e) = panic::catch_unwind(|| {
         // TODO: hardcoded
-        let (mut crates, paths) = AstCrate::parse(PathBuf::from("../"));
+        let mut crates = AstCrate::parse(PathBuf::from("../"));
 
         // eprintln!("{crates:#?}");
 
-        let mut items = ItemsCrate::parse(&paths, &mut crates);
+        let mut items = ItemsCrate::parse(&mut crates);
 
         // eprintln!("{items:#?}");
 
