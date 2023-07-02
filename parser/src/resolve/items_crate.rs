@@ -1,14 +1,14 @@
 use std::{collections::VecDeque, env::temp_dir, fs, path::PathBuf};
 
 use crate::{
-    codegen2::{Codegen, Crates},
+    codegen2::{self as codegen, Crates, Traits},
     match_ok,
     parse::{
         AstCrate, AstMod, AstUse, DiscardSymbol, HardcodedSymbol, MatchSymbol, Symbol, SymbolType,
     },
     resolve::{
         constants::{INDEX, INDEX_SEP, NAMESPACE},
-        util::{CombineMsgs, ToMsgsResult, Zip4Msgs},
+        util::{CombineMsgs, ToMsgsResult, Zip2Msgs, Zip4Msgs, Zip5Msgs, Zip6Msgs},
     },
     resolve::{
         function_arg::{FnArg, FnArgType},
@@ -24,7 +24,9 @@ use shared::util::{
 };
 
 use shared::parse_args::{ComponentMacroArgs, GlobalMacroArgs, SystemMacroArgs};
-use syn::{parenthesized, parse_macro_input, spanned::Spanned, Error, PatType, Token};
+use syn::{
+    parenthesized, parse_macro_input, spanned::Spanned, token::Trait, Error, PatType, Token,
+};
 
 use super::{
     component_set::ComponentSet,
@@ -203,13 +205,16 @@ impl ItemsCrate {
         let mut errs = Vec::new();
         let mut items = Items::new();
 
+        let main_cr_idx = crates.get_crate_index(Crate::Main);
+        let macro_cr_idx = crates.get_crate_index(Crate::Macros);
+
         // Insert hardcoded symbols
         for sym in HardcodedSymbol::VARIANTS {
             AstCrate::add_hardcoded_symbol(crates, sym)
         }
 
         // Resolve components, globals, and events
-        let symbols = crates.iter().map_vec(|cr| {
+        let symbols = crates.iter_except([macro_cr_idx]).map_vec(|cr| {
             cr.iter_mods().map_vec(|m| {
                 m.items
                     .structs
@@ -269,7 +274,7 @@ impl ItemsCrate {
         });
 
         // Insert components, globals, and events
-        for (cr, crate_symbols) in crates.iter_mut().zip(symbols) {
+        for (cr, crate_symbols) in crates.iter_except_mut([macro_cr_idx]).zip(symbols) {
             let mut mods = cr.iter_mods_mut();
             for mod_symbols in crate_symbols {
                 if let Some(m) = mods.next(cr) {
@@ -279,7 +284,7 @@ impl ItemsCrate {
         }
 
         // Resolve component sets
-        let symbols = crates.iter().map_vec(|cr| {
+        let symbols = crates.iter_except([macro_cr_idx]).map_vec(|cr| {
             cr.iter_mods().map_vec(|m| {
                 m.items.macro_calls.filter_map_vec(|call| {
                     resolve_path(call.path.to_vec(), (m, cr, crates.get_crates()))
@@ -310,7 +315,7 @@ impl ItemsCrate {
         });
 
         // Insert component set symbols
-        for (cr, crate_symbols) in crates.iter_mut().zip(symbols) {
+        for (cr, crate_symbols) in crates.iter_except_mut([macro_cr_idx]).zip(symbols) {
             let mut mods = cr.iter_mods_mut();
             for mod_symbols in crate_symbols {
                 if let Some(m) = mods.next(cr) {
@@ -320,7 +325,7 @@ impl ItemsCrate {
         }
 
         // Insert namespace mod
-        for cr in crates.iter_mut() {
+        for cr in crates.iter_except_mut([macro_cr_idx]) {
             let path = cr.main.path.to_vec();
             // Traits
             let uses = cr
@@ -349,7 +354,7 @@ impl ItemsCrate {
                 },
                 args: GlobalMacroArgs::from(&Vec::new()),
             });
-            for cr in crates.iter_mut() {
+            for cr in crates.iter_except_mut([macro_cr_idx]) {
                 let idx = items.globals.len() - 1;
                 // Add globals to entry crates
                 if cr.idx == 0 {
@@ -369,7 +374,7 @@ impl ItemsCrate {
         }
 
         // Resolve systems
-        let symbols = crates.iter().map_vec(|cr| {
+        let symbols = crates.iter_except([macro_cr_idx]).map_vec(|cr| {
             cr.iter_mods().map_vec(|m| {
                 m.items.functions.iter().filter_map_vec(|fun| {
                     fun.data.attrs.iter().find_map(|attr| {
@@ -413,7 +418,7 @@ impl ItemsCrate {
         });
 
         // Insert system symbols
-        for (cr, crate_symbols) in crates.iter_mut().zip(symbols) {
+        for (cr, crate_symbols) in crates.iter_except_mut([macro_cr_idx]).zip(symbols) {
             let mut mods = cr.iter_mods_mut();
             for mod_symbols in crate_symbols {
                 if let Some(m) = mods.next(cr) {
@@ -422,23 +427,40 @@ impl ItemsCrate {
             }
         }
 
-        let main_cr_idx = crates.get_crate_index(Crate::Main);
+        // Generate globals struct
+        let globals = codegen::globals(main_cr_idx, &items.globals, crates);
 
-        // Generate globals struct code
-        let globals = Codegen::globals(main_cr_idx, &items.globals, crates);
+        // Generate components struct
+        let components = codegen::components(main_cr_idx, &items.components, crates);
 
-        // Generate components struct code
-        let components = Codegen::components(main_cr_idx, &items.components, crates);
-
-        // Generate component traits
+        // Generate component trait implementations
         let component_traits =
-            Codegen::component_trait_impls(main_cr_idx, &items.components, crates);
-        let comp_trait_defs = crates
-            .iter()
-            .map_vec(|cr| Codegen::component_trait_defs(cr.idx, &items.components, crates))
-            .combine_msgs();
+            codegen::component_trait_impls(main_cr_idx, &items.components, crates);
 
-        // Generate events struct/enum code
+        // Generate events enum
+        let events_enum = codegen::events_enum(&items.events);
+
+        // Generate events struct
+        let events = codegen::events(main_cr_idx, &items.events, crates);
+
+        // Generate event trait implementations
+        let event_traits = codegen::event_trait_impls(main_cr_idx, &items.events, crates);
+
+        // Generate event/component traits
+        let trait_defs = crates
+            .iter_except([macro_cr_idx])
+            .map_vec(|cr| {
+                let add_event = codegen::event_trait_defs(cr.idx, &items.events, crates);
+                let add_component =
+                    codegen::component_trait_defs(cr.idx, &items.components, crates);
+                match_ok!(Zip2Msgs, add_event, add_component, {
+                    Traits {
+                        add_event,
+                        add_component,
+                    }
+                })
+            })
+            .combine_msgs();
 
         // Generate component set code for building vectors
 
@@ -448,18 +470,23 @@ impl ItemsCrate {
 
         // Write codegen to file
         match_ok!(
-            Zip4Msgs,
+            Zip6Msgs,
             globals,
             components,
             component_traits,
-            comp_trait_defs,
+            events,
+            event_traits,
+            trait_defs,
             {
                 write_codegen(CodegenArgs {
                     crates,
                     globals,
                     components,
                     component_traits,
-                    comp_trait_defs,
+                    events_enum,
+                    events,
+                    event_traits,
+                    trait_defs,
                 })
             },
             err,
@@ -480,7 +507,10 @@ struct CodegenArgs<'a> {
     globals: TokenStream,
     components: TokenStream,
     component_traits: TokenStream,
-    comp_trait_defs: Vec<TokenStream>,
+    events_enum: TokenStream,
+    events: TokenStream,
+    event_traits: TokenStream,
+    trait_defs: Vec<Traits>,
 }
 
 fn write_codegen<'a>(
@@ -489,23 +519,31 @@ fn write_codegen<'a>(
         globals,
         components,
         component_traits,
-        comp_trait_defs,
+        events_enum,
+        events,
+        event_traits,
+        trait_defs,
     }: CodegenArgs<'a>,
 ) {
     let main_cr_idx = crates.get_crate_index(Crate::Main);
-    let mut code = comp_trait_defs.enumerate_map_vec(|(cr_idx, comp_trait_defs)| {
-        if cr_idx == main_cr_idx {
-            format!(
-                "{}\n{}\n{}\n{}",
-                globals.to_string(),
-                components.to_string(),
-                component_traits.to_string(),
-                comp_trait_defs.to_string()
-            )
-        } else {
-            comp_trait_defs.to_string()
-        }
-    });
+    let mut code = trait_defs.enumerate_map_vec(
+        |(
+            cr_idx,
+            Traits {
+                add_event,
+                add_component,
+            },
+        )| {
+            if cr_idx == main_cr_idx {
+                format!(
+                    "{globals}\n{components}\n{add_component}\n{component_traits}\
+                    \n{events_enum}\n{events}\n{add_event}\n{event_traits}"
+                )
+            } else {
+                format!("{add_component}\n{add_event}")
+            }
+        },
+    );
 
     let out = PathBuf::from(std::env::var("OUT_DIR").expect("No out directory specified"));
 

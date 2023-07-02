@@ -212,6 +212,13 @@ pub trait JoinMap<'a, T: 'a> {
     {
         self.get_iter().unzip_vec(f)
     }
+
+    fn enumerate_unzip_vec<U, V, F>(&'a self, f: F) -> (Vec<U>, Vec<V>)
+    where
+        F: FnMut((usize, &'a T)) -> (U, V),
+    {
+        self.get_enumerate().unzip_vec(f)
+    }
 }
 
 impl<'a, T: 'a> JoinMap<'a, T> for Vec<T> {

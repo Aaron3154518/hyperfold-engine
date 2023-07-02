@@ -62,17 +62,23 @@ impl Crates {
         min_cr.map(|(_, path)| path)
     }
 
-    // Create crate paths
-    pub fn get_crate_paths(&self, cr_idx: usize) -> Option<Vec<(usize, Vec<String>)>> {
+    pub fn get_crate_paths<const N: usize>(
+        &self,
+        cr_idx: usize,
+        block_crates: [usize; N],
+    ) -> Option<Vec<(usize, Vec<String>)>> {
+        let macros_cr_idx = self.get_crate_index(Crate::Macros);
         (&self.paths as &[Vec<Option<Vec<String>>>])
             .get(cr_idx)
             .map(|v| {
                 v.enumerate_filter_map_vec(|(i, path)| {
-                    (i != cr_idx).and_then(|| path.as_ref().map(|path| (i, path.to_vec())))
+                    (!block_crates.contains(&i))
+                        .and_then(|| path.as_ref().map(|path| (i, path.to_vec())))
                 })
             })
     }
 
+    // Create crate paths
     pub fn get_crate_path(&self, start_idx: usize, end_idx: usize) -> Option<Vec<String>> {
         self.paths.get(start_idx, end_idx).and_then(|v| v.clone())
     }
@@ -130,20 +136,32 @@ impl Crates {
     }
 
     pub fn iter<'a>(&'a self) -> impl Iterator<Item = &'a AstCrate> {
-        let macros_cr_idx = self.get_crate_index(Crate::Macros);
+        self.crates.iter()
+    }
+
+    pub fn iter_except<'a, const N: usize>(
+        &'a self,
+        block_crates: [usize; N],
+    ) -> impl Iterator<Item = &'a AstCrate> {
         self.crates
             .iter()
             .enumerate()
-            .filter(move |(i, _)| i != &macros_cr_idx)
+            .filter(move |(i, _)| !block_crates.contains(i))
             .map(|(_, v)| v)
     }
 
     pub fn iter_mut<'a>(&'a mut self) -> impl Iterator<Item = &'a mut AstCrate> {
-        let macros_cr_idx = self.get_crate_index(Crate::Macros);
+        self.crates.iter_mut()
+    }
+
+    pub fn iter_except_mut<'a, const N: usize>(
+        &'a mut self,
+        block_crates: [usize; N],
+    ) -> impl Iterator<Item = &'a mut AstCrate> {
         self.crates
             .iter_mut()
             .enumerate()
-            .filter(move |(i, _)| i != &macros_cr_idx)
+            .filter(move |(i, _)| !block_crates.contains(i))
             .map(|(_, v)| v)
     }
 }

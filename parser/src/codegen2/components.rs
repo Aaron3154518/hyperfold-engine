@@ -10,11 +10,11 @@ use crate::{
     resolve::{
         constants::component_var,
         util::{CombineMsgs, MsgsResult, ToMsgsResult, Zip2Msgs, Zip5Msgs},
-        EngineGlobals, EnginePaths, EngineTraits, GetPaths, ItemComponent,
+        Crate, EngineGlobals, EnginePaths, EngineTraits, GetPaths, ItemComponent,
     },
 };
 
-use super::{util::vec_to_path, Codegen, Crates};
+use super::{traits::trait_defs, util::vec_to_path, Codegen, Crates};
 
 struct CodegenArgs<'a> {
     struct_name: syn::Ident,
@@ -95,142 +95,131 @@ fn codegen<'a>(
     )
 }
 
-impl Codegen {
-    pub fn components(
-        cr_idx: usize,
-        components: &Vec<ItemComponent>,
-        crates: &Crates,
-    ) -> MsgsResult<TokenStream> {
-        let struct_name = CodegenIdents::CFoo.to_ident();
-        let vars = (0..components.len()).map_vec(|i| component_var(i));
-        let types = components
-            .map_vec(|c| crates.get_path(cr_idx, &c.path).map(|v| vec_to_path(v)))
-            .combine_msgs();
+pub fn components(
+    cr_idx: usize,
+    components: &Vec<ItemComponent>,
+    crates: &Crates,
+) -> MsgsResult<TokenStream> {
+    let struct_name = CodegenIdents::CFoo.to_ident();
+    let vars = (0..components.len()).map_vec(|i| component_var(i));
+    let types = components
+        .map_vec(|c| crates.get_path(cr_idx, &c.path).map(|v| vec_to_path(v)))
+        .combine_msgs();
 
-        let entity_set = crates
-            .path_from(cr_idx, EnginePaths::EntitySet)
-            .map(|v| vec_to_path(v))
-            .to_msg_vec();
-        let entity_trash = crates
-            .path_from(cr_idx, EngineGlobals::EntityTrash)
-            .map(|v| vec_to_path(v))
-            .to_msg_vec();
-        let entity_map = crates
-            .path_from(cr_idx, EnginePaths::EntityMap)
-            .map(|v| vec_to_path(v))
-            .to_msg_vec();
-        let singleton = crates
-            .path_from(cr_idx, EnginePaths::Singleton)
-            .map(|v| vec_to_path(v))
-            .to_msg_vec();
+    let entity_set = crates
+        .path_from(cr_idx, EnginePaths::EntitySet)
+        .map(|v| vec_to_path(v))
+        .to_msg_vec();
+    let entity_trash = crates
+        .path_from(cr_idx, EngineGlobals::EntityTrash)
+        .map(|v| vec_to_path(v))
+        .to_msg_vec();
+    let entity_map = crates
+        .path_from(cr_idx, EnginePaths::EntityMap)
+        .map(|v| vec_to_path(v))
+        .to_msg_vec();
+    let singleton = crates
+        .path_from(cr_idx, EnginePaths::Singleton)
+        .map(|v| vec_to_path(v))
+        .to_msg_vec();
 
-        match_ok!(
-            Zip5Msgs,
-            types,
-            entity_set,
-            entity_trash,
-            entity_map,
-            singleton,
-            {
-                codegen(CodegenArgs {
-                    struct_name,
-                    components,
-                    types,
-                    entity_set,
-                    entity_trash,
-                    entity_map,
-                    singleton,
-                })
+    match_ok!(
+        Zip5Msgs,
+        types,
+        entity_set,
+        entity_trash,
+        entity_map,
+        singleton,
+        {
+            codegen(CodegenArgs {
+                struct_name,
+                components,
+                types,
+                entity_set,
+                entity_trash,
+                entity_map,
+                singleton,
+            })
+        }
+    )
+}
+
+pub fn component_trait_defs(
+    cr_idx: usize,
+    components: &Vec<ItemComponent>,
+    crates: &Crates,
+) -> MsgsResult<TokenStream> {
+    trait_defs(
+        cr_idx,
+        crates,
+        components,
+        |c| &c.path,
+        CodegenIdents::AddComponent.to_ident(),
+        EngineTraits::AddComponent,
+    )
+}
+
+pub fn component_trait_impls(
+    cr_idx: usize,
+    components: &Vec<ItemComponent>,
+    crates: &Crates,
+) -> MsgsResult<TokenStream> {
+    let macro_cr_idx = crates.get_crate_index(Crate::Macros);
+
+    let types = components
+        .map_vec(|c| crates.get_path(cr_idx, &c.path).map(|v| vec_to_path(v)))
+        .combine_msgs();
+    let crate_paths = crates
+        .get_crate_paths(cr_idx, [macro_cr_idx])
+        .map(|v| v.into_iter().map_vec(|(i, path)| vec_to_path(path)))
+        .ok_or(vec![format!("Invalid crate index: {cr_idx}")]);
+
+    let struct_name = CodegenIdents::CFoo.to_ident();
+    let namespace = CodegenIdents::Namespace.to_ident();
+    let add_comp = CodegenIdents::AddComponent.to_ident();
+    let add_comp_trait = crates
+        .path_from(cr_idx, EngineTraits::AddComponent)
+        .map(|v| vec_to_path(v))
+        .to_msg_vec();
+    let entity = crates
+        .path_from(cr_idx, EnginePaths::Entity)
+        .map(|v| vec_to_path(v))
+        .to_msg_vec();
+    let singleton = crates
+        .path_from(cr_idx, EnginePaths::Singleton)
+        .map(|v| vec_to_path(v))
+        .to_msg_vec();
+
+    match_ok!(
+        Zip5Msgs,
+        types,
+        crate_paths,
+        add_comp_trait,
+        entity,
+        singleton,
+        {
+            let mut adds = Vec::new();
+            for (i, c) in components.iter().enumerate() {
+                let var = component_var(i);
+                adds.push(if c.args.is_singleton {
+                    quote!(self.#var = Some(#singleton::new(e, t)))
+                } else {
+                    quote!(self.#var.insert(e, t);)
+                });
             }
-        )
-    }
-
-    pub fn component_trait_defs(
-        cr_idx: usize,
-        components: &Vec<ItemComponent>,
-        crates: &Crates,
-    ) -> MsgsResult<TokenStream> {
-        let types = components.filter_map_vec(|c| {
-            (cr_idx == c.path.cr_idx).then(|| vec_to_path(c.path.path.to_vec()))
-        });
-
-        let add_comp = CodegenIdents::AddComponent.to_ident();
-        let add_comp_trait = crates
-            .path_from(cr_idx, EngineTraits::AddComponent)
-            .map(|v| vec_to_path(v))
-            .to_msg_vec();
-
-        add_comp_trait.map(|add_comp_trait| {
-            let traits = types.map_vec(|ty| quote!(#add_comp_trait<#ty>));
-            match traits.split_first() {
-                Some((first, tail)) => {
-                    quote!(pub trait #add_comp: #first #(+#tail)* {})
-                }
-                None => quote!(pub trait #add_comp {}),
-            }
-        })
-    }
-
-    pub fn component_trait_impls(
-        cr_idx: usize,
-        components: &Vec<ItemComponent>,
-        crates: &Crates,
-    ) -> MsgsResult<TokenStream> {
-        let types = components
-            .map_vec(|c| crates.get_path(cr_idx, &c.path).map(|v| vec_to_path(v)))
-            .combine_msgs();
-        let crate_paths = crates
-            .get_crate_paths(cr_idx)
-            .map(|v| v.into_iter().map_vec(|(_, path)| vec_to_path(path)))
-            .ok_or(vec![format!("Invalid crate index: {cr_idx}")]);
-
-        let struct_name = CodegenIdents::CFoo.to_ident();
-        let namespace = CodegenIdents::Namespace.to_ident();
-        let add_comp = CodegenIdents::AddComponent.to_ident();
-        let add_comp_trait = crates
-            .path_from(cr_idx, EngineTraits::AddComponent)
-            .map(|v| vec_to_path(v))
-            .to_msg_vec();
-        let entity = crates
-            .path_from(cr_idx, EnginePaths::Entity)
-            .map(|v| vec_to_path(v))
-            .to_msg_vec();
-        let singleton = crates
-            .path_from(cr_idx, EnginePaths::Singleton)
-            .map(|v| vec_to_path(v))
-            .to_msg_vec();
-
-        match_ok!(
-            Zip5Msgs,
-            types,
-            crate_paths,
-            add_comp_trait,
-            entity,
-            singleton,
-            {
-                let mut adds = Vec::new();
-                for (i, c) in components.iter().enumerate() {
-                    let var = component_var(i);
-                    adds.push(if c.args.is_singleton {
-                        quote!(self.#var = Some(#singleton::new(e, t)))
-                    } else {
-                        quote!(self.#var.insert(e, t);)
-                    });
-                }
-                quote!(
-                    #(
-                        impl #add_comp_trait<#types> for #struct_name {
-                            fn add_component(&mut self, e: #entity, t: #types) {
-                                self.eids.insert(e);
-                                #adds
-                            }
+            quote!(
+                #(
+                    impl #add_comp_trait<#types> for #struct_name {
+                        fn add_component(&mut self, e: #entity, t: #types) {
+                            self.eids.insert(e);
+                            #adds
                         }
-                    )*
-                    #(
-                        impl #crate_paths::#namespace::#add_comp for #struct_name {}
-                    )*
-                )
-            }
-        )
-    }
+                    }
+                )*
+                #(
+                    impl #crate_paths::#namespace::#add_comp for #struct_name {}
+                )*
+            )
+        }
+    )
 }
