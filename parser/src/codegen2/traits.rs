@@ -42,7 +42,7 @@ where
         .get(cr_idx)
         .ok_or(vec![format!("Invalid crate index: {cr_idx}")])
         .map(|cr| {
-            cr.deps.iter().map_vec(|(idx, alias)| {
+            cr.deps.iter().map_vec_into(|(idx, alias)| {
                 let alias = format_ident!("{alias}");
                 quote!(#alias::#namespace::#trait_ident)
             })

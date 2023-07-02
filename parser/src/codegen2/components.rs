@@ -101,7 +101,7 @@ pub fn components(
     crates: &Crates,
 ) -> MsgsResult<TokenStream> {
     let struct_name = CodegenIdents::CFoo.to_ident();
-    let vars = (0..components.len()).map_vec(|i| component_var(i));
+    let vars = (0..components.len()).map_vec_into(|i| component_var(i));
     let types = components
         .map_vec(|c| {
             crates
@@ -179,7 +179,7 @@ pub fn component_trait_impls(
         .combine_msgs();
     let crate_paths = crates
         .get_crate_paths(cr_idx, [macro_cr_idx])
-        .map(|v| v.into_iter().map_vec(|(i, path)| vec_to_path(path)))
+        .map(|v| v.into_iter().map_vec_into(|(i, path)| vec_to_path(path)))
         .ok_or(vec![format!("Invalid crate index: {cr_idx}")]);
 
     let struct_name = CodegenIdents::CFoo.to_ident();

@@ -3,6 +3,7 @@ use std::{
     ops::{Add, AddAssign},
     slice::Iter,
     str::pattern::Pattern,
+    vec::IntoIter,
 };
 
 extern crate alloc;
@@ -104,56 +105,60 @@ unzip!(
 );
 
 // Trait for mapping Vec elements to strings and joining them
-
-pub trait JoinMapInto<T> {
-    fn map_vec<U, F>(self, f: F) -> Vec<U>
-    where
-        F: FnMut(T) -> U;
-
-    fn filter_map_vec<U, F>(self, f: F) -> Vec<U>
-    where
-        F: FnMut(T) -> Option<U>;
-
-    fn join_map<F>(self, f: F, sep: &str) -> String
-    where
-        F: FnMut(T) -> String;
-
-    fn unzip_vec<U, V, F>(self, f: F) -> (Vec<U>, Vec<V>)
-    where
-        F: FnMut(T) -> (U, V);
-}
-
-impl<'a, T, I> JoinMapInto<T> for I
+pub trait JoinMapInto<T, I: Iterator<Item = T>>
 where
-    T: 'a,
-    I: Iterator<Item = T>,
+    Self: Sized,
 {
-    fn map_vec<U, F>(self, f: F) -> Vec<U>
+    fn get_iter_into(self) -> I;
+
+    fn filter_vec_into<F>(self, f: F) -> Vec<T>
+    where
+        F: FnMut(&T) -> bool,
+    {
+        self.get_iter_into().filter(f).collect()
+    }
+
+    fn map_vec_into<U, F>(self, f: F) -> Vec<U>
     where
         F: FnMut(T) -> U,
     {
-        self.map(f).collect()
+        self.get_iter_into().map(f).collect()
     }
 
-    fn filter_map_vec<U, F>(self, f: F) -> Vec<U>
+    fn filter_map_vec_into<U, F>(self, f: F) -> Vec<U>
     where
         F: FnMut(T) -> Option<U>,
     {
-        self.filter_map(f).collect()
+        self.get_iter_into().filter_map(f).collect()
     }
 
-    fn join_map<F>(self, f: F, sep: &str) -> String
+    fn join_map_into<F>(self, f: F, sep: &str) -> String
     where
         F: FnMut(T) -> String,
     {
-        self.map_vec(f).join(sep)
+        self.get_iter_into().map_vec_into(f).join(sep)
     }
 
-    fn unzip_vec<U, V, F>(self, f: F) -> (Vec<U>, Vec<V>)
+    fn unzip_vec_into<U, V, F>(self, f: F) -> (Vec<U>, Vec<V>)
     where
         F: FnMut(T) -> (U, V),
     {
-        self.map(f).unzip()
+        self.get_iter_into().map(f).unzip()
+    }
+}
+
+impl<T, I> JoinMapInto<T, Self> for I
+where
+    I: Iterator<Item = T>,
+{
+    fn get_iter_into(self) -> Self {
+        self
+    }
+}
+
+impl<T> JoinMapInto<T, IntoIter<T>> for Vec<T> {
+    fn get_iter_into(self) -> IntoIter<T> {
+        self.into_iter()
     }
 }
 
@@ -168,28 +173,28 @@ pub trait JoinMap<'a, T: 'a> {
     where
         F: FnMut(&'a T) -> U,
     {
-        self.get_iter().map_vec(f)
+        self.get_iter().map_vec_into(f)
     }
 
     fn enumerate_map_vec<U, F>(&'a self, f: F) -> Vec<U>
     where
         F: FnMut((usize, &'a T)) -> U,
     {
-        self.get_enumerate().map_vec(f)
+        self.get_enumerate().map_vec_into(f)
     }
 
     fn filter_map_vec<U, F>(&'a self, f: F) -> Vec<U>
     where
         F: FnMut(&'a T) -> Option<U>,
     {
-        self.get_iter().filter_map_vec(f)
+        self.get_iter().filter_map_vec_into(f)
     }
 
     fn enumerate_filter_map_vec<U, F>(&'a self, f: F) -> Vec<U>
     where
         F: FnMut((usize, &'a T)) -> Option<U>,
     {
-        self.get_enumerate().filter_map_vec(f)
+        self.get_enumerate().filter_map_vec_into(f)
     }
 
     fn join_map<F>(&'a self, f: F, sep: &str) -> String
@@ -210,14 +215,14 @@ pub trait JoinMap<'a, T: 'a> {
     where
         F: FnMut(&'a T) -> (U, V),
     {
-        self.get_iter().unzip_vec(f)
+        self.get_iter().unzip_vec_into(f)
     }
 
     fn enumerate_unzip_vec<U, V, F>(&'a self, f: F) -> (Vec<U>, Vec<V>)
     where
         F: FnMut((usize, &'a T)) -> (U, V),
     {
-        self.get_enumerate().unzip_vec(f)
+        self.get_enumerate().unzip_vec_into(f)
     }
 }
 
@@ -474,23 +479,30 @@ impl<T> PushInto<T> for Vec<T> {
 
 // then_some for Result
 pub trait ThenOk<T, E> {
-    fn result(&self, t: T, e: E) -> Result<T, E>;
+    fn ok(&self, t: T, e: E) -> Result<T, E>;
 
-    fn then_result<Ft, Fe>(&self, t: Ft, e: Fe) -> Result<T, E>
+    fn then_ok<Ft, Fe>(&self, t: Ft, e: Fe) -> Result<T, E>
+    where
+        Ft: FnOnce() -> T,
+        Fe: FnOnce() -> E;
+
+    fn err(&self, e: E, t: T) -> Result<T, E>;
+
+    fn then_err<Ft, Fe>(&self, e: Fe, t: Ft) -> Result<T, E>
     where
         Ft: FnOnce() -> T,
         Fe: FnOnce() -> E;
 }
 
 impl<T, E> ThenOk<T, E> for bool {
-    fn result(&self, t: T, e: E) -> Result<T, E> {
+    fn ok(&self, t: T, e: E) -> Result<T, E> {
         match self {
             true => Ok(t),
             false => Err(e),
         }
     }
 
-    fn then_result<Ft, Fe>(&self, t: Ft, e: Fe) -> Result<T, E>
+    fn then_ok<Ft, Fe>(&self, t: Ft, e: Fe) -> Result<T, E>
     where
         Ft: FnOnce() -> T,
         Fe: FnOnce() -> E,
@@ -498,6 +510,24 @@ impl<T, E> ThenOk<T, E> for bool {
         match self {
             true => Ok(t()),
             false => Err(e()),
+        }
+    }
+
+    fn err(&self, e: E, t: T) -> Result<T, E> {
+        match self {
+            true => Err(e),
+            false => Ok(t),
+        }
+    }
+
+    fn then_err<Ft, Fe>(&self, e: Fe, t: Ft) -> Result<T, E>
+    where
+        Ft: FnOnce() -> T,
+        Fe: FnOnce() -> E,
+    {
+        match self {
+            true => Err(e()),
+            false => Ok(t()),
         }
     }
 }

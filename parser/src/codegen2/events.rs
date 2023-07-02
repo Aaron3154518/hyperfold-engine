@@ -18,7 +18,7 @@ pub fn events_enum(events: &Vec<ItemEvent>) -> TokenStream {
     let enum_name = CodegenIdents::E.to_ident();
     let num_variants_var = CodegenIdents::ELen.to_ident();
     let num_variants = events.len();
-    let variants = (0..events.len()).map_vec(|i| event_variant(i));
+    let variants = (0..events.len()).map_vec_into(|i| event_variant(i));
 
     quote!(
         #[derive(Hash, Clone, Copy, Eq, PartialEq, Debug)]
@@ -32,7 +32,7 @@ pub fn events_enum(events: &Vec<ItemEvent>) -> TokenStream {
 pub fn events(cr_idx: usize, events: &Vec<ItemEvent>, crates: &Crates) -> MsgsResult<TokenStream> {
     let struct_name = CodegenIdents::EFoo.to_ident();
     let enum_name = CodegenIdents::E.to_ident();
-    let (vars, variants) = (0..events.len()).unzip_vec(|i| (event_var(i), event_variant(i)));
+    let (vars, variants) = (0..events.len()).unzip_vec_into(|i| (event_var(i), event_variant(i)));
     let types = events
         .map_vec(|e| {
             crates
@@ -111,7 +111,7 @@ pub fn event_trait_impls(
 ) -> MsgsResult<TokenStream> {
     let macro_cr_idx = crates.get_crate_index(Crate::Macros);
 
-    let (vars, variants) = (0..events.len()).unzip_vec(|i| (event_var(i), event_variant(i)));
+    let (vars, variants) = (0..events.len()).unzip_vec_into(|i| (event_var(i), event_variant(i)));
 
     // Implement trait for every event
     let types = events
@@ -124,7 +124,7 @@ pub fn event_trait_impls(
     // Implement all dependency traits
     let crate_paths = crates
         .get_crate_paths(cr_idx, [macro_cr_idx])
-        .map(|v| v.into_iter().map_vec(|(i, path)| vec_to_path(path)))
+        .map(|v| v.into_iter().map_vec_into(|(i, path)| vec_to_path(path)))
         .ok_or(vec![format!("Invalid crate index: {cr_idx}")]);
 
     let struct_name = CodegenIdents::EFoo.to_ident();

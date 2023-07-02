@@ -7,7 +7,7 @@ use std::{
 use quote::ToTokens;
 use shared::{
     parse_args::SystemMacroArgs,
-    util::{Call, Catch, JoinMap, PushInto, ThenOk},
+    util::{Call, Catch, JoinMap, JoinMapInto, PushInto, ThenOk},
 };
 use syn::parse::Lookahead1;
 
@@ -27,9 +27,39 @@ use super::{
     labels::MustBe,
     path::{resolve_syn_path, ResolveResultTrait},
     paths::GetPaths,
+    util::{CombineMsgs, MsgResult, MsgTrait, ToMsgsResult, Zip2Msgs},
+    ItemEvent, ItemSystem,
 };
 
-struct ComponentRefTracker {
+pub struct EventFnArg {
+    pub arg_idx: usize,
+    pub idx: usize,
+}
+
+pub struct GlobalFnArg {
+    pub arg_idx: usize,
+    pub idx: usize,
+    pub is_mut: bool,
+}
+
+pub struct ComponentSetFnArg {
+    pub arg_idx: usize,
+    pub idx: usize,
+    pub is_vec: bool,
+}
+
+pub enum FnArgs {
+    Init {
+        globals: Vec<GlobalFnArg>,
+    },
+    System {
+        event: EventFnArg,
+        globals: Vec<GlobalFnArg>,
+        component_sets: Vec<ComponentSetFnArg>,
+    },
+}
+
+pub struct ComponentRefTracker {
     mut_refs: Vec<String>,
     immut_refs: Vec<String>,
 }
@@ -55,214 +85,240 @@ impl ComponentRefTracker {
         }
     }
 
-    pub fn validate(&self, comp_name: String, errs: &mut Vec<String>) {
+    pub fn validate(&self, comp_name: String) -> MsgsResult<()> {
         let (mut_cnt, immut_cnt) = (self.mut_refs.len(), self.immut_refs.len());
 
-        if mut_cnt > 1 {
-            errs.push(format!("Multiple mutable references to '{comp_name}'"));
-        }
-
-        if mut_cnt > 0 && immut_cnt > 0 {
-            errs.push(format!("Mutable and immutable references to '{comp_name}'"));
-        }
-
-        if mut_cnt > 1 || (mut_cnt > 0 && immut_cnt > 0) {
-            self.note(errs)
-        }
-    }
-
-    pub fn note(&self, errs: &mut Vec<String>) {
-        if !self.mut_refs.is_empty() {
-            errs.push(format!(
-                "{TAB}Mutable references in '{}'",
-                self.mut_refs.join("', '")
-            ));
-        }
-
-        if !self.immut_refs.is_empty() {
-            errs.push(format!(
-                "{TAB}Immutable references in '{}'",
-                self.immut_refs.join("', '")
-            ));
-        }
-    }
-}
-
-pub struct SystemValidate {
-    pub errs: Vec<String>,
-    attrs: SystemMacroArgs,
-    components: HashMap<usize, ComponentRefTracker>,
-    globals: HashSet<usize>,
-    event: Option<usize>,
-}
-
-impl SystemValidate {
-    pub fn new(attrs: SystemMacroArgs) -> Self {
-        Self {
-            errs: Vec::new(),
-            attrs,
-            components: HashMap::new(),
-            globals: HashSet::new(),
-            event: None,
-        }
-    }
-
-    pub fn validate(&mut self, path: String, items: &Items) -> Vec<String> {
-        for (i, refs) in self.components.iter() {
-            let c = match items.components.get(*i) {
-                Some(c) => c,
-                None => {
-                    self.errs.push(format!("Invalid Component index: {i}"));
-                    continue;
+        (mut_cnt > 1)
+            .err(format!("Multiple mutable references to '{comp_name}'"), ())
+            .and_msg((mut_cnt > 0 && immut_cnt > 0).err(
+                format!("Mutable and immutable references to '{comp_name}'"),
+                (),
+            ))
+            .map_err(|mut errs| {
+                if !self.mut_refs.is_empty() {
+                    errs.push(format!(
+                        "{TAB}Mutable references in '{}'",
+                        self.mut_refs.join("', '")
+                    ));
                 }
-            };
-            refs.validate(c.path.path.join("::"), &mut self.errs);
-        }
 
-        if !self.attrs.is_init {
-            if !self.has_event {
-                self.errs
-                    .push("Non-init systems must specify an event".to_string());
-            }
-        }
+                if !self.immut_refs.is_empty() {
+                    errs.push(format!(
+                        "{TAB}Immutable references in '{}'",
+                        self.immut_refs.join("', '")
+                    ));
+                }
+                errs
+            })
+    }
+}
 
-        if !self.errs.is_empty() {
-            self.errs.insert(0, format!("In system: '{path}':"));
+impl ItemSystem {
+    pub fn validate(&self, items: &Items) -> MsgsResult<FnArgs> {
+        let mut global_idxs = HashSet::new();
+
+        if self.attr_args.is_init {
+            self.args
+                .enumerate_map_vec(|(arg_idx, arg)| match &arg.ty {
+                    FnArgType::Global(idx) => {
+                        Self::validate_global(arg, *idx, &mut global_idxs, items).map(|_| {
+                            GlobalFnArg {
+                                arg_idx,
+                                idx: *idx,
+                                is_mut: arg.is_mut,
+                            }
+                        })
+                    }
+                    FnArgType::Event(_) | FnArgType::Entities { .. } => Err(vec![format!(
+                        "Init systems may not contain {}: {arg}",
+                        arg.ty
+                    )]),
+                })
+                .combine_msgs()
+                .map(|globals| FnArgs::Init { globals })
+        } else {
+            let mut component_refs = HashMap::new();
+
+            let mut event = None;
+            let mut globals = Vec::new();
+            let mut component_sets = Vec::new();
+            self.args
+                .enumerate_map_vec(|(arg_idx, arg)| match &arg.ty {
+                    FnArgType::Event(idx) => match event {
+                        Some(_) => Err(vec![format!("Multiple events specified: {arg}")]),
+                        None => Self::validate_event(arg, *idx, items)
+                            .map(|_| event = Some(EventFnArg { arg_idx, idx: *idx })),
+                    },
+                    FnArgType::Global(idx) => {
+                        Self::validate_global(arg, *idx, &mut global_idxs, items).map(|_| {
+                            globals.push(GlobalFnArg {
+                                arg_idx,
+                                idx: *idx,
+                                is_mut: arg.is_mut,
+                            });
+                        })
+                    }
+                    FnArgType::Entities { idx, is_vec } => {
+                        Self::validate_component_set(arg, *idx, *is_vec, &mut component_refs, items)
+                            .map(|_| {
+                                component_sets.push(ComponentSetFnArg {
+                                    arg_idx,
+                                    idx: *idx,
+                                    is_vec: *is_vec,
+                                });
+                            })
+                    }
+                })
+                .combine_msgs()
+                // Require event
+                .then_msg(event.ok_or(format!("System must specify an event")))
+                // Check component reference mutability
+                .and_msgs(
+                    component_refs
+                        .into_iter()
+                        .map_vec_into(|(i, refs)| {
+                            items
+                                .components
+                                .get(i)
+                                .ok_or(vec![format!("Invalid Component index: {i}")])
+                                .and_then(|c| refs.validate(c.path.path.join("::")))
+                        })
+                        .combine_msgs(),
+                )
+                .map(|event| FnArgs::System {
+                    event,
+                    globals,
+                    component_sets,
+                })
         }
-        self.errs.to_vec()
+        .map_err(|mut errs| {
+            errs.insert(0, format!("\nIn system: '{}':", self.path.path.join("::")));
+            errs
+        })
     }
 
-    pub fn validate_global(&mut self, arg: &FnArg, i: usize, items: &Items) {
-        let g = match items.globals.get(i) {
-            Some(g) => g,
-            None => {
-                self.errs.push(format!("Invalid Global index: {i}"));
-                return;
-            }
-        };
-
-        self.validate_ref(arg, 1);
-        if g.args.is_const {
-            self.validate_mut(arg, false);
-        }
-        if !self.globals.insert(i) {
-            self.errs.push(format!("Duplicate global: {arg}"));
-        }
+    fn validate_global<'a>(
+        arg: &FnArg,
+        i: usize,
+        globals: &mut HashSet<usize>,
+        items: &'a Items,
+    ) -> MsgsResult<&'a ItemGlobal> {
+        items
+            .globals
+            .get(i)
+            .ok_or(vec![format!("Invalid Global index: {i}")])
+            .and_then(|g| {
+                if g.args.is_const {
+                    Self::validate_mut(arg, false).map(|_| g).to_msg_vec()
+                } else {
+                    Ok(g)
+                }
+            })
+            .and_msg(Self::validate_ref(arg, 1))
+            .and_msg(globals.insert(i).ok((), format!("Duplicate global: {arg}")))
     }
 
-    pub fn validate_event(&mut self, arg: &FnArg, idx: usize) {
-        if self.attrs.is_init {
-            self.errs
-                .push(format!("Init system may not specify an event: {arg}"));
-            return;
-        }
-
-        self.validate_ref(arg, 1);
-        self.validate_mut(arg, false);
-        if self.event.is_some() {
-            self.errs.push(format!("Multiple events specified: {arg}"));
-        }
-        self.event = Some(idx);
+    fn validate_event<'a>(arg: &FnArg, i: usize, items: &'a Items) -> MsgsResult<&'a ItemEvent> {
+        items
+            .events
+            .get(i)
+            .ok_or(vec![format!("Invalid Event index: {i}")])
+            .and_msg(Self::validate_ref(arg, 1))
+            .and_msg(Self::validate_mut(arg, false))
     }
 
-    pub fn validate_component_set(&mut self, arg: &FnArg, i: usize, items: &Items, is_vec: bool) {
+    fn validate_component_set<'a>(
+        arg: &FnArg,
+        i: usize,
+        is_vec: bool,
+        component_refs: &mut HashMap<usize, ComponentRefTracker>,
+        items: &'a Items,
+    ) -> MsgsResult<&'a ComponentSet> {
         let entities = EnginePaths::Entities.get_ident();
 
-        if self.attrs.is_init {
-            self.errs
-                .push(format!("Init system may not specify components: {arg}"));
-            return;
-        }
+        items
+            .component_sets
+            .get(i)
+            .ok_or(vec![format!("Invalid component set index: {i}")])
+            .and_then(|cs| {
+                let path = cs.path.path.join("::");
 
-        let cs = match items.component_sets.get(i) {
-            Some(cs) => cs,
-            None => {
-                self.errs.push(format!("Invalid component set index: {i}"));
-                return;
-            }
-        };
-
-        let path = cs.path.path.join("::");
-
-        let mut errs = vec![format!("In entity set argument: {path} {{")];
-
-        self.validate_ref(arg, 0);
-
-        let mut singletons = Vec::new();
-        for item in cs.args.iter() {
-            if !self.components.contains_key(&item.c_idx) {
-                self.components
-                    .insert(item.c_idx, ComponentRefTracker::new());
-            }
-
-            if let Some(refs) = self.components.get_mut(&item.c_idx) {
-                refs.add_ref(path.to_string(), item.is_mut);
-            }
-
-            if let Some(c) = items.components.get(item.c_idx) {
-                if c.args.is_singleton {
-                    singletons.push(c.path.path.join("::"));
-                }
-            }
-        }
-
-        let mut unknown_singleton_labels = Vec::new();
-        let mut impossible_labels = Vec::new();
-        if let Some(labels) = &cs.labels {
-            for (i, must_be) in &cs.symbols {
-                let c = match items.components.get(*i) {
-                    Some(c) => c,
-                    None => {
-                        errs.push(format!("Invalid label index: {i}"));
-                        continue;
+                let mut singletons = Vec::new();
+                for item in cs.args.iter() {
+                    if !component_refs.contains_key(&item.c_idx) {
+                        component_refs
+                            .insert(item.c_idx, ComponentRefTracker::new());
                     }
-                };
-                let path = c.path.path.join("::");
-                match must_be {
-                    MustBe::Value(true) => {
+
+                    if let Some(refs) = component_refs.get_mut(&item.c_idx) {
+                        refs.add_ref(path.to_string(), item.is_mut);
+                    }
+
+                    if let Some(c) = items.components.get(item.c_idx) {
                         if c.args.is_singleton {
-                            singletons.push(path);
+                            singletons.push(c.path.path.join("::"));
                         }
                     }
-                    MustBe::Value(false) => (),
-                    MustBe::Unknown => {
-                        if c.args.is_singleton {
-                            unknown_singleton_labels.push(path);
-                        }
-                    }
-                    MustBe::Impossible => impossible_labels.push(path),
                 }
-            }
-        }
 
-        if !impossible_labels.is_empty() {
-            errs.push(format!(
-                "{TAB}Labels cannot be both required and forbidden:\n{TAB}{TAB}{}",
-                impossible_labels.join(", ")
-            ));
-        }
-
-        if !is_vec && singletons.is_empty() {
-            errs.push(format!(
-                "{TAB}Entity set has no singletons and must be wrapped with {entities}<>"
-            ));
-            if !unknown_singleton_labels.is_empty() {
-                errs.push(format!(
-                    "{TAB}{TAB}Some singleton labels were specified but not required:\n{TAB}{TAB}{TAB}{}",
-                    unknown_singleton_labels.join(", ")
-                ))
-            }
-        }
-
-        if errs.len() > 1 {
-            self.errs.extend(errs.push_into("}".to_string()));
-        }
+                let mut unknown_singleton_labels = Vec::new();
+                let mut impossible_labels = Vec::new();
+                match &cs.labels {
+                    Some(labels) => cs.symbols.iter().map_vec_into(
+                        |(i, must_be)| {
+                            items.components.get(*i).ok_or(format!("Invalid label index: {i}"))
+                            .map(
+                                |c| {
+                                    let path = c.path.path.join("::");
+                                    match must_be {
+                                        MustBe::Value(true) => {
+                                            if c.args.is_singleton {
+                                                singletons.push(path);
+                                            }
+                                        }
+                                        MustBe::Value(false) => (),
+                                        MustBe::Unknown => {
+                                            if c.args.is_singleton {
+                                                unknown_singleton_labels.push(path);
+                                            }
+                                        }
+                                        MustBe::Impossible => impossible_labels.push(path),
+                                    };
+                                }
+                            )
+                        }
+                    ).combine_msgs().map(|_| ()),
+                    None => Ok(()),
+                }
+                .and_msg(impossible_labels.is_empty().ok((), format!(
+                    "{TAB}Labels cannot be both required and forbidden:\n{TAB}{TAB}{}",
+                    impossible_labels.join(", ")
+                )))
+                .and_msgs((is_vec || !singletons.is_empty()).ok((),{
+                    let mut errs = vec![format!(
+                        "{TAB}Entity set has no singletons and must be wrapped with {entities}<>"
+                    )];
+                    if !unknown_singleton_labels.is_empty() {
+                        errs.push(format!(
+                            "{TAB}{TAB}Some singleton labels were specified but not required:\n{TAB}{TAB}{TAB}{}",
+                            unknown_singleton_labels.join(", ")
+                        ));
+                    }
+                    errs
+                }))
+                .map_err(|mut errs| {
+                    [vec![format!("In entity set argument: {path} {{")], errs.push_into("}".to_string())].concat()
+                })
+                .map(|_|  cs)
+            })
+            .and_msg(Self::validate_ref(arg, 0))
     }
 
     // Validate conditions
-    pub fn validate_ref(&mut self, arg: &FnArg, should_be_cnt: usize) {
-        if arg.ref_cnt != should_be_cnt {
-            self.errs.push(format!(
+    fn validate_ref(arg: &FnArg, should_be_cnt: usize) -> MsgResult<()> {
+        (arg.ref_cnt == should_be_cnt).ok(
+            (),
+            format!(
                 "Type should be taken by {}: \"{}\"",
                 if should_be_cnt == 0 {
                     "borrow".to_string()
@@ -272,13 +328,14 @@ impl SystemValidate {
                     format!("{} references", should_be_cnt)
                 },
                 arg
-            ))
-        }
+            ),
+        )
     }
 
-    pub fn validate_mut(&mut self, arg: &FnArg, should_be_mut: bool) {
-        if arg.is_mut != should_be_mut {
-            self.errs.push(format!(
+    fn validate_mut(arg: &FnArg, should_be_mut: bool) -> MsgResult<()> {
+        (arg.is_mut == should_be_mut).ok(
+            (),
+            format!(
                 "Type should be taken {}: \"{}\"",
                 if should_be_mut {
                     "mutably"
@@ -286,23 +343,16 @@ impl SystemValidate {
                     "immutably"
                 },
                 arg
-            ))
-        }
+            ),
+        )
     }
-}
-
-pub enum FnArgResult {
-    Global { idx: ItemIndex, is_mut: bool },
-    Event(ItemIndex),
-    ComponentSet { idx: ItemIndex, is_vec: bool },
 }
 
 #[derive(Clone, Debug)]
 pub enum FnArgType {
     Event(usize),
     Global(usize),
-    Entities(usize),
-    VecEntities(usize),
+    Entities { idx: usize, is_vec: bool },
 }
 
 impl std::fmt::Display for FnArgType {
@@ -311,15 +361,17 @@ impl std::fmt::Display for FnArgType {
             match self {
                 FnArgType::Event(i) => format!("Event {i}"),
                 FnArgType::Global(i) => format!("Global {i}"),
-                FnArgType::Entities(i) => format!("Entities {i}"),
-                FnArgType::VecEntities(i) => format!("Vec Entities {i}"),
+                FnArgType::Entities { idx, is_vec } => format!(
+                    "{} {idx}",
+                    if *is_vec { "Vec<Entities>" } else { "Entities" }
+                ),
             }
             .as_str(),
         )
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct FnArg {
     pub ty: FnArgType,
     pub is_mut: bool,
@@ -333,47 +385,28 @@ impl FnArg {
         sig: &syn::Signature,
         (m, cr, crates): ModInfo,
     ) -> MsgsResult<Vec<Self>> {
-        let mut validator = SystemValidate::new(attrs.clone());
-        // Parse
-        let args = sig
-            .inputs
+        sig.inputs
             .iter()
-            .filter_map(|arg| match arg {
-                syn::FnArg::Receiver(_) => {
-                    validator
-                        .errs
-                        .push("Cannot use self in function".to_string());
-                    None
-                }
+            .map_vec_into(|arg| match arg {
+                syn::FnArg::Receiver(_) => Err("Cannot use self in function".to_string()),
                 syn::FnArg::Typed(syn::PatType { ty, .. }) => {
-                    match FnArg::parse_type(ty, (m, cr, crates)) {
-                        Ok(ty) => Some(ty),
-                        Err(e) => {
-                            validator.errs.push(e);
-                            None
-                        }
-                    }
+                    FnArg::parse_type(ty, (m, cr, crates))
                 }
             })
-            .collect::<Vec<_>>();
-        // Validate
-        for arg in args.iter() {
-            match &arg.ty {
-                FnArgType::Event(_) => validator.validate_event(arg),
-                FnArgType::Global(i) => validator.validate_global(arg, *i, items),
-                FnArgType::Entities(i) => validator.validate_component_set(arg, *i, items, false),
-                FnArgType::VecEntities(i) => validator.validate_component_set(arg, *i, items, true),
-            }
-        }
-        // Throw errors
-        let errs = validator.validate(
-            m.path.to_vec().push_into(sig.ident.to_string()).join("::"),
-            items,
-        );
-        errs.is_empty().result(args, errs)
+            .combine_msgs()
+            .map_err(|mut errs| {
+                errs.insert(
+                    0,
+                    format!(
+                        "In system: '{}':",
+                        m.path.to_vec().push_into(sig.ident.to_string()).join("::")
+                    ),
+                );
+                errs
+            })
     }
 
-    fn parse_type(ty: &syn::Type, (m, cr, crates): ModInfo) -> Result<Self, String> {
+    fn parse_type(ty: &syn::Type, (m, cr, crates): ModInfo) -> MsgResult<Self> {
         let ty_str = ty.to_token_stream().to_string();
         match ty {
             syn::Type::Path(p) => {
@@ -389,7 +422,9 @@ impl FnArg {
                     .and_then(|sym| match sym.kind {
                         crate::parse::SymbolType::Global(i) => Ok(FnArgType::Global(i)),
                         crate::parse::SymbolType::Event(i) => Ok(FnArgType::Event(i)),
-                        crate::parse::SymbolType::ComponentSet(i) => Ok(FnArgType::Entities(i)),
+                        crate::parse::SymbolType::ComponentSet(idx) => {
+                            Ok(FnArgType::Entities { idx, is_vec: false })
+                        }
                         crate::parse::SymbolType::Hardcoded(s) => match s {
                             HardcodedSymbol::Entities => {
                                 match generics.as_ref().and_then(|v| v.first()) {
@@ -398,7 +433,7 @@ impl FnArg {
                                             .expect_symbol()
                                             .expect_component_set()
                                             .discard_symbol()
-                                            .map(|i| FnArgType::VecEntities(i))
+                                            .map(|idx| FnArgType::Entities { idx, is_vec: true })
                                     }
                                     _ => Err(format!(
                                         "Invalid argument type: {}",
@@ -410,8 +445,8 @@ impl FnArg {
                         },
                         _ => Err(format!("Invalid argument type: {}", sym.path.join("::"))),
                     })
-                    .map(|ty| Self {
-                        ty,
+                    .map(|data| Self {
+                        ty: data,
                         is_mut: false,
                         ref_cnt: 0,
                     })

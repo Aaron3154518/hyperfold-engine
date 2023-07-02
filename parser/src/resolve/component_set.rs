@@ -393,7 +393,7 @@ impl LabelItem {
                 .map(|c_idx| Self::Item { not, c_idx }),
             AstLabelItem::Expression { op, items } => items
                 .into_iter()
-                .map_vec(|item| Self::resolve(item, (m, cr, crates)))
+                .map_vec_into(|item| Self::resolve(item, (m, cr, crates)))
                 .combine_msgs()
                 .map(|items| Self::Expression { op, items }),
         }
@@ -476,7 +476,7 @@ impl ComponentSet {
         (m, cr, crates): ModInfo,
     ) -> MsgsResult<Self> {
         args.into_iter()
-            .map_vec(|arg| ComponentSetItem::resolve(arg, (m, cr, crates)))
+            .map_vec_into(|arg| ComponentSetItem::resolve(arg, (m, cr, crates)))
             .combine_msgs()
             .zip(labels.map_or(Ok(None), |l| {
                 LabelItem::resolve(l, (m, cr, crates)).map(|t| Some(t))

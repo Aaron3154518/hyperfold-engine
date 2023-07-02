@@ -17,7 +17,7 @@ pub struct Crates {
 impl Crates {
     pub fn new(crates: Vec<AstCrate>, crate_idxs: [usize; Crate::LEN]) -> Self {
         let mut paths = crates.map_vec(|_| Vec::new());
-        paths[0] = (0..crates.len()).map_vec(|j| Self::find_path(&mut paths, 0, j, &crates));
+        paths[0] = (0..crates.len()).map_vec_into(|j| Self::find_path(&mut paths, 0, j, &crates));
         Self {
             paths,
             crate_idxs,
@@ -46,7 +46,7 @@ impl Crates {
             // Fill paths from neighbor
             if paths[*cr_idx].is_empty() {
                 paths[*cr_idx] =
-                    (0..crates.len()).map_vec(|j| Self::find_path(paths, *cr_idx, j, crates))
+                    (0..crates.len()).map_vec_into(|j| Self::find_path(paths, *cr_idx, j, crates))
             }
 
             // Check if shortest path

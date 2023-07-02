@@ -18,7 +18,7 @@ use crate::{
         paths::{EngineGlobals, EnginePaths, EngineTraits, ExpandEnum, GetPaths, Paths},
     },
     validate::{
-        ast_system::{FnArgResult, SystemValidate},
+        ast_system::SystemValidate,
         constants::{component_set_var, component_var, event_variant, global_var, EID},
         util::ItemIndex,
     },

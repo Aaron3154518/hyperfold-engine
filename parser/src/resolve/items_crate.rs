@@ -214,14 +214,14 @@ impl ItemsCrate {
         }
 
         // Resolve components, globals, and events
-        let symbols = crates.iter_except([macro_cr_idx]).map_vec(|cr| {
-            cr.iter_mods().map_vec(|m| {
+        let symbols = crates.iter_except([macro_cr_idx]).map_vec_into(|cr| {
+            cr.iter_mods().map_vec_into(|m| {
                 m.items
                     .structs
                     .iter()
                     .map(|s| (&s.path, &s.data.attrs))
                     .chain(m.items.enums.iter().map(|e| (&e.path, &e.data.attrs)))
-                    .filter_map_vec(|(path, attrs)| {
+                    .filter_map_vec_into(|(path, attrs)| {
                         // Search through attributes
                         attrs
                             .iter()
@@ -284,8 +284,8 @@ impl ItemsCrate {
         }
 
         // Resolve component sets
-        let symbols = crates.iter_except([macro_cr_idx]).map_vec(|cr| {
-            cr.iter_mods().map_vec(|m| {
+        let symbols = crates.iter_except([macro_cr_idx]).map_vec_into(|cr| {
+            cr.iter_mods().map_vec_into(|m| {
                 m.items.macro_calls.filter_map_vec(|call| {
                     resolve_path(call.path.to_vec(), (m, cr, crates.get_crates()))
                         .expect_symbol()
@@ -374,9 +374,9 @@ impl ItemsCrate {
         }
 
         // Resolve systems
-        let symbols = crates.iter_except([macro_cr_idx]).map_vec(|cr| {
-            cr.iter_mods().map_vec(|m| {
-                m.items.functions.iter().filter_map_vec(|fun| {
+        let symbols = crates.iter_except([macro_cr_idx]).map_vec_into(|cr| {
+            cr.iter_mods().map_vec_into(|m| {
+                m.items.functions.iter().filter_map_vec_into(|fun| {
                     fun.data.attrs.iter().find_map(|attr| {
                         resolve_path(attr.path.to_vec(), (m, cr, crates.get_crates()))
                             .expect_symbol()
@@ -449,7 +449,7 @@ impl ItemsCrate {
         // Generate event/component traits
         let trait_defs = crates
             .iter_except([macro_cr_idx])
-            .map_vec(|cr| {
+            .map_vec_into(|cr| {
                 let add_event = codegen::event_trait_defs(cr.idx, &items.events, crates);
                 let add_component =
                     codegen::component_trait_defs(cr.idx, &items.components, crates);
@@ -560,7 +560,7 @@ fn write_codegen<'a>(
             .iter()
             .zip(code)
             .enumerate()
-            .map_vec(|(i, (cr, code))| {
+            .map_vec_into(|(i, (cr, code))| {
                 // Write to file
                 let file = out.join(format!("{}.rs", i));
                 fs::write(file.to_owned(), code)
