@@ -103,23 +103,27 @@ pub fn components(
     let struct_name = CodegenIdents::CFoo.to_ident();
     let vars = (0..components.len()).map_vec(|i| component_var(i));
     let types = components
-        .map_vec(|c| crates.get_path(cr_idx, &c.path).map(|v| vec_to_path(v)))
+        .map_vec(|c| {
+            crates
+                .get_item_path(cr_idx, &c.path)
+                .map(|v| vec_to_path(v))
+        })
         .combine_msgs();
 
     let entity_set = crates
-        .path_from(cr_idx, EnginePaths::EntitySet)
+        .get_path(cr_idx, EnginePaths::EntitySet)
         .map(|v| vec_to_path(v))
         .to_msg_vec();
     let entity_trash = crates
-        .path_from(cr_idx, EngineGlobals::EntityTrash)
+        .get_path(cr_idx, EngineGlobals::EntityTrash)
         .map(|v| vec_to_path(v))
         .to_msg_vec();
     let entity_map = crates
-        .path_from(cr_idx, EnginePaths::EntityMap)
+        .get_path(cr_idx, EnginePaths::EntityMap)
         .map(|v| vec_to_path(v))
         .to_msg_vec();
     let singleton = crates
-        .path_from(cr_idx, EnginePaths::Singleton)
+        .get_path(cr_idx, EnginePaths::Singleton)
         .map(|v| vec_to_path(v))
         .to_msg_vec();
 
@@ -167,7 +171,11 @@ pub fn component_trait_impls(
     let macro_cr_idx = crates.get_crate_index(Crate::Macros);
 
     let types = components
-        .map_vec(|c| crates.get_path(cr_idx, &c.path).map(|v| vec_to_path(v)))
+        .map_vec(|c| {
+            crates
+                .get_item_path(cr_idx, &c.path)
+                .map(|v| vec_to_path(v))
+        })
         .combine_msgs();
     let crate_paths = crates
         .get_crate_paths(cr_idx, [macro_cr_idx])
@@ -178,15 +186,15 @@ pub fn component_trait_impls(
     let namespace = CodegenIdents::Namespace.to_ident();
     let add_comp = CodegenIdents::AddComponent.to_ident();
     let add_comp_trait = crates
-        .path_from(cr_idx, EngineTraits::AddComponent)
+        .get_path(cr_idx, EngineTraits::AddComponent)
         .map(|v| vec_to_path(v))
         .to_msg_vec();
     let entity = crates
-        .path_from(cr_idx, EnginePaths::Entity)
+        .get_path(cr_idx, EnginePaths::Entity)
         .map(|v| vec_to_path(v))
         .to_msg_vec();
     let singleton = crates
-        .path_from(cr_idx, EnginePaths::Singleton)
+        .get_path(cr_idx, EnginePaths::Singleton)
         .map(|v| vec_to_path(v))
         .to_msg_vec();
 

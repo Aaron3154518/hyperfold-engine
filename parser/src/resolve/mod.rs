@@ -8,8 +8,9 @@ mod path;
 mod paths;
 pub mod util;
 
-pub use component_set::{LabelItem, LabelOp};
-pub use items_crate::{ItemComponent, ItemEvent, ItemGlobal, ItemsCrate};
+pub use component_set::{ComponentSet, LabelItem, LabelOp};
+pub use function_arg::FnArgType;
+pub use items_crate::{ItemComponent, ItemEvent, ItemGlobal, ItemSystem, Items, ItemsCrate};
 pub use labels::MustBe;
 pub use path::{resolve_path, ItemPath};
 pub use paths::{

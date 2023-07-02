@@ -34,7 +34,11 @@ pub fn events(cr_idx: usize, events: &Vec<ItemEvent>, crates: &Crates) -> MsgsRe
     let enum_name = CodegenIdents::E.to_ident();
     let (vars, variants) = (0..events.len()).unzip_vec(|i| (event_var(i), event_variant(i)));
     let types = events
-        .map_vec(|e| crates.get_path(cr_idx, &e.path).map(|v| vec_to_path(v)))
+        .map_vec(|e| {
+            crates
+                .get_item_path(cr_idx, &e.path)
+                .map(|v| vec_to_path(v))
+        })
         .combine_msgs();
 
     types.map(|types| {
@@ -111,7 +115,11 @@ pub fn event_trait_impls(
 
     // Implement trait for every event
     let types = events
-        .map_vec(|c| crates.get_path(cr_idx, &c.path).map(|v| vec_to_path(v)))
+        .map_vec(|c| {
+            crates
+                .get_item_path(cr_idx, &c.path)
+                .map(|v| vec_to_path(v))
+        })
         .combine_msgs();
     // Implement all dependency traits
     let crate_paths = crates
@@ -124,7 +132,7 @@ pub fn event_trait_impls(
     let namespace = CodegenIdents::Namespace.to_ident();
     let add_event = CodegenIdents::AddEvent.to_ident();
     let add_event_trait = crates
-        .path_from(cr_idx, EngineTraits::AddEvent)
+        .get_path(cr_idx, EngineTraits::AddEvent)
         .map(|v| vec_to_path(v))
         .to_msg_vec();
 

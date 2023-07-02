@@ -91,8 +91,8 @@ macro_rules! msgs_zip {
 }
 
 msgs_zip!(
-    (Zip6Msgs, Zip5Msgs, Zip4Msgs, Zip3Msgs, Zip2Msgs),
-    (T, A, B, C, D, E)
+    (Zip9Msgs, Zip8Msgs, Zip7Msgs, Zip6Msgs, Zip5Msgs, Zip4Msgs, Zip3Msgs, Zip2Msgs),
+    (T, A, B, C, D, E, F, G, H)
 );
 
 #[macro_export]

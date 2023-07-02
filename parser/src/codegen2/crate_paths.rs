@@ -83,7 +83,7 @@ impl Crates {
         self.paths.get(start_idx, end_idx).and_then(|v| v.clone())
     }
 
-    pub fn get_path(&self, start_idx: usize, path: &ItemPath) -> MsgResult<Vec<String>> {
+    pub fn get_item_path(&self, start_idx: usize, path: &ItemPath) -> MsgResult<Vec<String>> {
         let i = if path.path.starts_with(&["crate".to_string()]) {
             1
         } else {
@@ -98,8 +98,8 @@ impl Crates {
         )
     }
 
-    pub fn path_from(&self, start_idx: usize, path: impl GetPaths) -> MsgResult<Vec<String>> {
-        self.get_path(
+    pub fn get_path(&self, start_idx: usize, path: impl GetPaths) -> MsgResult<Vec<String>> {
+        self.get_item_path(
             start_idx,
             &ItemPath {
                 cr_idx: self.get_crate_index(path.get_crate()),

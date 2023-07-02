@@ -28,7 +28,7 @@ where
 
     let namespace = CodegenIdents::Namespace.to_ident();
     let trait_source = crates
-        .path_from(cr_idx, trait_source)
+        .get_path(cr_idx, trait_source)
         .map(|v| vec_to_path(v))
         .to_msg_vec();
 

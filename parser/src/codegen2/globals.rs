@@ -50,7 +50,11 @@ pub fn globals(
     let struct_name = CodegenIdents::GFoo.to_ident();
     let vars = (0..globals.len()).map_vec(|i| global_var(i));
     let types = globals
-        .map_vec(|g| crates.get_path(cr_idx, &g.path).map(|v| vec_to_path(v)))
+        .map_vec(|g| {
+            crates
+                .get_item_path(cr_idx, &g.path)
+                .map(|v| vec_to_path(v))
+        })
         .combine_msgs();
 
     match_ok!(types, {

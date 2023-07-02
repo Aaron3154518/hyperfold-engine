@@ -8,7 +8,7 @@ use crate::{
     },
     resolve::{
         constants::{INDEX, INDEX_SEP, NAMESPACE},
-        util::{CombineMsgs, ToMsgsResult, Zip2Msgs, Zip4Msgs, Zip5Msgs, Zip6Msgs},
+        util::{CombineMsgs, ToMsgsResult, Zip2Msgs, Zip4Msgs, Zip5Msgs, Zip6Msgs, Zip7Msgs},
     },
     resolve::{
         function_arg::{FnArg, FnArgType},
@@ -462,21 +462,22 @@ impl ItemsCrate {
             })
             .combine_msgs();
 
-        // Generate component set code for building vectors
-
         // Generate system call code
+        // - Generate component set code for building vectors
+        let func_calls = codegen::systems(main_cr_idx, &items, crates);
 
         // Generate app struct
 
         // Write codegen to file
         match_ok!(
-            Zip6Msgs,
+            Zip7Msgs,
             globals,
             components,
             component_traits,
             events,
             event_traits,
             trait_defs,
+            func_calls,
             {
                 write_codegen(CodegenArgs {
                     crates,
@@ -487,6 +488,7 @@ impl ItemsCrate {
                     events,
                     event_traits,
                     trait_defs,
+                    func_calls,
                 })
             },
             err,
@@ -511,6 +513,7 @@ struct CodegenArgs<'a> {
     events: TokenStream,
     event_traits: TokenStream,
     trait_defs: Vec<Traits>,
+    func_calls: Vec<TokenStream>,
 }
 
 fn write_codegen<'a>(
@@ -523,6 +526,7 @@ fn write_codegen<'a>(
         events,
         event_traits,
         trait_defs,
+        func_calls,
     }: CodegenArgs<'a>,
 ) {
     let main_cr_idx = crates.get_crate_index(Crate::Main);
@@ -534,10 +538,12 @@ fn write_codegen<'a>(
                 add_component,
             },
         )| {
+            // TODO: no newlines
             if cr_idx == main_cr_idx {
                 format!(
                     "{globals}\n{components}\n{add_component}\n{component_traits}\
-                    \n{events_enum}\n{events}\n{add_event}\n{event_traits}"
+                    \n{events_enum}\n{events}\n{add_event}\n{event_traits}\n{}",
+                    func_calls.join_map(|t| t.to_string(), "\n")
                 )
             } else {
                 format!("{add_component}\n{add_event}")

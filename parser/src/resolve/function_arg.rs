@@ -93,7 +93,7 @@ pub struct SystemValidate {
     attrs: SystemMacroArgs,
     components: HashMap<usize, ComponentRefTracker>,
     globals: HashSet<usize>,
-    has_event: bool,
+    event: Option<usize>,
 }
 
 impl SystemValidate {
@@ -103,7 +103,7 @@ impl SystemValidate {
             attrs,
             components: HashMap::new(),
             globals: HashSet::new(),
-            has_event: false,
+            event: None,
         }
     }
 
@@ -150,7 +150,7 @@ impl SystemValidate {
         }
     }
 
-    pub fn validate_event(&mut self, arg: &FnArg) {
+    pub fn validate_event(&mut self, arg: &FnArg, idx: usize) {
         if self.attrs.is_init {
             self.errs
                 .push(format!("Init system may not specify an event: {arg}"));
@@ -159,10 +159,10 @@ impl SystemValidate {
 
         self.validate_ref(arg, 1);
         self.validate_mut(arg, false);
-        if self.has_event {
+        if self.event.is_some() {
             self.errs.push(format!("Multiple events specified: {arg}"));
         }
-        self.has_event = true;
+        self.event = Some(idx);
     }
 
     pub fn validate_component_set(&mut self, arg: &FnArg, i: usize, items: &Items, is_vec: bool) {
