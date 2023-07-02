@@ -533,3 +533,19 @@ impl<T> Get2D<T> for Vec<Vec<T>> {
         <[Vec<T>]>::get_mut(self, i).and_then(|v| v.get_mut(j))
     }
 }
+
+// and_then for bool
+pub trait AndThen {
+    fn and_then<T, F>(self, f: F) -> Option<T>
+    where
+        F: FnOnce() -> Option<T>;
+}
+
+impl AndThen for bool {
+    fn and_then<T, F>(self, f: F) -> Option<T>
+    where
+        F: FnOnce() -> Option<T>,
+    {
+        self.then_some(()).and_then(|_| f())
+    }
+}

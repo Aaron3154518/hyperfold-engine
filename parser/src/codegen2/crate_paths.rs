@@ -1,4 +1,4 @@
-use shared::util::{Get2D, JoinMap, JoinMapInto, NoneOr};
+use shared::util::{AndThen, Get2D, JoinMap, JoinMapInto, NoneOr};
 
 use crate::parse::AstCrate;
 use crate::resolve::constants::NAMESPACE;
@@ -63,6 +63,16 @@ impl Crates {
     }
 
     // Create crate paths
+    pub fn get_crate_paths(&self, cr_idx: usize) -> Option<Vec<(usize, Vec<String>)>> {
+        (&self.paths as &[Vec<Option<Vec<String>>>])
+            .get(cr_idx)
+            .map(|v| {
+                v.enumerate_filter_map_vec(|(i, path)| {
+                    (i != cr_idx).and_then(|| path.as_ref().map(|path| (i, path.to_vec())))
+                })
+            })
+    }
+
     pub fn get_crate_path(&self, start_idx: usize, end_idx: usize) -> Option<Vec<String>> {
         self.paths.get(start_idx, end_idx).and_then(|v| v.clone())
     }
@@ -111,6 +121,14 @@ impl Crates {
     }
 
     // Iterate crates except macros crate
+    pub fn get<'a>(&'a self, cr_idx: usize) -> Option<&'a AstCrate> {
+        self.crates.get(cr_idx)
+    }
+
+    pub fn get_mut<'a>(&'a mut self, cr_idx: usize) -> Option<&'a mut AstCrate> {
+        self.crates.get_mut(cr_idx)
+    }
+
     pub fn iter<'a>(&'a self) -> impl Iterator<Item = &'a AstCrate> {
         let macros_cr_idx = self.get_crate_index(Crate::Macros);
         self.crates

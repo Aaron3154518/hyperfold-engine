@@ -8,7 +8,7 @@ use crate::{
     },
     resolve::{
         constants::{INDEX, INDEX_SEP, NAMESPACE},
-        util::{ToMsgsResult, Zip2Msgs},
+        util::{CombineMsgs, ToMsgsResult, Zip4Msgs},
     },
     resolve::{
         function_arg::{FnArg, FnArgType},
@@ -422,11 +422,21 @@ impl ItemsCrate {
             }
         }
 
+        let main_cr_idx = crates.get_crate_index(Crate::Main);
+
         // Generate globals struct code
-        let globals = Codegen::globals(0, &items.globals, &crates);
+        let globals = Codegen::globals(main_cr_idx, &items.globals, crates);
 
         // Generate components struct code
-        let components = Codegen::components(0, &items.components, &crates);
+        let components = Codegen::components(main_cr_idx, &items.components, crates);
+
+        // Generate component traits
+        let component_traits =
+            Codegen::component_trait_impls(main_cr_idx, &items.components, crates);
+        let comp_trait_defs = crates
+            .iter()
+            .map_vec(|cr| Codegen::component_trait_defs(cr.idx, &items.components, crates))
+            .combine_msgs();
 
         // Generate events struct/enum code
 
@@ -438,13 +448,18 @@ impl ItemsCrate {
 
         // Write codegen to file
         match_ok!(
+            Zip4Msgs,
             globals,
             components,
+            component_traits,
+            comp_trait_defs,
             {
                 write_codegen(CodegenArgs {
                     crates,
                     globals,
                     components,
+                    component_traits,
+                    comp_trait_defs,
                 })
             },
             err,
@@ -464,6 +479,8 @@ struct CodegenArgs<'a> {
     crates: &'a Crates,
     globals: TokenStream,
     components: TokenStream,
+    component_traits: TokenStream,
+    comp_trait_defs: Vec<TokenStream>,
 }
 
 fn write_codegen<'a>(
@@ -471,12 +488,24 @@ fn write_codegen<'a>(
         crates,
         globals,
         components,
+        component_traits,
+        comp_trait_defs,
     }: CodegenArgs<'a>,
 ) {
-    let code = vec![
-        format!("{}\n{}", globals.to_string(), components.to_string()),
-        String::new(),
-    ];
+    let main_cr_idx = crates.get_crate_index(Crate::Main);
+    let mut code = comp_trait_defs.enumerate_map_vec(|(cr_idx, comp_trait_defs)| {
+        if cr_idx == main_cr_idx {
+            format!(
+                "{}\n{}\n{}\n{}",
+                globals.to_string(),
+                components.to_string(),
+                component_traits.to_string(),
+                comp_trait_defs.to_string()
+            )
+        } else {
+            comp_trait_defs.to_string()
+        }
+    });
 
     let out = PathBuf::from(std::env::var("OUT_DIR").expect("No out directory specified"));
 

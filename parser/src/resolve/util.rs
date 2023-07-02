@@ -108,12 +108,12 @@ macro_rules! match_ok {
         }
     };
 
-    ($v0: ident $(,$vs: ident)*, $ok: block) => {
-        $v0.zip($($vs),*).map(|($v0 $(,$vs)*)| $ok)
+    ($tr: ident, $v0: ident $(,$vs: ident)*, $ok: block) => {
+        $tr::zip($v0 $(,$vs)*).map(|($v0 $(,$vs)*)| $ok)
     };
 
-    ($v0: ident $(,$vs: ident)*, $ok: block, $e: ident, $err: block) => {
-        match $v0.zip($($vs),*) {
+    ($tr: ident, $v0: ident $(,$vs: ident)*, $ok: block, $e: ident, $err: block) => {
+        match $tr::zip($v0 $(,$vs)*) {
             Ok(($v0 $(,$vs)*)) => Ok($ok),
             Err($e) => Err($err)
         }
