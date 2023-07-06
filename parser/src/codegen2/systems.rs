@@ -75,6 +75,7 @@ fn codegen_systems(
                     quote!(&#mut_tok #globals_var.#var)
                 };
             }
+            // TODO: sort and dedup
             let cs = component_sets
                 .map_vec(|cs| {
                     let var = component_set_var(cs.idx);

@@ -297,14 +297,23 @@ impl<T> NoneOr<T> for Option<T> {
 
 // Trait for mapping None to a value and Some to None
 pub trait MapNone<T> {
-    fn map_none(self, f: impl FnOnce() -> T) -> Option<T>;
+    fn then_map_none(self, f: impl FnOnce() -> T) -> Option<T>;
+
+    fn map_none(self, t: T) -> Option<T>;
 }
 
 impl<T, U> MapNone<T> for Option<U> {
-    fn map_none(self, f: impl FnOnce() -> T) -> Option<T> {
+    fn then_map_none(self, f: impl FnOnce() -> T) -> Option<T> {
         match self {
             Some(_) => None,
             None => Some(f()),
+        }
+    }
+
+    fn map_none(self, t: T) -> Option<T> {
+        match self {
+            Some(_) => None,
+            None => Some(t),
         }
     }
 }

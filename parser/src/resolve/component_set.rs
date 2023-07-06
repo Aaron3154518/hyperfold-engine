@@ -2,7 +2,7 @@ use std::{collections::VecDeque, fmt::Display, ops::Neg};
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use shared::util::{Call, Catch, FindFrom, Get, JoinMap, JoinMapInto, NoneOr, PushInto};
+use shared::util::{Call, Catch, FindFrom, Get, JoinMap, JoinMapInto, MapNone, NoneOr, PushInto};
 use syn::{spanned::Spanned, Error, Token};
 
 use crate::{
@@ -448,7 +448,7 @@ impl std::fmt::Display for LabelItem {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ComponentSetItem {
     pub var: String,
     pub comp: ComponentSymbol,
@@ -536,7 +536,6 @@ impl ComponentSet {
 
     // TODO: eid need ref
     // TODO: remove duplicate arg types
-    // TODO: remove arg types from symbols
     pub fn quote(
         &self,
         ty: &syn::Path,
@@ -549,14 +548,18 @@ impl ComponentSet {
         let eids = CodegenIdents::GenEids.to_ident();
         let comps_var = CodegenIdents::GenCFoo.to_ident();
 
+        let mut args = self.args.to_vec();
+        args.sort_by_key(|item| item.comp.idx);
+        args.dedup_by_key(|item| item.comp.idx);
+
         // Check args and labels for singleton
-        let mut start_singleton = self
-            .args
+        let mut start_singleton = args
             .iter()
             .find(|item| item.comp.args.is_singleton)
             .map(|item| component_var(item.comp.idx))
             .or_else(|| {
                 self.labels.as_ref().and_then(|labels| {
+                    // No need to filter out arguments as there aren't any singletons
                     labels
                         .symbols
                         .iter()
@@ -576,9 +579,11 @@ impl ComponentSet {
             .as_ref()
             .map(|ComponentSetLabels { labels, symbols }| {
                 let label_expr = labels.quote(&|c_sym| component_var(c_sym.idx));
-                let label_vars = symbols
-                    .iter()
-                    .map_vec_into(|(c_sym, _)| component_var(c_sym.idx));
+                let label_vars = symbols.iter().filter_map_vec_into(|(c_sym, _)| {
+                    args.iter()
+                        .find(|c| c.comp.idx == c_sym.idx)
+                        .map_none(component_var(c_sym.idx))
+                });
                 quote!(
                     #filter(#v, [#(&#comps_var.#label_vars),*], |[#(#label_vars),*]| #label_expr)
                 )
@@ -597,15 +602,20 @@ impl ComponentSet {
                 };
 
                 // Match statement for components
-                let (gets, comps) = self.args.unzip_vec(|item| {
+                let (gets, comps) = args.unzip_vec(|item| {
                     let var = component_var(item.comp.idx);
                     (
                         match item.is_mut {
                             true => quote!(#comps_var.#var.get_mut),
                             false => quote!(#comps_var.#var.get),
                         },
-                        format_ident!("{}", item.var),
+                        var,
                     )
+                });
+
+                // Args to component set struct
+                let (arg_vars, arg_vals) = self.args.unzip_vec(|item| {
+                    (format_ident!("{}", item.var), component_var(item.comp.idx))
                 });
 
                 quote!(
@@ -615,7 +625,7 @@ impl ComponentSet {
                             match (#(#gets(&k),)*) {
                                 (#(Some(#comps),)*) => #var = Some(#ty {
                                     #eid: k,
-                                    #(#comps),*
+                                    #(#arg_vars: #arg_vals),*
                                 }),
                                 _ => (),
                             }
@@ -638,6 +648,7 @@ impl ComponentSet {
                     }
                     None => {
                         match self.labels.as_ref().and_then(|labels| {
+                            // No need to filter out arguments as there aren't any
                             labels
                                 .symbols
                                 .iter()

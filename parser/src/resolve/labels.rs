@@ -84,7 +84,7 @@ impl LabelItem {
                 .filter_map(|(i, symb)| {
                     symb.iter()
                         .position(|(_, must_be)| *must_be == MustBe::Impossible)
-                        .map_none(|| i)
+                        .then_map_none(|| i)
                 })
                 .collect::<Vec<_>>();
             if !or_symbs.is_empty() {
