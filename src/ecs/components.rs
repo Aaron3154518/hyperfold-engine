@@ -1,5 +1,7 @@
 use std::marker::PhantomData;
 
+use crate::intersect::HasKey;
+
 use super::entities::Entity;
 
 // Containers
@@ -53,6 +55,16 @@ where
         }
     }
 
+    pub fn get_key(&self) -> Option<K>
+    where
+        K: Copy,
+    {
+        match self {
+            Singleton::Some { k, .. } => Some(*k),
+            Singleton::None => None,
+        }
+    }
+
     pub fn get<'a>(&'a self, key: &K) -> Option<&'a V> {
         match self {
             Singleton::Some { k, v } => (k == key).then_some(v),
@@ -68,26 +80,14 @@ where
     }
 }
 
-pub type Globals<G> = G;
-
-#[derive(Debug)]
-pub struct Components<'a, C, L> {
-    pub eid: &'a Entity,
-    pub data: C,
-    pub labels: PhantomData<L>,
-}
-
-impl<'a, C, L> Components<'a, C, L> {
-    pub fn new(eid: &'a Entity, data: C) -> Self {
-        Self {
-            eid,
-            data,
-            labels: PhantomData,
-        }
+impl<K, V> HasKey<K> for Singleton<K, V>
+where
+    K: PartialEq,
+{
+    fn has_key(&self, key: &K) -> bool {
+        matches!(self, Singleton::Some { k, .. } if k == key)
     }
 }
-
-pub type ComponentsVec<'a, C, L> = Vec<Components<'a, C, L>>;
 
 pub trait AddComponent<T> {
     fn add_component(&mut self, e: Entity, t: T);

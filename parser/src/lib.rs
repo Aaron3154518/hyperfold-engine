@@ -1,6 +1,7 @@
 #![feature(drain_filter)]
 #![feature(hash_drain_filter)]
 #![feature(array_methods)]
+#![feature(iter_intersperse)]
 #![allow(unused)]
 
 use std::{
@@ -11,10 +12,10 @@ use std::{
     path::PathBuf,
 };
 
-use parse::AstCrate;
+use parse::{AstCrate, ComponentSymbol};
 use regex::Regex;
 use resolve::{resolve_path, ItemsCrate, LabelItem, LabelOp, MustBe};
-use shared::{hash_map, util::JoinMapInto};
+use shared::{hash_map, parse_args::ComponentMacroArgs, util::JoinMapInto};
 use util::{end, format_code};
 
 // pub mod codegen;
@@ -32,7 +33,11 @@ pub mod util;
 // 5) Parse systems; Validate arguments; insert symbols
 // 6) Codegen
 
-fn labels_eq(labels: &LabelItem, truth: HashMap<usize, bool>, expected: HashMap<usize, MustBe>) {
+fn labels_eq(
+    labels: &LabelItem,
+    truth: HashMap<ComponentSymbol, bool>,
+    expected: HashMap<ComponentSymbol, MustBe>,
+) {
     let given_str = format!("Given: {truth:#?}");
     let actual = labels.get_symbols(truth);
     match actual == expected {
@@ -50,22 +55,34 @@ pub fn test_labels() {
         items: vec![
             LabelItem::Item {
                 not: false,
-                c_idx: 1,
+                comp: ComponentSymbol {
+                    idx: 1,
+                    args: ComponentMacroArgs::from(&Vec::new()),
+                },
             },
             LabelItem::Expression {
                 op: LabelOp::Or,
                 items: vec![
                     LabelItem::Item {
                         not: false,
-                        c_idx: 0,
+                        comp: ComponentSymbol {
+                            idx: 0,
+                            args: ComponentMacroArgs::from(&Vec::new()),
+                        },
                     },
                     LabelItem::Item {
                         not: true,
-                        c_idx: 1,
+                        comp: ComponentSymbol {
+                            idx: 1,
+                            args: ComponentMacroArgs::from(&Vec::new()),
+                        },
                     },
                     LabelItem::Item {
                         not: true,
-                        c_idx: 0,
+                        comp: ComponentSymbol {
+                            idx: 0,
+                            args: ComponentMacroArgs::from(&Vec::new()),
+                        },
                     },
                 ],
             },
@@ -75,18 +92,33 @@ pub fn test_labels() {
         &labels,
         HashMap::new(),
         hash_map!({
-            0 => MustBe::Unknown,
-            1 => MustBe::Value(true)
+            ComponentSymbol {
+                idx: 0,
+                args: ComponentMacroArgs::from(&Vec::new()),
+            } => MustBe::Unknown,
+            ComponentSymbol {
+                idx: 1,
+                args: ComponentMacroArgs::from(&Vec::new()),
+            } => MustBe::Value(true)
         }),
     );
     labels_eq(
         &labels,
         hash_map!({
-            0 => true
+            ComponentSymbol {
+                idx: 0,
+                args: ComponentMacroArgs::from(&Vec::new()),
+            } => true
         }),
         hash_map!({
-            0 => MustBe::Value(true),
-            1 => MustBe::Value(true)
+            ComponentSymbol {
+                idx: 0,
+                args: ComponentMacroArgs::from(&Vec::new()),
+            } => MustBe::Value(true),
+            ComponentSymbol {
+                idx: 1,
+                args: ComponentMacroArgs::from(&Vec::new()),
+            } => MustBe::Value(true)
         }),
     )
 }

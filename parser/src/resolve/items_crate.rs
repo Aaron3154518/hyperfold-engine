@@ -4,11 +4,12 @@ use crate::{
     codegen2::{self as codegen, Crates, Traits},
     match_ok,
     parse::{
-        AstCrate, AstMod, AstUse, DiscardSymbol, HardcodedSymbol, MatchSymbol, Symbol, SymbolType,
+        AstCrate, AstMod, AstUse, ComponentSymbol, DiscardSymbol, GlobalSymbol, HardcodedSymbol,
+        MatchSymbol, Symbol, SymbolType,
     },
     resolve::{
         constants::{INDEX, INDEX_SEP, NAMESPACE},
-        util::{CombineMsgs, ToMsgsResult, Zip2Msgs, Zip4Msgs, Zip5Msgs, Zip6Msgs, Zip7Msgs},
+        util::{CombineMsgs, Zip2Msgs, Zip4Msgs, Zip5Msgs, Zip6Msgs, Zip7Msgs},
     },
     resolve::{
         function_arg::{FnArg, FnArgType},
@@ -233,24 +234,32 @@ impl ItemsCrate {
                                     .ok()
                                     .and_then(|hard_sym| match hard_sym {
                                         HardcodedSymbol::ComponentMacro => {
+                                            let args = ComponentMacroArgs::from(&attr.args);
                                             items.components.push(ItemComponent {
                                                 path: ItemPath {
                                                     cr_idx: cr.idx,
                                                     path: path.to_vec(),
                                                 },
-                                                args: ComponentMacroArgs::from(&attr.args),
+                                                args,
                                             });
-                                            Some(SymbolType::Component(items.components.len() - 1))
+                                            Some(SymbolType::Component(ComponentSymbol {
+                                                idx: items.components.len() - 1,
+                                                args,
+                                            }))
                                         }
                                         HardcodedSymbol::GlobalMacro => {
+                                            let args = GlobalMacroArgs::from(&attr.args);
                                             items.globals.push(ItemGlobal {
                                                 path: ItemPath {
                                                     cr_idx: cr.idx,
                                                     path: path.to_vec(),
                                                 },
-                                                args: GlobalMacroArgs::from(&attr.args),
+                                                args,
                                             });
-                                            Some(SymbolType::Global(items.globals.len() - 1))
+                                            Some(SymbolType::Global(GlobalSymbol {
+                                                idx: items.globals.len() - 1,
+                                                args,
+                                            }))
                                         }
                                         HardcodedSymbol::EventMacro => {
                                             items.events.push(ItemEvent {
@@ -359,14 +368,20 @@ impl ItemsCrate {
                 // Add globals to entry crates
                 if cr.idx == 0 {
                     cr.add_symbol(Symbol {
-                        kind: SymbolType::Global(idx),
+                        kind: SymbolType::Global(GlobalSymbol {
+                            idx,
+                            args: GlobalMacroArgs::from(&Vec::new()),
+                        }),
                         path: gl_path.to_vec(),
                         public: true,
                     })
                 }
                 // Add traits to all crates
                 cr.add_symbol(Symbol {
-                    kind: SymbolType::Trait(idx),
+                    kind: SymbolType::Trait(GlobalSymbol {
+                        idx,
+                        args: GlobalMacroArgs::from(&Vec::new()),
+                    }),
                     path: path.to_vec(),
                     public: true,
                 })

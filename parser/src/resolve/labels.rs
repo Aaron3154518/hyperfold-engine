@@ -2,6 +2,8 @@ use std::{collections::HashMap, hash::Hash};
 
 use shared::util::{JoinMap, MapNone};
 
+use crate::parse::ComponentSymbol;
+
 use super::component_set::{LabelItem, LabelOp};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -64,13 +66,13 @@ impl MustBe {
     }
 }
 
-pub type SymbolMap = HashMap<usize, MustBe>;
+pub type SymbolMap = HashMap<ComponentSymbol, MustBe>;
 
 impl LabelItem {
     fn combine_symbols(
         mut symbs: Vec<SymbolMap>,
         op: LabelOp,
-        truth: &HashMap<usize, bool>,
+        truth: &HashMap<ComponentSymbol, bool>,
     ) -> SymbolMap {
         // Remove impossible items
         if op == LabelOp::Or {
@@ -100,20 +102,23 @@ impl LabelItem {
         for mut symbs in iter {
             if op == LabelOp::Or {
                 // All other symbols are unknown (previous expressions could be false)
-                for (i, must_be) in map.iter() {
-                    if !symbs.contains_key(i) {
-                        symbs.insert(*i, MustBe::Unknown);
+                for (c_sym, must_be) in map.iter() {
+                    if !symbs.contains_key(c_sym) {
+                        symbs.insert(*c_sym, MustBe::Unknown);
                     }
                 }
             }
             // Add/update symbols of next item
-            for (i, must_be) in &symbs {
-                if !map.contains_key(i) {
-                    map.insert(*i, must_be.combine(MustBe::Unknown, op, truth.get(i)));
+            for (c_sym, must_be) in &symbs {
+                if !map.contains_key(c_sym) {
+                    map.insert(
+                        *c_sym,
+                        must_be.combine(MustBe::Unknown, op, truth.get(c_sym)),
+                    );
                 } else {
-                    match map.get_mut(i) {
+                    match map.get_mut(c_sym) {
                         Some(curr_must_be) => {
-                            *curr_must_be = must_be.combine(*curr_must_be, op, truth.get(i))
+                            *curr_must_be = must_be.combine(*curr_must_be, op, truth.get(c_sym))
                         }
                         None => panic!("Failed to get must be from map"),
                     }
@@ -123,7 +128,7 @@ impl LabelItem {
         map
     }
 
-    pub fn get_symbols(&self, mut truth: HashMap<usize, bool>) -> SymbolMap {
+    pub fn get_symbols(&self, mut truth: HashMap<ComponentSymbol, bool>) -> SymbolMap {
         loop {
             let mut map = self.get_symbols_impl(&truth);
             let mut new_truth = HashMap::new();
@@ -144,14 +149,14 @@ impl LabelItem {
         }
     }
 
-    fn get_symbols_impl(&self, truth: &HashMap<usize, bool>) -> SymbolMap {
+    fn get_symbols_impl(&self, truth: &HashMap<ComponentSymbol, bool>) -> SymbolMap {
         match self {
-            LabelItem::Item { not, c_idx } => {
+            LabelItem::Item { not, comp } => {
                 let must_be = !not;
                 let mut symbs = HashMap::new();
                 symbs.insert(
-                    *c_idx,
-                    match truth.get(c_idx).unwrap_or(&must_be) == &must_be {
+                    *comp,
+                    match truth.get(&comp).unwrap_or(&must_be) == &must_be {
                         true => MustBe::Value(must_be),
                         false => MustBe::Impossible,
                     },
@@ -166,7 +171,7 @@ impl LabelItem {
         }
     }
 
-    fn map_symbols_to_truth(symbs: &SymbolMap) -> HashMap<usize, bool> {
+    fn map_symbols_to_truth(symbs: &SymbolMap) -> HashMap<ComponentSymbol, bool> {
         symbs
             .into_iter()
             .filter_map(|(i, v)| match v {

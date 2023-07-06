@@ -1,23 +1,28 @@
 use std::{collections::VecDeque, fmt::Display, ops::Neg};
 
 use proc_macro2::TokenStream;
+use quote::{format_ident, quote};
 use shared::util::{Call, Catch, FindFrom, Get, JoinMap, JoinMapInto, NoneOr, PushInto};
 use syn::{spanned::Spanned, Error, Token};
 
 use crate::{
+    codegen2::CodegenIdents,
     parse::{
-        AstCrate, DiscardSymbol, MatchSymbol, ModInfo, SymbolType, {AstMod, Symbol},
+        AstCrate, ComponentSymbol, DiscardSymbol, MatchSymbol, ModInfo, SymbolType,
+        {AstMod, Symbol},
     },
     resolve::path::resolve_path,
-    resolve::util::{CombineMsgs, MsgResult, MsgsResult, ToMsgsResult},
+    resolve::util::{CombineMsgs, MsgsResult},
 };
 
 use super::{
+    constants::{component_set_var, component_var},
     items_crate::ItemComponent,
     labels::SymbolMap,
     parse_macro_call::ParseMacroCall,
     path::{ItemPath, ResolveResultTrait},
     util::Zip2Msgs,
+    Items, MustBe,
 };
 
 macro_rules! err {
@@ -73,6 +78,13 @@ impl LabelOp {
         *self = match self {
             LabelOp::And => LabelOp::Or,
             LabelOp::Or => LabelOp::And,
+        }
+    }
+
+    pub fn quote(&self) -> TokenStream {
+        match self {
+            LabelOp::And => quote!(&&),
+            LabelOp::Or => quote!(||),
         }
     }
 }
@@ -378,7 +390,7 @@ impl std::fmt::Display for AstComponentSet {
 // Resolve Ast structs to actual items
 #[derive(Debug)]
 pub enum LabelItem {
-    Item { not: bool, c_idx: usize },
+    Item { not: bool, comp: ComponentSymbol },
     Expression { op: LabelOp, items: Vec<LabelItem> },
 }
 
@@ -389,8 +401,7 @@ impl LabelItem {
                 .expect_symbol()
                 .expect_component()
                 .discard_symbol()
-                .to_msg_vec()
-                .map(|c_idx| Self::Item { not, c_idx }),
+                .map(|c_sym| Self::Item { not, comp: c_sym }),
             AstLabelItem::Expression { op, items } => items
                 .into_iter()
                 .map_vec_into(|item| Self::resolve(item, (m, cr, crates)))
@@ -398,13 +409,34 @@ impl LabelItem {
                 .map(|items| Self::Expression { op, items }),
         }
     }
+
+    fn quote<F>(&self, f: &F) -> TokenStream
+    where
+        F: Fn(ComponentSymbol) -> syn::Ident,
+    {
+        match self {
+            LabelItem::Item { not, comp } => {
+                let not = if *not { quote!(!) } else { quote!() };
+                let var = f(*comp);
+                quote!(#not #var)
+            }
+            LabelItem::Expression { op, items } => {
+                let vars = items
+                    .iter()
+                    .map(|i| i.quote(f))
+                    .intersperse(op.quote())
+                    .collect::<Vec<_>>();
+                quote!((#(#vars)*))
+            }
+        }
+    }
 }
 
 impl std::fmt::Display for LabelItem {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            LabelItem::Item { not, c_idx } => {
-                f.write_fmt(format_args!("{}{c_idx}", if *not { "!" } else { "" },))
+            LabelItem::Item { not, comp } => {
+                f.write_fmt(format_args!("{}{}", if *not { "!" } else { "" }, comp.idx))
             }
             LabelItem::Expression { op, items } => f.write_fmt(format_args!(
                 "({})",
@@ -419,7 +451,7 @@ impl std::fmt::Display for LabelItem {
 #[derive(Debug)]
 pub struct ComponentSetItem {
     pub var: String,
-    pub c_idx: usize,
+    pub comp: ComponentSymbol,
     pub ref_cnt: usize,
     pub is_mut: bool,
 }
@@ -433,14 +465,14 @@ impl ComponentSetItem {
             is_mut,
         }: AstComponentSetItem,
         (m, cr, crates): ModInfo,
-    ) -> MsgResult<Self> {
+    ) -> MsgsResult<Self> {
         resolve_path(ty.path.to_vec(), (m, cr, crates))
             .expect_symbol()
             .expect_component()
             .discard_symbol()
-            .map(|c_idx| Self {
+            .map(|comp| Self {
                 var,
-                c_idx,
+                comp,
                 ref_cnt,
                 is_mut,
             })
@@ -448,11 +480,16 @@ impl ComponentSetItem {
 }
 
 #[derive(Debug)]
+pub struct ComponentSetLabels {
+    pub labels: LabelItem,
+    pub symbols: SymbolMap,
+}
+
+#[derive(Debug)]
 pub struct ComponentSet {
     pub path: ItemPath,
     pub args: Vec<ComponentSetItem>,
-    pub labels: Option<LabelItem>,
-    pub symbols: SymbolMap,
+    pub labels: Option<ComponentSetLabels>,
 }
 
 impl ComponentSet {
@@ -482,8 +519,9 @@ impl ComponentSet {
                 LabelItem::resolve(l, (m, cr, crates)).map(|t| Some(t))
             }))
             .map(|(args, labels)| {
-                let symbols = labels.as_ref().map_or(SymbolMap::new(), |l| {
-                    l.get_symbols(args.iter().map(|c| (c.c_idx, true)).collect())
+                let labels = labels.map(|labels| ComponentSetLabels {
+                    symbols: labels.get_symbols(args.iter().map(|c| (c.comp, true)).collect()),
+                    labels,
                 });
                 Self {
                     path: ItemPath {
@@ -492,9 +530,154 @@ impl ComponentSet {
                     },
                     args,
                     labels,
-                    symbols,
                 }
             })
+    }
+
+    // TODO: eid need ref
+    // TODO: remove duplicate arg types
+    // TODO: remove arg types from symbols
+    pub fn quote(
+        &self,
+        ty: &syn::Path,
+        var: &syn::Ident,
+        filter: &syn::Path,
+        intersect: &syn::Path,
+        intersect_mut: &syn::Path,
+    ) -> MsgsResult<TokenStream> {
+        let eid = CodegenIdents::GenEid.to_ident();
+        let eids = CodegenIdents::GenEids.to_ident();
+        let comps_var = CodegenIdents::GenCFoo.to_ident();
+
+        // Check args and labels for singleton
+        let mut start_singleton = self
+            .args
+            .iter()
+            .find(|item| item.comp.args.is_singleton)
+            .map(|item| component_var(item.comp.idx))
+            .or_else(|| {
+                self.labels.as_ref().and_then(|labels| {
+                    labels
+                        .symbols
+                        .iter()
+                        .find(|(comp, must_be)| {
+                            comp.args.is_singleton && must_be == &&MustBe::Value(true)
+                        })
+                        .map(|(comp, _)| component_var(comp.idx))
+                })
+            });
+
+        // This variable stores the vector as it is being created
+        let v = format_ident!("v");
+
+        // Filter key vector by labels
+        let filter_labels = self
+            .labels
+            .as_ref()
+            .map(|ComponentSetLabels { labels, symbols }| {
+                let label_expr = labels.quote(&|c_sym| component_var(c_sym.idx));
+                let label_vars = symbols
+                    .iter()
+                    .map_vec_into(|(c_sym, _)| component_var(c_sym.idx));
+                quote!(
+                    #filter(#v, [#(&#comps_var.#label_vars),*], |[#(#label_vars),*]| #label_expr)
+                )
+            });
+
+        // Codegen
+        Ok(match start_singleton {
+            Some(s) => {
+                // If statement for label expression
+                let if_labels = match filter_labels {
+                    Some(filter_labels) => quote!(
+                        let #v = vec![(&k, ())];
+                        if #filter_labels.starts_with(&[(&k, ())])
+                    ),
+                    None => quote!(),
+                };
+
+                // Match statement for components
+                let (gets, comps) = self.args.unzip_vec(|item| {
+                    let var = component_var(item.comp.idx);
+                    (
+                        match item.is_mut {
+                            true => quote!(#comps_var.#var.get_mut),
+                            false => quote!(#comps_var.#var.get),
+                        },
+                        format_ident!("{}", item.var),
+                    )
+                });
+
+                quote!(
+                    let mut #var = None;
+                    if let Some(k) = #s.get_key() {
+                        #if_labels {
+                            match (#(#gets(&k),)*) {
+                                (#(Some(#comps),)*) => #var = Some(#ty {
+                                    #eid: k,
+                                    #(#comps),*
+                                }),
+                                _ => (),
+                            }
+                        }
+                    }
+                )
+            }
+            None => {
+                let mut arg_it = self.args.iter().enumerate();
+
+                // Set initial vector
+                let init = match arg_it.next() {
+                    Some((_, arg)) => {
+                        let var = component_var(arg.comp.idx);
+                        if arg.is_mut {
+                            quote!(#comps_var.#var.iter_mut().collect())
+                        } else {
+                            quote!(#comps_var.#var.iter().collect())
+                        }
+                    }
+                    None => {
+                        match self.labels.as_ref().and_then(|labels| {
+                            labels
+                                .symbols
+                                .iter()
+                                .find(|(_, must_be)| must_be == &&MustBe::Value(true))
+                        }) {
+                            Some((comp, _)) => {
+                                let var = component_var(comp.idx);
+                                quote!(#comps_var.#var.iter().collect())
+                            }
+                            None => quote!(#comps_var.#eids.iter().map(|k| (k, ())).collect()),
+                        }
+                    }
+                };
+
+                // Intersect vector with other components
+                let intersects = arg_it.map_vec_into(|(i, arg)| {
+                    let tmps = (0..i).map_vec_into(|i| format_ident!("v{i}"));
+                    let tmp_n = format_ident!("v{}", i);
+                    let closure = quote!(|(#(#tmps),*), #tmp_n| (#(#tmps,)* #tmp_n));
+                    let var = component_var(arg.comp.idx);
+                    if arg.is_mut {
+                        quote!(#intersect_mut(#v, &mut #comps_var.#var, #closure))
+                    } else {
+                        quote!(#intersect(#v, &#comps_var.#var, #closure))
+                    }
+                });
+
+                // Apply label filters
+                let filter_labels = match filter_labels {
+                    Some(filter_labels) => quote!(#filter_labels),
+                    None => quote!(#v),
+                };
+
+                quote!(
+                    let #v = #init;
+                    #(let #v = #intersects;)*
+                    let #var = #filter_labels;
+                )
+            }
+        })
     }
 }
 
@@ -506,7 +689,7 @@ impl std::fmt::Display for ComponentSet {
             self.args,
             self.labels
                 .as_ref()
-                .map_or(String::new(), |l| format!("{l}"))
+                .map_or(String::new(), |cs_labels| format!("{}", cs_labels.labels))
         ))
     }
 }

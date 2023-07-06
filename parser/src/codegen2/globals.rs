@@ -12,7 +12,7 @@ use crate::{
     },
 };
 
-use super::{Codegen, Crates};
+use super::Crates;
 
 struct CodegenArgs {
     struct_name: syn::Ident,
@@ -33,7 +33,7 @@ fn codegen(
         }
 
         impl #struct_name {
-            pub new() -> Self {
+            fn new() -> Self {
                 Self {
                     #(#vars: #types::new()),*
                 }

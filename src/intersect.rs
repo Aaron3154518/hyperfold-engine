@@ -17,7 +17,7 @@ where
     }
 }
 
-pub fn filter_vec<'a, const N: usize, K, V, F>(
+pub fn filter<'a, const N: usize, K, V, F>(
     keys: Vec<(&'a K, V)>,
     maps: [&dyn HasKey<K>; N],
     filter: F,

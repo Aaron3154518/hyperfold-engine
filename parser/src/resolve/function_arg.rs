@@ -22,12 +22,12 @@ use crate::{
 };
 
 use super::{
-    component_set::{ComponentSet, LabelItem, LabelOp},
+    component_set::{ComponentSet, LabelItem, LabelOp, ComponentSetLabels},
     items_crate::{ItemComponent, ItemGlobal, Items},
     labels::MustBe,
     path::{resolve_syn_path, ResolveResultTrait},
     paths::GetPaths,
-    util::{CombineMsgs, MsgResult, MsgTrait, ToMsgsResult, Zip2Msgs},
+    util::{CombineMsgs, MsgTrait, Zip2Msgs},
     ItemEvent, ItemSystem,
 };
 
@@ -89,9 +89,9 @@ impl ComponentRefTracker {
         let (mut_cnt, immut_cnt) = (self.mut_refs.len(), self.immut_refs.len());
 
         (mut_cnt > 1)
-            .err(format!("Multiple mutable references to '{comp_name}'"), ())
-            .and_msg((mut_cnt > 0 && immut_cnt > 0).err(
-                format!("Mutable and immutable references to '{comp_name}'"),
+            .err(vec![format!("Multiple mutable references to '{comp_name}'")], ())
+            .and_msgs((mut_cnt > 0 && immut_cnt > 0).err(
+                vec![format!("Mutable and immutable references to '{comp_name}'")],
                 (),
             ))
             .map_err(|mut errs| {
@@ -171,7 +171,7 @@ impl ItemSystem {
                 })
                 .combine_msgs()
                 // Require event
-                .then_msg(event.ok_or(format!("System must specify an event")))
+                .then_msgs(event.ok_or(vec![format!("System must specify an event")]))
                 // Check component reference mutability
                 .and_msgs(
                     component_refs
@@ -209,13 +209,13 @@ impl ItemSystem {
             .ok_or(vec![format!("Invalid Global index: {i}")])
             .and_then(|g| {
                 if g.args.is_const {
-                    Self::validate_mut(arg, false).map(|_| g).to_msg_vec()
+                    Self::validate_mut(arg, false).map(|_| g)
                 } else {
                     Ok(g)
                 }
             })
-            .and_msg(Self::validate_ref(arg, 1))
-            .and_msg(globals.insert(i).ok((), format!("Duplicate global: {arg}")))
+            .and_msgs(Self::validate_ref(arg, 1))
+            .and_msgs(globals.insert(i).ok((),vec![ format!("Duplicate global: {arg}")]))
     }
 
     fn validate_event<'a>(arg: &FnArg, i: usize, items: &'a Items) -> MsgsResult<&'a ItemEvent> {
@@ -223,8 +223,8 @@ impl ItemSystem {
             .events
             .get(i)
             .ok_or(vec![format!("Invalid Event index: {i}")])
-            .and_msg(Self::validate_ref(arg, 1))
-            .and_msg(Self::validate_mut(arg, false))
+            .and_msgs(Self::validate_ref(arg, 1))
+            .and_msgs(Self::validate_mut(arg, false))
     }
 
     fn validate_component_set<'a>(
@@ -245,16 +245,16 @@ impl ItemSystem {
 
                 let mut singletons = Vec::new();
                 for item in cs.args.iter() {
-                    if !component_refs.contains_key(&item.c_idx) {
+                    if !component_refs.contains_key(&item.comp.idx) {
                         component_refs
-                            .insert(item.c_idx, ComponentRefTracker::new());
+                            .insert(item.comp.idx, ComponentRefTracker::new());
                     }
 
-                    if let Some(refs) = component_refs.get_mut(&item.c_idx) {
+                    if let Some(refs) = component_refs.get_mut(&item.comp.idx) {
                         refs.add_ref(path.to_string(), item.is_mut);
                     }
 
-                    if let Some(c) = items.components.get(item.c_idx) {
+                    if let Some(c) = items.components.get(item.comp.idx) {
                         if c.args.is_singleton {
                             singletons.push(c.path.path.join("::"));
                         }
@@ -264,9 +264,9 @@ impl ItemSystem {
                 let mut unknown_singleton_labels = Vec::new();
                 let mut impossible_labels = Vec::new();
                 match &cs.labels {
-                    Some(labels) => cs.symbols.iter().map_vec_into( 
-                        |(i, must_be)| {
-                            items.components.get(*i).ok_or(format!("Invalid label index: {i}"))
+                    Some(ComponentSetLabels{symbols, .. }) => symbols.iter().map_vec_into( 
+                        |(c_sym, must_be)| {
+                            items.components.get(c_sym.idx).ok_or(vec![format!("Invalid label index: {}", c_sym.idx)])
                             .map(
                                 |c| {
                                     let path = c.path.path.join("::");
@@ -290,10 +290,10 @@ impl ItemSystem {
                     ).combine_msgs().map(|_| ()),
                     None => Ok(()),
                 }
-                .and_msg(impossible_labels.is_empty().ok((), format!(
+                .and_msgs(impossible_labels.is_empty().ok((), vec![format!(
                     "{TAB}Labels cannot be both required and forbidden:\n{TAB}{TAB}{}",
                     impossible_labels.join(", ")
-                )))
+                )]))
                 .and_msgs((is_vec || !singletons.is_empty()).ok((),{
                     let mut errs = vec![format!(
                         "{TAB}Entity set has no singletons and must be wrapped with {entities}<>"
@@ -311,14 +311,14 @@ impl ItemSystem {
                 })
                 .map(|_|  cs)
             })
-            .and_msg(Self::validate_ref(arg, 0))
+            .and_msgs(Self::validate_ref(arg, 0))
     }
 
     // Validate conditions
-    fn validate_ref(arg: &FnArg, should_be_cnt: usize) -> MsgResult<()> {
+    fn validate_ref(arg: &FnArg, should_be_cnt: usize) -> MsgsResult<()> {
         (arg.ref_cnt == should_be_cnt).ok(
             (),
-            format!(
+            vec![format!(
                 "Type should be taken by {}: \"{}\"",
                 if should_be_cnt == 0 {
                     "borrow".to_string()
@@ -328,14 +328,14 @@ impl ItemSystem {
                     format!("{} references", should_be_cnt)
                 },
                 arg
-            ),
+            )],
         )
     }
 
-    fn validate_mut(arg: &FnArg, should_be_mut: bool) -> MsgResult<()> {
+    fn validate_mut(arg: &FnArg, should_be_mut: bool) -> MsgsResult<()> {
         (arg.is_mut == should_be_mut).ok(
             (),
-            format!(
+            vec![format!(
                 "Type should be taken {}: \"{}\"",
                 if should_be_mut {
                     "mutably"
@@ -343,7 +343,7 @@ impl ItemSystem {
                     "immutably"
                 },
                 arg
-            ),
+            )],
         )
     }
 }
@@ -388,7 +388,7 @@ impl FnArg {
         sig.inputs
             .iter()
             .map_vec_into(|arg| match arg {
-                syn::FnArg::Receiver(_) => Err("Cannot use self in function".to_string()),
+                syn::FnArg::Receiver(_) => Err(vec!["Cannot use self in function".to_string()]),
                 syn::FnArg::Typed(syn::PatType { ty, .. }) => {
                     FnArg::parse_type(ty, (m, cr, crates))
                 }
@@ -406,7 +406,7 @@ impl FnArg {
             })
     }
 
-    fn parse_type(ty: &syn::Type, (m, cr, crates): ModInfo) -> MsgResult<Self> {
+    fn parse_type(ty: &syn::Type, (m, cr, crates): ModInfo) -> MsgsResult<Self> {
         let ty_str = ty.to_token_stream().to_string();
         match ty {
             syn::Type::Path(p) => {
@@ -420,7 +420,7 @@ impl FnArg {
                 resolve_syn_path(&m.path, &p.path, (m, cr, crates))
                     .expect_symbol()
                     .and_then(|sym| match sym.kind {
-                        crate::parse::SymbolType::Global(i) => Ok(FnArgType::Global(i)),
+                        crate::parse::SymbolType::Global(g_sym) => Ok(FnArgType::Global(g_sym.idx)),
                         crate::parse::SymbolType::Event(i) => Ok(FnArgType::Event(i)),
                         crate::parse::SymbolType::ComponentSet(idx) => {
                             Ok(FnArgType::Entities { idx, is_vec: false })
@@ -435,15 +435,15 @@ impl FnArg {
                                             .discard_symbol()
                                             .map(|idx| FnArgType::Entities { idx, is_vec: true })
                                     }
-                                    _ => Err(format!(
+                                    _ => Err(vec![format!(
                                         "Invalid argument type: {}",
                                         sym.path.join("::")
-                                    )),
+                                    )]),
                                 }
                             }
-                            _ => Err(format!("Invalid argument type: {}", sym.path.join("::"))),
+                            _ => Err(vec![format!("Invalid argument type: {}", sym.path.join("::"))]),
                         },
-                        _ => Err(format!("Invalid argument type: {}", sym.path.join("::"))),
+                        _ => Err(vec![format!("Invalid argument type: {}", sym.path.join("::"))]),
                     })
                     .map(|data| Self {
                         ty: data,
@@ -468,22 +468,22 @@ impl FnArg {
                     })
                     .collect::<Vec<_>>();
                 if traits.len() != 1 {
-                    Err(format!(
+                    Err(vec![format!(
                         "Trait arguments may only have one trait type: {ty_str}"
-                    ))
+                    )])
                 } else {
                     resolve_syn_path(&m.path, &traits[0].path, (m, cr, crates))
                         .expect_symbol()
                         .expect_trait()
                         .discard_symbol()
-                        .map(|i| Self {
-                            ty: FnArgType::Global(i),
+                        .map(|g_sym| Self {
+                            ty: FnArgType::Global(g_sym.idx),
                             is_mut: false,
                             ref_cnt: 0,
                         })
                 }
             }
-            _ => Err(format!("Invalid argument type: {ty_str}")),
+            _ => Err(vec![format!("Invalid argument type: {ty_str}")]),
         }
     }
 }

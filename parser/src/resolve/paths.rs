@@ -9,7 +9,7 @@ use crate::{
 
 use shared::util::{Call, JoinMap, PushInto};
 
-use super::{path::ItemPath, util::MsgResult};
+use super::{path::ItemPath, util::MsgsResult};
 
 pub trait ExpandEnum<const N: usize>
 where
@@ -161,6 +161,7 @@ pub enum EnginePaths {
     // Components
     Singleton,
     // Functions
+    Filter,
     Intersect,
     IntersectMut,
     // Events
@@ -187,6 +188,7 @@ impl GetPaths for EnginePaths {
     fn get_ident(&self) -> &str {
         match self {
             EnginePaths::Singleton => "Singleton",
+            EnginePaths::Filter => "filter",
             EnginePaths::Intersect => "intersect",
             EnginePaths::IntersectMut => "intersect_mut",
             EnginePaths::CoreUpdate => "Update",
@@ -205,7 +207,9 @@ impl GetPaths for EnginePaths {
     fn get_path(&self) -> Vec<&str> {
         match self {
             EnginePaths::Singleton => vec![ECS, "components"],
-            EnginePaths::Intersect | EnginePaths::IntersectMut => vec!["intersect"],
+            EnginePaths::Filter | EnginePaths::Intersect | EnginePaths::IntersectMut => {
+                vec!["intersect"]
+            }
             EnginePaths::CoreUpdate
             | EnginePaths::CoreEvents
             | EnginePaths::CorePreRender

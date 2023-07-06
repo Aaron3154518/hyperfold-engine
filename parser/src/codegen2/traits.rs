@@ -6,7 +6,7 @@ use crate::{
     codegen2::{idents::CodegenIdents, util::vec_to_path},
     match_ok,
     resolve::{
-        util::{MsgsResult, ToMsgsResult, Zip2Msgs},
+        util::{MsgsResult, Zip2Msgs},
         Crate, GetPaths, ItemPath,
     },
 };
@@ -27,10 +27,7 @@ where
     let macro_cr_idx = crates.get_crate_index(Crate::Macros);
 
     let namespace = CodegenIdents::Namespace.to_ident();
-    let trait_source = crates
-        .get_path(cr_idx, trait_source)
-        .map(|v| vec_to_path(v))
-        .to_msg_vec();
+    let trait_source = crates.get_syn_path(cr_idx, trait_source);
 
     // Events for this crate
     let types = items.filter_map_vec(|t| {

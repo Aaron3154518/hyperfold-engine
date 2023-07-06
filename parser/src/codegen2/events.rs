@@ -7,12 +7,12 @@ use crate::{
     match_ok,
     resolve::{
         constants::{event_var, event_variant},
-        util::{CombineMsgs, MsgsResult, ToMsgsResult, Zip2Msgs, Zip3Msgs, Zip5Msgs},
+        util::{CombineMsgs, MsgsResult, Zip2Msgs, Zip3Msgs, Zip5Msgs},
         Crate, EnginePaths, EngineTraits, ItemEvent,
     },
 };
 
-use super::{traits::trait_defs, util::vec_to_path, Codegen, Crates};
+use super::{traits::trait_defs, util::vec_to_path, Crates};
 
 pub fn events_enum(events: &Vec<ItemEvent>) -> TokenStream {
     let enum_name = CodegenIdents::E.to_ident();
@@ -131,10 +131,7 @@ pub fn event_trait_impls(
     let enum_name = CodegenIdents::E.to_ident();
     let namespace = CodegenIdents::Namespace.to_ident();
     let add_event = CodegenIdents::AddEvent.to_ident();
-    let add_event_trait = crates
-        .get_path(cr_idx, EngineTraits::AddEvent)
-        .map(|v| vec_to_path(v))
-        .to_msg_vec();
+    let add_event_trait = crates.get_syn_path(cr_idx, EngineTraits::AddEvent);
 
     match_ok!(Zip3Msgs, types, crate_paths, add_event_trait, {
         quote!(

@@ -2,7 +2,7 @@ use shared::util::{AndThen, Get2D, JoinMap, JoinMapInto, NoneOr};
 
 use crate::parse::AstCrate;
 use crate::resolve::constants::NAMESPACE;
-use crate::resolve::util::MsgResult;
+use crate::resolve::util::MsgsResult;
 use crate::resolve::{Crate, ExpandEnum, GetPaths, ItemPath};
 
 use super::util::vec_to_path;
@@ -83,22 +83,22 @@ impl Crates {
         self.paths.get(start_idx, end_idx).and_then(|v| v.clone())
     }
 
-    pub fn get_item_path(&self, start_idx: usize, path: &ItemPath) -> MsgResult<Vec<String>> {
+    pub fn get_item_path(&self, start_idx: usize, path: &ItemPath) -> MsgsResult<Vec<String>> {
         let i = if path.path.starts_with(&["crate".to_string()]) {
             1
         } else {
             0
         };
         self.get_crate_path(start_idx, path.cr_idx).map_or(
-            Err(format!(
+            Err(vec![format!(
                 "No path from crate {start_idx} to crate {}",
                 path.cr_idx
-            )),
+            )]),
             |pre| Ok([pre, path.path[i..].to_vec()].concat()),
         )
     }
 
-    pub fn get_path(&self, start_idx: usize, path: impl GetPaths) -> MsgResult<Vec<String>> {
+    pub fn get_path(&self, start_idx: usize, path: impl GetPaths) -> MsgsResult<Vec<String>> {
         self.get_item_path(
             start_idx,
             &ItemPath {
@@ -106,6 +106,14 @@ impl Crates {
                 path: path.full_path(),
             },
         )
+    }
+
+    pub fn get_item_syn_path(&self, start_idx: usize, path: &ItemPath) -> MsgsResult<syn::Path> {
+        self.get_item_path(start_idx, path).map(|v| vec_to_path(v))
+    }
+
+    pub fn get_syn_path(&self, start_idx: usize, path: impl GetPaths) -> MsgsResult<syn::Path> {
+        self.get_path(start_idx, path).map(|v| vec_to_path(v))
     }
 
     // Get crates

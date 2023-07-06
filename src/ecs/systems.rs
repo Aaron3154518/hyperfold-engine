@@ -1,3 +1,5 @@
+use super::entities::Entity;
+
 #[macro_export]
 macro_rules! components {
         // Op => e
@@ -55,12 +57,12 @@ macro_rules! components {
 
         ($name: ident $(,$n: ident: $t: ty)*) => {
             pub struct $name<'a> {
-                pub eid: &'a crate::_engine::Entity
+                pub eid: &'a $crate::Entity
                 $(,pub $n: $t)*
             }
 
             impl<'a> $name<'a> {
-                pub fn new(eid: &'a crate::_engine::Entity $(,$n: $t)*) -> Self {
+                pub fn new(eid: &'a $crate::Entity $(,$n: $t)*) -> Self {
                     Self { eid $(,$n)* }
                 }
             }

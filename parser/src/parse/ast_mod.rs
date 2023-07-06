@@ -1,12 +1,15 @@
 use std::{fs, path::PathBuf};
 
 use proc_macro2::TokenStream;
-use shared::util::{Catch, PushInto};
+use shared::{
+    parse_args::{ComponentMacroArgs, GlobalMacroArgs},
+    util::{Catch, PushInto},
+};
 use syn::visit::Visit;
 
 use crate::{
     parse::attributes::{get_attributes_if_active, Attribute, EcsAttribute},
-    resolve::util::MsgResult,
+    resolve::util::MsgsResult,
     resolve::{EnginePaths, ExpandEnum, GetPaths, ItemPath, MacroPaths},
     util::{add_path_item, end, parse_syn_path},
 };
@@ -67,11 +70,23 @@ impl HardcodedSymbol {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(PartialEq, Eq, Copy, Clone, Hash, Debug)]
+pub struct ComponentSymbol {
+    pub idx: usize,
+    pub args: ComponentMacroArgs,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct GlobalSymbol {
+    pub idx: usize,
+    pub args: GlobalMacroArgs,
+}
+
+#[derive(Copy, Clone, Debug)]
 pub enum SymbolType {
-    Component(usize),
-    Global(usize),
-    Trait(usize),
+    Component(ComponentSymbol),
+    Global(GlobalSymbol),
+    Trait(GlobalSymbol),
     Event(usize),
     System(usize),
     ComponentSet(usize),
@@ -81,9 +96,9 @@ pub enum SymbolType {
 impl std::fmt::Display for SymbolType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
-            SymbolType::Component(_) => "Component",
-            SymbolType::Global(_) => "Global",
-            SymbolType::Trait(_) => "Trait",
+            SymbolType::Component { .. } => "Component",
+            SymbolType::Global { .. } => "Global",
+            SymbolType::Trait { .. } => "Trait",
             SymbolType::Event(_) => "Event",
             SymbolType::System(_) => "System",
             SymbolType::ComponentSet(_) => "ComponentSet",
@@ -129,98 +144,98 @@ impl Symbol {
 }
 
 pub trait MatchSymbol<'a> {
-    fn expect_component(self) -> MsgResult<(&'a Symbol, usize)>;
+    fn expect_component(self) -> MsgsResult<(&'a Symbol, ComponentSymbol)>;
 
-    fn expect_global(self) -> MsgResult<(&'a Symbol, usize)>;
+    fn expect_global(self) -> MsgsResult<(&'a Symbol, GlobalSymbol)>;
 
-    fn expect_trait(self) -> MsgResult<(&'a Symbol, usize)>;
+    fn expect_trait(self) -> MsgsResult<(&'a Symbol, GlobalSymbol)>;
 
-    fn expect_global_or_trait(self) -> MsgResult<(&'a Symbol, usize)>;
+    fn expect_global_or_trait(self) -> MsgsResult<(&'a Symbol, GlobalSymbol)>;
 
-    fn expect_event(self) -> MsgResult<(&'a Symbol, usize)>;
+    fn expect_event(self) -> MsgsResult<(&'a Symbol, usize)>;
 
-    fn expect_system(self) -> MsgResult<(&'a Symbol, usize)>;
+    fn expect_system(self) -> MsgsResult<(&'a Symbol, usize)>;
 
-    fn expect_component_set(self) -> MsgResult<(&'a Symbol, usize)>;
+    fn expect_component_set(self) -> MsgsResult<(&'a Symbol, usize)>;
 
-    fn expect_any_hardcoded(self) -> MsgResult<(&'a Symbol, HardcodedSymbol)>;
+    fn expect_any_hardcoded(self) -> MsgsResult<(&'a Symbol, HardcodedSymbol)>;
 
-    fn expect_hardcoded(self, sym: HardcodedSymbol) -> MsgResult<&'a Symbol>;
+    fn expect_hardcoded(self, sym: HardcodedSymbol) -> MsgsResult<&'a Symbol>;
 }
 
-impl<'a> MatchSymbol<'a> for MsgResult<&'a Symbol> {
-    fn expect_component(self) -> MsgResult<(&'a Symbol, usize)> {
+impl<'a> MatchSymbol<'a> for MsgsResult<&'a Symbol> {
+    fn expect_component(self) -> MsgsResult<(&'a Symbol, ComponentSymbol)> {
         self.and_then(|arg| match arg.kind {
-            SymbolType::Component(i) => Ok((arg, i)),
-            _ => Err(arg.panic_msg("Component")),
+            SymbolType::Component(c_sym) => Ok((arg, c_sym)),
+            _ => Err(vec![arg.panic_msg("Component")]),
         })
     }
 
-    fn expect_global(self) -> MsgResult<(&'a Symbol, usize)> {
+    fn expect_global(self) -> MsgsResult<(&'a Symbol, GlobalSymbol)> {
         self.and_then(|arg| match arg.kind {
-            SymbolType::Global(i) => Ok((arg, i)),
-            _ => Err(arg.panic_msg("Global")),
+            SymbolType::Global(g_sym) => Ok((arg, g_sym)),
+            _ => Err(vec![arg.panic_msg("Global")]),
         })
     }
 
-    fn expect_trait(self) -> MsgResult<(&'a Symbol, usize)> {
+    fn expect_trait(self) -> MsgsResult<(&'a Symbol, GlobalSymbol)> {
         self.and_then(|arg| match arg.kind {
-            SymbolType::Trait(i) => Ok((arg, i)),
-            _ => Err(arg.panic_msg("Trait")),
+            SymbolType::Trait(g_sym) => Ok((arg, g_sym)),
+            _ => Err(vec![arg.panic_msg("Trait")]),
         })
     }
 
-    fn expect_global_or_trait(self) -> MsgResult<(&'a Symbol, usize)> {
+    fn expect_global_or_trait(self) -> MsgsResult<(&'a Symbol, GlobalSymbol)> {
         self.and_then(|arg| match arg.kind {
-            SymbolType::Global(i) | SymbolType::Trait(i) => Ok((arg, i)),
-            _ => Err(arg.panic_msg("Trait or Global")),
+            SymbolType::Global(g_sym) | SymbolType::Trait(g_sym) => Ok((arg, g_sym)),
+            _ => Err(vec![arg.panic_msg("Trait or Global")]),
         })
     }
 
-    fn expect_event(self) -> MsgResult<(&'a Symbol, usize)> {
+    fn expect_event(self) -> MsgsResult<(&'a Symbol, usize)> {
         self.and_then(|arg| match arg.kind {
             SymbolType::Event(i) => Ok((arg, i)),
-            _ => Err(arg.panic_msg("Event")),
+            _ => Err(vec![arg.panic_msg("Event")]),
         })
     }
 
-    fn expect_system(self) -> MsgResult<(&'a Symbol, usize)> {
+    fn expect_system(self) -> MsgsResult<(&'a Symbol, usize)> {
         self.and_then(|arg| match arg.kind {
             SymbolType::System(i) => Ok((arg, i)),
-            _ => Err(arg.panic_msg("System")),
+            _ => Err(vec![arg.panic_msg("System")]),
         })
     }
 
-    fn expect_component_set(self) -> MsgResult<(&'a Symbol, usize)> {
+    fn expect_component_set(self) -> MsgsResult<(&'a Symbol, usize)> {
         self.and_then(|arg| match arg.kind {
             SymbolType::ComponentSet(i) => Ok((arg, i)),
-            _ => Err(arg.panic_msg("Component Set")),
+            _ => Err(vec![arg.panic_msg("Component Set")]),
         })
     }
 
-    fn expect_any_hardcoded(self) -> MsgResult<(&'a Symbol, HardcodedSymbol)> {
+    fn expect_any_hardcoded(self) -> MsgsResult<(&'a Symbol, HardcodedSymbol)> {
         self.and_then(|arg| match arg.kind {
             SymbolType::Hardcoded(sym) => Ok((arg, sym)),
-            _ => Err(arg.panic_msg("Hardcoded Path")),
+            _ => Err(vec![arg.panic_msg("Hardcoded Path")]),
         })
     }
 
-    fn expect_hardcoded(self, sym: HardcodedSymbol) -> MsgResult<&'a Symbol> {
+    fn expect_hardcoded(self, sym: HardcodedSymbol) -> MsgsResult<&'a Symbol> {
         self.expect_any_hardcoded()
             .and_then(|(s, h_sym)| match h_sym == sym {
                 true => Ok(s),
-                false => Err(s.panic_msg(&format!("Hardcoded Path: {s:#?}"))),
+                false => Err(vec![s.panic_msg(&format!("Hardcoded Path: {s:#?}"))]),
             })
     }
 }
 
 // Helper function to just get the data from a resolved symbol
 pub trait DiscardSymbol<T> {
-    fn discard_symbol(self) -> MsgResult<T>;
+    fn discard_symbol(self) -> MsgsResult<T>;
 }
 
-impl<T> DiscardSymbol<T> for MsgResult<(&Symbol, T)> {
-    fn discard_symbol(self) -> MsgResult<T> {
+impl<T> DiscardSymbol<T> for MsgsResult<(&Symbol, T)> {
+    fn discard_symbol(self) -> MsgsResult<T> {
         self.map(|(_, t)| t)
     }
 }

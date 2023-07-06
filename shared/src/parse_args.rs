@@ -13,7 +13,7 @@ where
 }
 
 // Component args
-#[derive(Debug, Copy, Clone)]
+#[derive(PartialEq, Eq, Debug, Copy, Clone, Hash)]
 pub struct ComponentMacroArgs {
     pub is_dummy: bool,
     pub is_singleton: bool,
@@ -47,7 +47,7 @@ impl syn::parse::Parse for ComponentMacroArgs {
 }
 
 // Global args
-#[derive(Debug, Copy, Clone)]
+#[derive(PartialEq, Eq, Debug, Copy, Clone, Hash)]
 pub struct GlobalMacroArgs {
     pub is_dummy: bool,
     pub is_const: bool,

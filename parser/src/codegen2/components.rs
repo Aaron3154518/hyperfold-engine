@@ -9,12 +9,12 @@ use crate::{
     match_ok,
     resolve::{
         constants::component_var,
-        util::{CombineMsgs, MsgsResult, ToMsgsResult, Zip2Msgs, Zip5Msgs},
+        util::{CombineMsgs, MsgsResult, Zip2Msgs, Zip5Msgs},
         Crate, EngineGlobals, EnginePaths, EngineTraits, GetPaths, ItemComponent,
     },
 };
 
-use super::{traits::trait_defs, util::vec_to_path, Codegen, Crates};
+use super::{traits::trait_defs, util::vec_to_path, Crates};
 
 struct CodegenArgs<'a> {
     struct_name: syn::Ident,
@@ -110,22 +110,10 @@ pub fn components(
         })
         .combine_msgs();
 
-    let entity_set = crates
-        .get_path(cr_idx, EnginePaths::EntitySet)
-        .map(|v| vec_to_path(v))
-        .to_msg_vec();
-    let entity_trash = crates
-        .get_path(cr_idx, EngineGlobals::EntityTrash)
-        .map(|v| vec_to_path(v))
-        .to_msg_vec();
-    let entity_map = crates
-        .get_path(cr_idx, EnginePaths::EntityMap)
-        .map(|v| vec_to_path(v))
-        .to_msg_vec();
-    let singleton = crates
-        .get_path(cr_idx, EnginePaths::Singleton)
-        .map(|v| vec_to_path(v))
-        .to_msg_vec();
+    let entity_set = crates.get_syn_path(cr_idx, EnginePaths::EntitySet);
+    let entity_trash = crates.get_syn_path(cr_idx, EngineGlobals::EntityTrash);
+    let entity_map = crates.get_syn_path(cr_idx, EnginePaths::EntityMap);
+    let singleton = crates.get_syn_path(cr_idx, EnginePaths::Singleton);
 
     match_ok!(
         Zip5Msgs,
@@ -185,18 +173,9 @@ pub fn component_trait_impls(
     let struct_name = CodegenIdents::CFoo.to_ident();
     let namespace = CodegenIdents::Namespace.to_ident();
     let add_comp = CodegenIdents::AddComponent.to_ident();
-    let add_comp_trait = crates
-        .get_path(cr_idx, EngineTraits::AddComponent)
-        .map(|v| vec_to_path(v))
-        .to_msg_vec();
-    let entity = crates
-        .get_path(cr_idx, EnginePaths::Entity)
-        .map(|v| vec_to_path(v))
-        .to_msg_vec();
-    let singleton = crates
-        .get_path(cr_idx, EnginePaths::Singleton)
-        .map(|v| vec_to_path(v))
-        .to_msg_vec();
+    let add_comp_trait = crates.get_syn_path(cr_idx, EngineTraits::AddComponent);
+    let entity = crates.get_syn_path(cr_idx, EnginePaths::Entity);
+    let singleton = crates.get_syn_path(cr_idx, EnginePaths::Singleton);
 
     match_ok!(
         Zip5Msgs,

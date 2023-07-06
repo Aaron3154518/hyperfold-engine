@@ -4,7 +4,7 @@ use crate::{
     parse::{
         AstCrate, ModInfo, {AstMod, Symbol},
     },
-    resolve::util::MsgResult,
+    resolve::util::MsgsResult,
     util::parse_syn_path,
 };
 use shared::util::Catch;
@@ -203,14 +203,17 @@ pub fn resolve_syn_path<'a>(
 }
 
 pub trait ResolveResultTrait<'a> {
-    fn expect_symbol(self) -> MsgResult<&'a Symbol>;
+    fn expect_symbol(self) -> MsgsResult<&'a Symbol>;
 }
 
 impl<'a> ResolveResultTrait<'a> for ResolveResult<'a> {
-    fn expect_symbol(self) -> MsgResult<&'a Symbol> {
+    fn expect_symbol(self) -> MsgsResult<&'a Symbol> {
         match self {
             Ok(sym) => Ok(sym),
-            Err(e) => Err(format!("Could not resolve path: {}", e.path.join("::"))),
+            Err(e) => Err(vec![format!(
+                "Could not resolve path: {}",
+                e.path.join("::")
+            )]),
         }
     }
 }
