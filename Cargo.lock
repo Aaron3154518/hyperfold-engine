@@ -106,6 +106,7 @@ name = "hyperfold_engine"
 version = "0.1.0"
 dependencies = [
  "bindgen",
+ "itertools",
  "macros",
  "num-derive",
  "num-traits",
@@ -122,6 +123,15 @@ checksum = "bd070e393353796e801d209ad339e89596eb4c8d430d18ede6a1cced8fafbd99"
 dependencies = [
  "autocfg",
  "hashbrown",
+]
+
+[[package]]
+name = "itertools"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b1c173a5686ce8bfa551b3563d0c2170bf24ca44da99c7ca4bfdab5418c3fe57"
+dependencies = [
+ "either",
 ]
 
 [[package]]

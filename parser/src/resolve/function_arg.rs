@@ -264,7 +264,7 @@ impl ItemSystem {
                 let mut unknown_singleton_labels = Vec::new();
                 let mut impossible_labels = Vec::new();
                 match &cs.labels {
-                    Some(labels) => cs.symbols.iter().map_vec_into(
+                    Some(labels) => cs.symbols.iter().map_vec_into( 
                         |(i, must_be)| {
                             items.components.get(*i).ok_or(format!("Invalid label index: {i}"))
                             .map(

@@ -158,19 +158,11 @@ impl GetPaths for EngineGlobals {
 // Paths to engine items needed by parsing
 #[shared::macros::expand_enum]
 pub enum EnginePaths {
-    // Containers
-    Container,
-    Label,
-    AndLabels,
-    OrLabels,
-    NandLabels,
-    NorLabels,
+    // Components
     Singleton,
     // Functions
     Intersect,
     IntersectMut,
-    IntersectKeys,
-    GetKeys,
     // Events
     CoreUpdate,
     CoreEvents,
@@ -194,17 +186,9 @@ impl GetPaths for EnginePaths {
 
     fn get_ident(&self) -> &str {
         match self {
-            EnginePaths::Container => "Container",
-            EnginePaths::Label => "Label",
-            EnginePaths::AndLabels => "AndLabels",
-            EnginePaths::OrLabels => "OrLabels",
-            EnginePaths::NandLabels => "NandLabels",
-            EnginePaths::NorLabels => "NorLabels",
             EnginePaths::Singleton => "Singleton",
             EnginePaths::Intersect => "intersect",
             EnginePaths::IntersectMut => "intersect_mut",
-            EnginePaths::IntersectKeys => "intersect_keys",
-            EnginePaths::GetKeys => "get_keys",
             EnginePaths::CoreUpdate => "Update",
             EnginePaths::CoreEvents => "Events",
             EnginePaths::CorePreRender => "PreRender",
@@ -220,17 +204,8 @@ impl GetPaths for EnginePaths {
 
     fn get_path(&self) -> Vec<&str> {
         match self {
-            EnginePaths::Container
-            | EnginePaths::Label
-            | EnginePaths::AndLabels
-            | EnginePaths::OrLabels
-            | EnginePaths::NandLabels
-            | EnginePaths::NorLabels
-            | EnginePaths::Singleton => vec![ECS, "components"],
-            EnginePaths::Intersect
-            | EnginePaths::IntersectMut
-            | EnginePaths::IntersectKeys
-            | EnginePaths::GetKeys => vec!["intersect"],
+            EnginePaths::Singleton => vec![ECS, "components"],
+            EnginePaths::Intersect | EnginePaths::IntersectMut => vec!["intersect"],
             EnginePaths::CoreUpdate
             | EnginePaths::CoreEvents
             | EnginePaths::CorePreRender
@@ -264,7 +239,7 @@ impl NamespaceTraits {
 
 impl GetPaths for NamespaceTraits {
     fn get_crate(&self) -> Crate {
-        Crate::Engine
+        Crate::Main
     }
 
     fn get_ident(&self) -> &str {

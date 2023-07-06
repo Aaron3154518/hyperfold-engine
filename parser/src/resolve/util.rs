@@ -18,6 +18,8 @@ impl<T> ToMsgsResult<T> for MsgResult<T> {
 
 // Traits for both msg types
 pub trait MsgTrait<T> {
+    fn get_ref<'a>(&'a self) -> MsgsResult<&'a T>;
+
     // Add rhs errors, don't overwrite data
     fn and_msg<U>(self, rhs: MsgResult<U>) -> MsgsResult<T>;
     fn and_msgs<U>(self, rhs: MsgsResult<U>) -> MsgsResult<T>;
@@ -28,6 +30,13 @@ pub trait MsgTrait<T> {
 }
 
 impl<T> MsgTrait<T> for MsgResult<T> {
+    fn get_ref<'a>(&'a self) -> MsgsResult<&'a T> {
+        match self {
+            Ok(t) => Ok(t),
+            Err(e) => Err(vec![e.to_string()]),
+        }
+    }
+
     fn and_msg<U>(self, rhs: MsgResult<U>) -> MsgsResult<T> {
         match (self, rhs) {
             (Ok(t), Ok(_)) => Ok(t),
@@ -50,6 +59,13 @@ impl<T> MsgTrait<T> for MsgResult<T> {
 }
 
 impl<T> MsgTrait<T> for MsgsResult<T> {
+    fn get_ref<'a>(&'a self) -> MsgsResult<&'a T> {
+        match self {
+            Ok(t) => Ok(t),
+            Err(e) => Err(e.to_vec()),
+        }
+    }
+
     fn and_msg<U>(self, rhs: MsgResult<U>) -> MsgsResult<T> {
         self.and_msgs(rhs.to_msg_vec())
     }

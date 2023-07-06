@@ -1,60 +1,93 @@
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::HashMap;
 use std::hash::Hash;
+use std::vec::IntoIter;
 
-pub fn intersect<'a, K, V1, V2, F>(
-    mut h: HashMap<&'a K, V1>,
-    h_new: &'a HashMap<K, V2>,
-    get: F,
-) -> HashMap<&'a K, V1>
+use itertools::Itertools;
+
+pub trait HasKey<K> {
+    fn has_key(&self, k: &K) -> bool;
+}
+
+impl<K, V> HasKey<K> for HashMap<K, V>
 where
-    K: Eq + Hash + Clone + Ord,
-    F: Fn(&mut V1) -> &mut Option<&'a V2>,
+    K: Eq + Hash,
 {
-    for (k, v) in h_new.iter() {
-        if let Some(v2) = h.get_mut(k) {
-            *get(v2) = Some(v)
+    fn has_key(&self, k: &K) -> bool {
+        self.contains_key(k)
+    }
+}
+
+pub fn filter_vec<'a, const N: usize, K, V, F>(
+    keys: Vec<(&'a K, V)>,
+    maps: [&dyn HasKey<K>; N],
+    filter: F,
+) -> Vec<(&'a K, V)>
+where
+    K: Hash + Eq,
+    F: Fn([bool; N]) -> bool,
+{
+    let maps = maps.each_ref();
+    keys.into_iter()
+        .filter(|(k, _)| filter(maps.map(|map| map.has_key(k))))
+        .collect()
+}
+
+pub fn intersect_impl<'a, K, V1, V2, V3, F>(
+    mut it1: IntoIter<(K, V1)>,
+    mut it2: IntoIter<(K, V2)>,
+    f: F,
+) -> Vec<(K, V3)>
+where
+    K: Ord + Eq + Hash,
+    V3: 'a,
+    F: Fn(V1, V2) -> V3,
+{
+    let mut res = Vec::new();
+    let mut kv1 = it1.next();
+    let mut kv2 = it2.next();
+    while let (Some((k1, v1)), Some((k2, v2))) = (kv1, kv2) {
+        (kv1, kv2) = if k1 < k2 {
+            (it1.next(), Some((k2, v2)))
+        } else if k2 < k1 {
+            (Some((k1, v1)), it2.next())
+        } else {
+            res.push((k1, f(v1, v2)));
+            (it1.next(), it2.next())
         }
     }
-    h.drain_filter(|_k, v| get(v).is_none());
-    h
+    res
 }
 
-pub fn intersect_mut<'a, K, V1, V2, F>(
-    mut h: HashMap<&'a K, V1>,
-    h_new: &'a mut HashMap<K, V2>,
-    get: F,
-) -> HashMap<&'a K, V1>
+pub fn intersect<'a, K, V1, V2, V3, F>(
+    hm1: Vec<(&'a K, V1)>,
+    hm2: &'a HashMap<K, V2>,
+    f: F,
+) -> Vec<(&'a K, V3)>
 where
-    K: Eq + Hash + Clone + Ord,
-    F: Fn(&mut V1) -> &mut Option<&'a mut V2>,
+    K: Ord + Eq + Hash,
+    V3: 'a,
+    F: Fn(V1, &'a V2) -> V3,
 {
-    for (k, v) in h_new.iter_mut() {
-        if let Some(v2) = h.get_mut(k) {
-            *get(v2) = Some(v)
-        }
-    }
-    h.drain_filter(|_k, v| get(v).is_none());
-    h
+    intersect_impl(
+        hm1.into_iter().sorted_by_key(|(k, _)| *k),
+        hm2.iter().sorted_by_key(|(k, _)| *k),
+        f,
+    )
 }
 
-pub fn intersect_keys<K>(keys: &mut [HashSet<&K>]) -> BTreeSet<K>
+pub fn intersect_mut<'a, K, V1, V2, V3, F>(
+    hm1: Vec<(&'a K, V1)>,
+    hm2: &'a mut HashMap<K, V2>,
+    f: F,
+) -> Vec<(&'a K, V3)>
 where
-    K: Eq + Hash + Clone + Ord,
+    K: Ord + Eq + Hash,
+    V3: 'a,
+    F: Fn(V1, &'a mut V2) -> V3,
 {
-    keys.sort_by(|s1, s2| s1.len().cmp(&s2.len()));
-    if let Some(k1) = keys.first() {
-        let mut k1 = k1.clone();
-        keys[1..]
-            .iter()
-            .for_each(|k| k1 = k1.intersection(k).map(|k| *k).collect::<HashSet<_>>());
-        return k1.iter().map(|k| (*k).clone()).collect();
-    }
-    BTreeSet::new()
-}
-
-pub fn get_keys<'a, K, V>(map: &'a HashMap<K, V>) -> HashSet<&'a K>
-where
-    K: Eq + Hash + Clone,
-{
-    map.keys().collect()
+    intersect_impl(
+        hm1.into_iter().sorted_by_key(|(k, _)| *k),
+        hm2.iter_mut().sorted_by_key(|(k, _)| *k),
+        f,
+    )
 }
