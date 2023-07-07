@@ -16,7 +16,7 @@ use crate::{
 };
 
 use super::{
-    constants::{component_set_var, component_var},
+    constants::{component_set_fn, component_set_var, component_var},
     items_crate::ItemComponent,
     labels::SymbolMap,
     parse_macro_call::ParseMacroCall,
@@ -539,14 +539,15 @@ impl ComponentSet {
     pub fn quote(
         &self,
         ty: &syn::Path,
-        var: &syn::Ident,
+        fn_name: &syn::Ident,
         filter: &syn::Path,
         intersect: &syn::Path,
         intersect_mut: &syn::Path,
-    ) -> MsgsResult<TokenStream> {
+    ) -> TokenStream {
         let eid = CodegenIdents::GenEid.to_ident();
         let eids = CodegenIdents::GenEids.to_ident();
         let comps_var = CodegenIdents::GenCFoo.to_ident();
+        let comps_type = CodegenIdents::CFoo.to_ident();
 
         let mut args = self.args.to_vec();
         args.sort_by_key(|item| item.comp.idx);
@@ -590,17 +591,8 @@ impl ComponentSet {
             });
 
         // Codegen
-        Ok(match start_singleton {
+        let (body, ret) = match start_singleton {
             Some(s) => {
-                // If statement for label expression
-                let if_labels = match filter_labels {
-                    Some(filter_labels) => quote!(
-                        let #v = vec![(&k, ())];
-                        if #filter_labels.starts_with(&[(&k, ())])
-                    ),
-                    None => quote!(),
-                };
-
                 // Match statement for components
                 let (gets, comps) = args.unzip_vec(|item| {
                     let var = component_var(item.comp.idx);
@@ -618,19 +610,33 @@ impl ComponentSet {
                     (format_ident!("{}", item.var), component_var(item.comp.idx))
                 });
 
-                quote!(
-                    let mut #var = None;
-                    if let Some(k) = #s.get_key() {
-                        #if_labels {
-                            match (#(#gets(&k),)*) {
-                                (#(Some(#comps),)*) => #var = Some(#ty {
-                                    #eid: k,
-                                    #(#arg_vars: #arg_vals),*
-                                }),
-                                _ => (),
-                            }
-                        }
+                let mut create_cs = quote!(
+                    if let (#(Some(#comps),)*) = (#(#gets(&k),)*) {
+                        return Some(#ty {
+                            #eid: k,
+                            #(#arg_vars: #arg_vals),*
+                        });
                     }
+                );
+
+                // If statement for label expression
+                if let Some(if_labels) = filter_labels {
+                    create_cs = quote!(
+                        let #v = vec![(&k, ())];
+                        if #if_labels.starts_with(&[(&k, ())]) {
+                            #create_cs
+                        }
+                    );
+                }
+
+                (
+                    quote!(
+                        if let Some(k) = #s.get_key() {
+                            #create_cs
+                        }
+                        None
+                    ),
+                    quote!(Option<#ty>),
                 )
             }
             None => {
@@ -682,13 +688,22 @@ impl ComponentSet {
                     None => quote!(#v),
                 };
 
-                quote!(
-                    let #v = #init;
-                    #(let #v = #intersects;)*
-                    let #var = #filter_labels;
+                (
+                    quote!(
+                        let #v = #init;
+                        #(let #v = #intersects;)*
+                        #filter_labels
+                    ),
+                    quote!(Vec<#ty>),
                 )
             }
-        })
+        };
+
+        quote!(
+            fn #fn_name(#comps_var: &mut #comps_type) -> #ret {
+                #body
+            }
+        )
     }
 }
 

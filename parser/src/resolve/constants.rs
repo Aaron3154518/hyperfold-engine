@@ -26,3 +26,7 @@ pub fn event_variant(e_idx: usize) -> syn::Ident {
 pub fn component_set_var(cs_idx: usize) -> syn::Ident {
     format_ident!("cs{cs_idx}")
 }
+
+pub fn component_set_fn(cs_idx: usize) -> syn::Ident {
+    format_ident!("get_{}", component_set_var(cs_idx))
+}

@@ -1,3 +1,4 @@
+mod component_sets;
 mod components;
 mod crate_paths;
 mod events;
@@ -7,6 +8,7 @@ mod systems;
 mod traits;
 pub mod util;
 
+pub use component_sets::component_sets;
 pub use components::{component_trait_defs, component_trait_impls, components};
 pub use crate_paths::Crates;
 pub use events::{event_trait_defs, event_trait_impls, events, events_enum};
