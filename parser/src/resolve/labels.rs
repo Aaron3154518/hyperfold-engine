@@ -2,7 +2,7 @@ use std::{collections::HashMap, hash::Hash};
 
 use shared::{
     hash_map,
-    util::{Call, Discard, JoinMap, JoinMapInto, MapNone},
+    util::{Call, Discard, JoinMap, JoinMapInto, MapNone, PushInto},
 };
 
 use crate::parse::ComponentSymbol;
@@ -36,28 +36,40 @@ impl std::fmt::Debug for MustBe {
 pub type SymbolMap = HashMap<ComponentSymbol, MustBe>;
 pub enum ExpressionResult {
     Literal(bool),
-    Expression(SymbolMap),
+    Expression {
+        labels: LabelItem,
+        symbols: SymbolMap,
+    },
 }
 
-// TODO: Modify label expressions
 impl LabelItem {
-    fn combine_symbols(expressions: Vec<ExpressionResult>, op: LabelOp) -> ExpressionResult {
+    fn combine_symbols(
+        op: &LabelOp,
+        items: &Vec<LabelItem>,
+        truth: &HashMap<ComponentSymbol, bool>,
+    ) -> ExpressionResult {
         // Filter out literals
-        let mut symbs = Vec::new();
-        for res in expressions {
-            match res {
-                ExpressionResult::Literal(val) => match (op, val) {
-                    (LabelOp::And, true) => (),
-                    (LabelOp::Or, false) => (),
-                    (LabelOp::And, false) => return ExpressionResult::Literal(false),
-                    (LabelOp::Or, true) => return ExpressionResult::Literal(true),
-                },
-                ExpressionResult::Expression(sym_map) => symbs.push(sym_map),
+        let mut new_symbols = Vec::new();
+        let mut new_labels = Vec::new();
+        for item in items {
+            match item.get_symbols(truth) {
+                ExpressionResult::Literal(val) => {
+                    match (op, val) {
+                        (LabelOp::And, true) | (LabelOp::Or, false) => (),
+                        // Entire expression evaluates to a literal
+                        (LabelOp::And, false) => return ExpressionResult::Literal(false),
+                        (LabelOp::Or, true) => return ExpressionResult::Literal(true),
+                    }
+                }
+                ExpressionResult::Expression { labels, symbols } => {
+                    new_symbols.push(symbols);
+                    new_labels.push(labels);
+                }
             }
         }
 
-        // Check any expressions left
-        let mut sym_it = symbs.into_iter();
+        // Check if there are any expressions left
+        let mut sym_it = new_symbols.into_iter();
         let mut symbs = match sym_it.next() {
             Some(first) => first,
             None => {
@@ -75,44 +87,20 @@ impl LabelItem {
             LabelOp::And => {
                 for next_symbs in sym_it {
                     for (sym, next_must_be) in next_symbs {
-                        // match symbs.contains_key(&sym) {
-                        //     true => {
-                        //         if let Some(must_be) = symbs.get_mut(&sym) {
-                        //             *must_be = match (*must_be, next_must_be) {
-                        //                 // Contradication
-                        //                 (MustBe::Value(v1), MustBe::Value(v2)) if v1 != v2 => {
-                        //                     return ExpressionResult::Literal(false)
-                        //                 }
-                        //                 (MustBe::Value(v), _) | (_, MustBe::Value(v)) => {
-                        //                     MustBe::Value(v)
-                        //                 }
-                        //                 (MustBe::Unknown, MustBe::Unknown) => MustBe::Unknown,
-                        //             };
-                        //         } else {
-                        //             symbs.insert(sym, next_must_be).discard()
-                        //         }
-                        //     }
-                        //     false => symbs.insert(sym, next_must_be).discard(),
-                        // }
-
-                        // Update symbols
-                        match symbs.insert(sym, next_must_be) {
+                        match symbs.get_mut(&sym) {
                             Some(must_be) => {
-                                symbs.insert(
-                                    sym,
-                                    match (must_be, next_must_be) {
-                                        // Contradication
-                                        (MustBe::Value(v1), MustBe::Value(v2)) if v1 != v2 => {
-                                            return ExpressionResult::Literal(false)
-                                        }
-                                        (MustBe::Value(v), _) | (_, MustBe::Value(v)) => {
-                                            MustBe::Value(v)
-                                        }
-                                        (MustBe::Unknown, MustBe::Unknown) => MustBe::Unknown,
-                                    },
-                                );
+                                *must_be = match (*must_be, next_must_be) {
+                                    // Contradication
+                                    (MustBe::Value(v1), MustBe::Value(v2)) if v1 != v2 => {
+                                        return ExpressionResult::Literal(false)
+                                    }
+                                    (MustBe::Value(v), _) | (_, MustBe::Value(v)) => {
+                                        MustBe::Value(v)
+                                    }
+                                    (MustBe::Unknown, MustBe::Unknown) => MustBe::Unknown,
+                                }
                             }
-                            None => (),
+                            None => symbs.insert(sym, next_must_be).discard(),
                         }
                     }
                 }
@@ -125,55 +113,62 @@ impl LabelItem {
                             next_symbs.insert(*sym, MustBe::Unknown);
                         }
                     }
-                    // Update symbols
                     for (sym, next_must_be) in next_symbs {
-                        match symbs.insert(sym, next_must_be) {
+                        match symbs.get_mut(&sym) {
                             Some(must_be) => {
-                                symbs.insert(
-                                    sym,
-                                    match (must_be, next_must_be) {
-                                        (MustBe::Value(v1), MustBe::Value(v2)) if v1 == v2 => {
-                                            MustBe::Value(v1)
-                                        }
-                                        _ => MustBe::Unknown,
-                                    },
-                                );
+                                *must_be = match (*must_be, next_must_be) {
+                                    // Contradication
+                                    (MustBe::Value(v1), MustBe::Value(v2)) if v1 != v2 => {
+                                        return ExpressionResult::Literal(false)
+                                    }
+                                    (MustBe::Value(v), _) | (_, MustBe::Value(v)) => {
+                                        MustBe::Value(v)
+                                    }
+                                    (MustBe::Unknown, MustBe::Unknown) => MustBe::Unknown,
+                                }
                             }
-                            None => (),
+                            None => symbs.insert(sym, next_must_be).discard(),
                         }
                     }
                 }
             }
         }
 
-        ExpressionResult::Expression(symbs)
+        ExpressionResult::Expression {
+            labels: LabelItem::Expression {
+                op: *op,
+                items: new_labels,
+            },
+            symbols: symbs,
+        }
     }
 
-    pub fn evaluate_labels(
-        &self,
-        mut truth: HashMap<ComponentSymbol, bool>,
-    ) -> Option<ComponentSetLabels> {
+    pub fn evaluate_labels(&self, mut truth: HashMap<ComponentSymbol, bool>) -> ComponentSetLabels {
+        // Collects symbols which must be true/false
         let mut true_symbols = Vec::new();
         let mut false_symbols = Vec::new();
-        let mut symbols = Vec::new();
+        // Collects labels items for true/false symbols
+        let mut fixed_labels = Vec::new();
         loop {
             match self.get_symbols(&truth) {
                 ExpressionResult::Literal(true) => {
-                    return {
-                        Some(ComponentSetLabels {
+                    return if fixed_labels.is_empty() {
+                        ComponentSetLabels::Constant(true)
+                    } else {
+                        ComponentSetLabels::Expression {
+                            labels: LabelItem::Expression {
+                                op: LabelOp::And,
+                                items: fixed_labels,
+                            },
                             true_symbols,
                             false_symbols,
                             unknown_symbols: Vec::new(),
-                            labels: LabelItem::Expression {
-                                op: LabelOp::And,
-                                items: symbols,
-                            },
-                        })
+                        }
                     }
                 }
-                ExpressionResult::Literal(false) => return None,
-                ExpressionResult::Expression(symbs) => {
-                    let new_truth = symbs
+                ExpressionResult::Literal(false) => return ComponentSetLabels::Constant(false),
+                ExpressionResult::Expression { labels, symbols } => {
+                    let new_truth = symbols
                         .iter()
                         .filter_map(|(sym, must_be)| match must_be {
                             MustBe::Value(v) => Some((*sym, *v)),
@@ -182,18 +177,18 @@ impl LabelItem {
                         .collect();
 
                     if new_truth == truth {
-                        return Some(ComponentSetLabels {
+                        return ComponentSetLabels::Expression {
+                            labels: LabelItem::Expression {
+                                op: LabelOp::And,
+                                items: fixed_labels.push_into(labels),
+                            },
                             true_symbols,
                             false_symbols,
-                            unknown_symbols: symbs.filter_map_vec_into(|(sym, v)| match v {
+                            unknown_symbols: symbols.filter_map_vec_into(|(sym, v)| match v {
                                 MustBe::Unknown => Some(sym),
                                 _ => None,
                             }),
-                            labels: LabelItem::Expression {
-                                op: LabelOp::And,
-                                items: symbols,
-                            },
-                        });
+                        };
                     } else {
                         truth = new_truth;
                         for (sym, v) in &truth {
@@ -201,7 +196,7 @@ impl LabelItem {
                                 true => true_symbols.push(*sym),
                                 false => false_symbols.push(*sym),
                             }
-                            symbols.push(LabelItem::Item {
+                            fixed_labels.push(LabelItem::Item {
                                 not: *v,
                                 comp: *sym,
                             });
@@ -215,34 +210,39 @@ impl LabelItem {
     fn get_symbols(&self, truth: &HashMap<ComponentSymbol, bool>) -> ExpressionResult {
         match self {
             LabelItem::Item { not, comp } => {
-                let must_be = !not;
+                let must_be = !(*not);
                 match truth.get(&comp) {
                     Some(truth) => ExpressionResult::Literal(truth == &must_be),
-                    None => {
-                        ExpressionResult::Expression(hash_map!({*comp => MustBe::Value(must_be)}))
-                    }
+                    None => ExpressionResult::Expression {
+                        labels: LabelItem::Item {
+                            not: *not,
+                            comp: *comp,
+                        },
+                        symbols: hash_map!({*comp => MustBe::Value(must_be)}),
+                    },
                 }
             }
-            LabelItem::Expression { op, items } => {
-                Self::combine_symbols(items.map_vec(|item| item.get_symbols(truth)), *op)
-            }
+            LabelItem::Expression { op, items } => Self::combine_symbols(op, items, truth),
         }
     }
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct ComponentSetLabels {
-    pub labels: LabelItem,
-    pub true_symbols: Vec<ComponentSymbol>,
-    pub false_symbols: Vec<ComponentSymbol>,
-    pub unknown_symbols: Vec<ComponentSymbol>,
+pub enum ComponentSetLabels {
+    Constant(bool),
+    Expression {
+        labels: LabelItem,
+        true_symbols: Vec<ComponentSymbol>,
+        false_symbols: Vec<ComponentSymbol>,
+        unknown_symbols: Vec<ComponentSymbol>,
+    },
 }
 
-impl ComponentSetLabels {
-    pub fn iter_symbols<'a>(&'a self) -> impl Iterator<Item = &'a ComponentSymbol> {
-        self.true_symbols
-            .iter()
-            .chain(self.false_symbols.iter())
-            .chain(self.unknown_symbols.iter())
+impl std::fmt::Display for ComponentSetLabels {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ComponentSetLabels::Constant(v) => write!(f, "{v}"),
+            ComponentSetLabels::Expression { labels, .. } => write!(f, "{labels}"),
+        }
     }
 }

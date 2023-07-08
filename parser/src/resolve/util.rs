@@ -3,6 +3,45 @@ use shared::util::{JoinMap, JoinMapInto, PushInto, ThenOk};
 // Crate index, item index
 pub type ItemIndex = (usize, usize);
 
+// Type for propogating warnings
+pub enum Warning<T> {
+    Ok(T),
+    Warn(T, Vec<String>),
+}
+
+impl<T> Warning<T> {
+    pub fn get(self, f: impl FnOnce(Vec<String>)) -> T {
+        match self {
+            Warning::Ok(t) => t,
+            Warning::Warn(t, warn) => {
+                f(warn);
+                t
+            }
+        }
+    }
+
+    pub fn get_ref<'a>(&'a self, f: impl FnOnce(&'a Vec<String>)) -> &'a T {
+        match self {
+            Warning::Ok(t) => t,
+            Warning::Warn(t, warn) => {
+                f(warn);
+                t
+            }
+        }
+    }
+
+    pub fn get_mut<'a>(&'a mut self, f: impl FnOnce(&'a mut Vec<String>)) -> &'a mut T {
+        match self {
+            Warning::Ok(t) => t,
+            Warning::Warn(t, warn) => {
+                f(warn);
+                t
+            }
+        }
+    }
+}
+
+// Type for propogating errors
 pub type MsgsResult<T> = Result<T, Vec<String>>;
 
 // Traits for both msg types

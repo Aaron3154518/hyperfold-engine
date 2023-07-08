@@ -1,6 +1,6 @@
 use std::{
     collections::{hash_map, HashMap},
-    iter::Enumerate,
+    iter::{self, Enumerate},
     ops::{Add, AddAssign},
     slice::Iter,
     str::pattern::Pattern,

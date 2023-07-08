@@ -25,15 +25,9 @@ pub fn component_sets(
     match_ok!(Zip3Msgs, filter_fn, intersect_fn, intersect_mut_fn, {
         component_sets
             .enumerate_map_vec(|(i, cs)| {
-                crates.get_item_syn_path(cr_idx, &cs.path).map(|ty| {
-                    cs.quote(
-                        &ty,
-                        &component_set_fn(i),
-                        &filter_fn,
-                        &intersect_fn,
-                        &intersect_mut_fn,
-                    )
-                })
+                crates
+                    .get_item_syn_path(cr_idx, &cs.path)
+                    .map(|ty| cs.quote(i, &ty, &filter_fn, &intersect_fn, &intersect_mut_fn))
             })
             .combine_msgs()
     })

@@ -81,8 +81,12 @@ fn codegen_systems(
             // Generate component set builder code
             component_sets.sort_by_key(|cs| cs.idx);
             component_sets.dedup_by_key(|cs| cs.idx);
-            let (cs_vars, cs_fns) = component_sets
-                .unzip_vec(|cs| (component_set_var(cs.idx), component_set_fn(cs.idx)));
+            let (cs_vars, cs_fns) = component_sets.unzip_vec(|cs| {
+                (
+                    component_set_var(cs.idx),
+                    component_set_fn(cs.idx, cs.is_vec),
+                )
+            });
 
             let func = quote!(#func_name(#(#func_args),*));
 

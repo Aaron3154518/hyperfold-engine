@@ -33,19 +33,19 @@ pub mod util;
 // 5) Parse systems; Validate arguments; insert symbols
 // 6) Codegen
 
-fn labels_none(labels: &LabelItem, truth: HashMap<ComponentSymbol, bool>) {
+fn labels_const(labels: &mut LabelItem, truth: HashMap<ComponentSymbol, bool>, expected: bool) {
     let given_str = format!("Given: {truth:#?}");
     let actual = labels.evaluate_labels(truth);
     match actual {
-        Some(actual) => {
-            eprintln!("Failed: {labels}\n{given_str}\nExpected: None\nActual: {actual:#?}")
+        ComponentSetLabels::Constant(v) if v == expected => {
+            eprintln!("Passed: {labels}\n{given_str}")
         }
-        None => eprintln!("Passed: {labels}\n{given_str}"),
+        _ => eprintln!("Failed: {labels}\n{given_str}\nExpected: {expected}\nActual: {actual:#?}"),
     }
 }
 
 fn labels_eq(
-    labels: &LabelItem,
+    labels: &mut LabelItem,
     truth: HashMap<ComponentSymbol, bool>,
     expected_labels: String,
     expected_truths: Vec<ComponentSymbol>,
@@ -54,39 +54,44 @@ fn labels_eq(
 ) {
     let given_str = format!("Given: {truth:#?}");
     let actual = labels.evaluate_labels(truth);
+    let mut msgs = Vec::new();
     match actual {
-        Some(actual) => {
-            let mut msgs = Vec::new();
-            let actual_labels = format!("{}", actual.labels);
+        ComponentSetLabels::Constant(v) => msgs.push(format!("Expected: Expression\nActual: {v}")),
+        ComponentSetLabels::Expression {
+            labels,
+            true_symbols,
+            false_symbols,
+            unknown_symbols,
+        } => {
+            let actual_labels = format!("{}", labels);
             if expected_labels == actual_labels {
                 msgs.push(format!(
                     "Expected: {expected_labels}\nActual: {actual_labels}"
                 ));
             }
-            if expected_truths == actual.true_symbols {
+            if expected_truths == true_symbols {
                 msgs.push(format!(
                     "Expected: {expected_truths:#?}\nActual: {:#?}",
-                    actual.true_symbols
+                    true_symbols
                 ));
             }
-            if expected_falses == actual.false_symbols {
+            if expected_falses == false_symbols {
                 msgs.push(format!(
                     "Expected: {expected_falses:#?}\nActual: {:#?}",
-                    actual.false_symbols
+                    false_symbols
                 ));
             }
-            if expected_unknowns == actual.unknown_symbols {
+            if expected_unknowns == unknown_symbols {
                 msgs.push(format!(
                     "Expected: {expected_unknowns:#?}\nActual: {:#?}",
-                    actual.unknown_symbols
+                    unknown_symbols
                 ));
             }
-            match msgs.is_empty() {
-                true => eprintln!("Passed: {labels}\n{given_str}"),
-                false => eprintln!("Failed: {labels}\n{given_str}\n{}", msgs.join("\n")),
-            }
         }
-        None => eprintln!("Failed: {labels}\n{given_str}\nExpected: Some\nActual: None"),
+    }
+    match msgs.is_empty() {
+        true => eprintln!("Passed: {labels}\n{given_str}"),
+        false => eprintln!("Failed: {labels}\n{given_str}\n{}", msgs.join("\n")),
     }
 }
 
@@ -120,7 +125,7 @@ pub fn test_labels() {
         ],
     };
     labels_eq(
-        &labels,
+        &mut labels.clone(),
         HashMap::new(),
         "1 && (0 || !0)".to_string(),
         vec![ComponentSymbol { idx: 1, args }],
@@ -128,7 +133,7 @@ pub fn test_labels() {
         vec![ComponentSymbol { idx: 0, args }],
     );
     labels_eq(
-        &labels,
+        &mut labels.clone(),
         hash_map!({
             ComponentSymbol {
                 idx: 0,
