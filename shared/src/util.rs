@@ -9,6 +9,15 @@ use std::{
 
 extern crate alloc;
 
+// Discard a value
+pub trait Discard {
+    fn discard(self) -> ();
+}
+
+impl<T> Discard for T {
+    fn discard(self) -> () {}
+}
+
 // Prefix/postfix ++
 pub trait Increment
 where
