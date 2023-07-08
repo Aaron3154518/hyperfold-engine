@@ -86,7 +86,7 @@ macro_rules! unzip {
             fn $f(self) -> (Vec<$t> $(,Vec<$ts>)*);
         }
 
-        impl<$t $(,$ts)*> $tr<$t $(,$ts)*> for alloc::vec::IntoIter<($t $(,$ts)*)> {
+        impl<T, $t $(,$ts)*> $tr<$t $(,$ts)*> for T where T: Iterator<Item = ($t $(,$ts)*)> {
             fn $f(self) -> (Vec<$t> $(,Vec<$ts>)*) {
                 self.fold(
                     (Vec::<$t>::new() $(, Vec::<$ts>::new())*),

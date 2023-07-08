@@ -18,7 +18,7 @@ use crate::{
 use super::{
     constants::{component_set_fn, component_set_var, component_var},
     items_crate::ItemComponent,
-    labels::{ComponentSetLabels, SymbolMap},
+    labels::{ComponentSetLabels, LabelsExpression, SymbolMap},
     parse_macro_call::ParseMacroCall,
     path::{ItemPath, ResolveResultTrait},
     util::Zip2Msgs,
@@ -538,12 +538,11 @@ impl ComponentSet {
                         .find(|item| item.comp.args.is_singleton)
                         .map(|item| item.comp)
                         .or_else(|| match &labels {
-                            Some(ComponentSetLabels::Expression { true_symbols, .. }) => {
-                                true_symbols
-                                    .iter()
-                                    .find(|c_sym| c_sym.args.is_singleton)
-                                    .copied()
-                            }
+                            Some(ComponentSetLabels::Expression(e)) => e
+                                .true_symbols
+                                .iter()
+                                .find(|c_sym| c_sym.args.is_singleton)
+                                .copied(),
                             _ => None,
                         }),
                     labels,
@@ -572,6 +571,18 @@ impl ComponentSet {
         let mut args = self.args.to_vec();
         args.sort_by_key(|item| item.comp.idx);
         args.dedup_by_key(|item| item.comp.idx);
+
+        let gen_filter_fn = |v, e: &LabelsExpression| {
+            let label_expr = e.labels.quote(&|c_sym| component_var(c_sym.idx));
+            let label_vars = e.iter_symbols().filter_map_vec_into(|c_sym| {
+                args.iter()
+                    .find(|c| c.comp.idx == c_sym.idx)
+                    .map_none(component_var(c_sym.idx))
+            });
+            quote!(
+                #filter(#v, [#(&#comps_var.#label_vars),*], |[#(#label_vars),*]| #label_expr)
+            )
+        };
 
         match self.first_singleton {
             Some(s) => {
@@ -605,44 +616,33 @@ impl ComponentSet {
 
                 // If statement for label expression
                 let body = match &self.labels {
-                    None | Some(ComponentSetLabels::Constant(true)) => quote!(
-                        if let Some(k) = #s.get_key() {
-                            #create_cs
-                        }
-                    ),
-                    Some(ComponentSetLabels::Constant(false)) => quote!(),
-                    Some(ComponentSetLabels::Expression {
-                        labels,
-                        true_symbols,
-                        false_symbols,
-                        unknown_symbols,
-                    }) => {
-                        let label_expr = labels.quote(&|c_sym| component_var(c_sym.idx));
-                        let label_vars = true_symbols
-                            .iter()
-                            .chain(false_symbols.iter())
-                            .chain(unknown_symbols.iter())
-                            .filter_map_vec_into(|c_sym| {
-                                args.iter()
-                                    .find(|c| c.comp.idx == c_sym.idx)
-                                    .map_none(component_var(c_sym.idx))
-                            });
-                        quote!(
-                            if let Some(k) = #s.get_key() {
-                                if !#filter(vec![(&k, ())], [#(&#comps_var.#label_vars),*], |[#(#label_vars),*]| #label_expr).is_empty() {
-                                    #create_cs
-                                }
+                    None | Some(ComponentSetLabels::Constant(true)) => Some(quote!(
+                        #create_cs
+                    )),
+                    Some(ComponentSetLabels::Constant(false)) => None,
+                    Some(ComponentSetLabels::Expression(e)) => {
+                        let filter = gen_filter_fn(quote!(vec![(&k, ())]), e);
+                        Some(quote!(
+                            if !#filter.is_empty() {
+                                #create_cs
                             }
-                        )
+                        ))
                     }
-                };
+                }
+                .map_or(quote!(None), |body| {
+                    quote!(
+                        if let Some(k) = #s.get_key() {
+                            #body
+                        }
+                        None
+                    )
+                });
 
                 let fn_name = component_set_fn(cs_idx, false);
 
                 quote!(
                     fn #fn_name(#comps_var: &mut #comps_type) -> Option<#ty> {
                         #body
-                        None
                     }
                     fn #fn_name_vec(#comps_var: &mut #comps_type) -> Vec<#ty> {
                         match #fn_name(#comps_var) {
@@ -667,10 +667,7 @@ impl ComponentSet {
                             quote!(#comps_var.#var.iter().collect())
                         }
                     }
-                    None => match &self.labels.as_ref().and_then(|cs| match cs {
-                        ComponentSetLabels::Expression { true_symbols, .. } => true_symbols.first(),
-                        _ => None,
-                    }) {
+                    None => match &self.labels.as_ref().and_then(|cs| cs.first_true_symbol()) {
                         Some(comp) => {
                             let var = component_var(comp.idx);
                             quote!(#comps_var.#var.iter().collect())
@@ -692,35 +689,22 @@ impl ComponentSet {
                     }
                 });
 
-                let body = match &self.labels {
-                    None | Some(ComponentSetLabels::Constant(true)) => quote!(
+                // Return statement, none means return empty vector
+                let ret = match &self.labels {
+                    None | Some(ComponentSetLabels::Constant(true)) => Some(quote!(
+                        #v
+                    )),
+                    Some(ComponentSetLabels::Constant(false)) => None,
+                    Some(ComponentSetLabels::Expression(e)) => Some(gen_filter_fn(v, e)),
+                };
+
+                let body = match ret {
+                    Some(ret) => quote!(
                         let #v = #init;
                         #(let #v = #intersects;)*
-                        #v
+                        #ret
                     ),
-                    Some(ComponentSetLabels::Constant(false)) => quote!(vec![]),
-                    Some(ComponentSetLabels::Expression {
-                        labels,
-                        true_symbols,
-                        false_symbols,
-                        unknown_symbols,
-                    }) => {
-                        let label_expr = labels.quote(&|c_sym| component_var(c_sym.idx));
-                        let label_vars = true_symbols
-                            .iter()
-                            .chain(false_symbols.iter())
-                            .chain(unknown_symbols.iter())
-                            .filter_map_vec_into(|c_sym| {
-                                args.iter()
-                                    .find(|c| c.comp.idx == c_sym.idx)
-                                    .map_none(component_var(c_sym.idx))
-                            });
-                        quote!(
-                            let #v = #init;
-                            #(let #v = #intersects;)*
-                            #filter(vec![(&k, ())], [#(&#comps_var.#label_vars),*], |[#(#label_vars),*]| #label_expr)
-                        )
-                    }
+                    None => quote!(vec![]),
                 };
 
                 quote!(
