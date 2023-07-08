@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{hash_map, HashMap},
     iter::Enumerate,
     ops::{Add, AddAssign},
     slice::Iter,
@@ -172,83 +172,98 @@ impl<T> JoinMapInto<T, IntoIter<T>> for Vec<T> {
     }
 }
 
-pub trait JoinMap<'a, T: 'a> {
-    fn get_iter(&'a self) -> Iter<'a, T>;
+impl<K, V> JoinMapInto<(K, V), hash_map::IntoIter<K, V>> for HashMap<K, V> {
+    fn get_iter_into(self) -> hash_map::IntoIter<K, V> {
+        self.into_iter()
+    }
+}
 
-    fn get_enumerate(&'a self) -> Enumerate<Iter<'a, T>> {
+pub trait JoinMap<'a, T: 'a, I>
+where
+    I: JoinMapInto<T, I> + Iterator<Item = T>,
+{
+    fn get_iter(&'a self) -> I;
+
+    fn get_enumerate(&'a self) -> Enumerate<I> {
         self.get_iter().enumerate()
     }
 
     fn map_vec<U, F>(&'a self, f: F) -> Vec<U>
     where
-        F: FnMut(&'a T) -> U,
+        F: FnMut(T) -> U,
     {
         self.get_iter().map_vec_into(f)
     }
 
     fn enumerate_map_vec<U, F>(&'a self, f: F) -> Vec<U>
     where
-        F: FnMut((usize, &'a T)) -> U,
+        F: FnMut((usize, T)) -> U,
     {
         self.get_enumerate().map_vec_into(f)
     }
 
     fn filter_map_vec<U, F>(&'a self, f: F) -> Vec<U>
     where
-        F: FnMut(&'a T) -> Option<U>,
+        F: FnMut(T) -> Option<U>,
     {
         self.get_iter().filter_map_vec_into(f)
     }
 
     fn enumerate_filter_map_vec<U, F>(&'a self, f: F) -> Vec<U>
     where
-        F: FnMut((usize, &'a T)) -> Option<U>,
+        F: FnMut((usize, T)) -> Option<U>,
     {
         self.get_enumerate().filter_map_vec_into(f)
     }
 
     fn join_map<F>(&'a self, f: F, sep: &str) -> String
     where
-        F: FnMut(&'a T) -> String,
+        F: FnMut(T) -> String,
     {
         self.map_vec(f).join(sep)
     }
 
     fn enumerate_join_map<F>(&'a self, f: F, sep: &str) -> String
     where
-        F: FnMut((usize, &'a T)) -> String,
+        F: FnMut((usize, T)) -> String,
     {
         self.enumerate_map_vec(f).join(sep)
     }
 
     fn unzip_vec<U, V, F>(&'a self, f: F) -> (Vec<U>, Vec<V>)
     where
-        F: FnMut(&'a T) -> (U, V),
+        F: FnMut(T) -> (U, V),
     {
         self.get_iter().unzip_vec_into(f)
     }
 
     fn enumerate_unzip_vec<U, V, F>(&'a self, f: F) -> (Vec<U>, Vec<V>)
     where
-        F: FnMut((usize, &'a T)) -> (U, V),
+        F: FnMut((usize, T)) -> (U, V),
     {
         self.get_enumerate().unzip_vec_into(f)
     }
 }
 
-impl<'a, T: 'a> JoinMap<'a, T> for Vec<T> {
+impl<'a, T: 'a> JoinMap<'a, &'a T, Iter<'a, T>> for Vec<T> {
     fn get_iter(&'a self) -> Iter<'a, T> {
         self.iter()
     }
 }
 
-impl<'a, T: 'a, const N: usize> JoinMap<'a, T> for [T; N] {
+impl<'a, K: 'a, V: 'a> JoinMap<'a, (&'a K, &'a V), hash_map::Iter<'a, K, V>> for HashMap<K, V> {
+    fn get_iter(&'a self) -> hash_map::Iter<'a, K, V> {
+        self.iter()
+    }
+}
+
+impl<'a, T: 'a, const N: usize> JoinMap<'a, &'a T, Iter<'a, T>> for [T; N] {
     fn get_iter(&'a self) -> Iter<'a, T> {
         self.iter()
     }
 }
 
-impl<'a, T: 'a> JoinMap<'a, T> for [T] {
+impl<'a, T: 'a> JoinMap<'a, &'a T, Iter<'a, T>> for [T] {
     fn get_iter(&'a self) -> Iter<'a, T> {
         self.iter()
     }

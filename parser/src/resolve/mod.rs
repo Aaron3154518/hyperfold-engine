@@ -11,7 +11,7 @@ pub mod util;
 pub use component_set::{ComponentSet, LabelItem, LabelOp};
 pub use function_arg::{FnArgType, FnArgs};
 pub use items_crate::{ItemComponent, ItemEvent, ItemGlobal, ItemSystem, Items, ItemsCrate};
-pub use labels::MustBe;
+pub use labels::{ComponentSetLabels, MustBe};
 pub use path::{resolve_path, ItemPath};
 pub use paths::{
     Crate, EngineGlobals, EnginePaths, EngineTraits, ExpandEnum, GetPaths, MacroPaths,

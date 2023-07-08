@@ -2,12 +2,15 @@ use std::{collections::HashMap, hash::Hash};
 
 use shared::{
     hash_map,
-    util::{Call, Discard, JoinMap, MapNone},
+    util::{Call, Discard, JoinMap, JoinMapInto, MapNone},
 };
 
 use crate::parse::ComponentSymbol;
 
-use super::component_set::{LabelItem, LabelOp};
+use super::{
+    component_set::{LabelItem, LabelOp},
+    util::MsgsResult,
+};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum MustBe {
@@ -29,43 +32,6 @@ impl std::fmt::Debug for MustBe {
         write!(f, "{self}")
     }
 }
-
-// impl MustBe {
-//     fn combine(self, other: MustBe, op: LabelOp, truth: Option<&bool>) -> Self {
-//         if let Some(truth) = truth {
-//             match (self, other) {
-//                 (MustBe::Value(v), _) | (_, MustBe::Value(v)) if v != *truth => {
-//                     eprintln!("Value cannot contradict ground truth")
-//                 }
-//                 _ => (),
-//             }
-//         }
-
-//         let truth_or_unknown = truth.map_or(MustBe::Unknown, |t| MustBe::Value(*t));
-
-//         match (self, other) {
-//             (_, MustBe::Impossible) | (MustBe::Impossible, _) => MustBe::Impossible,
-//             (MustBe::Value(v1), MustBe::Value(v2)) => match v1 == v2 {
-//                 // Both expressions require the same value
-//                 true => MustBe::Value(v1),
-//                 // Expressions require opposite values
-//                 false => match op {
-//                     LabelOp::And => MustBe::Impossible,
-//                     // Don't need both expression to be true
-//                     LabelOp::Or => truth_or_unknown,
-//                 },
-//             },
-//             // Both expressions are unknown, ground truth value takes precedence
-//             (MustBe::Unknown, MustBe::Unknown) => truth_or_unknown,
-//             // One expression is unknown
-//             (MustBe::Value(v), MustBe::Unknown) | (MustBe::Unknown, MustBe::Value(v)) => match op {
-//                 // With 'and', the known expression must still be true
-//                 LabelOp::And => MustBe::Value(v),
-//                 LabelOp::Or => truth_or_unknown,
-//             },
-//         }
-//     }
-// }
 
 pub type SymbolMap = HashMap<ComponentSymbol, MustBe>;
 pub enum ExpressionResult {
@@ -183,14 +149,29 @@ impl LabelItem {
         ExpressionResult::Expression(symbs)
     }
 
-    pub fn get_symbols(
+    pub fn evaluate_labels(
         &self,
         mut truth: HashMap<ComponentSymbol, bool>,
-    ) -> (ExpressionResult, HashMap<ComponentSymbol, bool>) {
-        let mut truths = HashMap::new();
+    ) -> Option<ComponentSetLabels> {
+        let mut true_symbols = Vec::new();
+        let mut false_symbols = Vec::new();
+        let mut symbols = Vec::new();
         loop {
-            match self.get_symbols_impl(&truth) {
-                ExpressionResult::Literal(v) => return (ExpressionResult::Literal(v), truths),
+            match self.get_symbols(&truth) {
+                ExpressionResult::Literal(true) => {
+                    return {
+                        Some(ComponentSetLabels {
+                            true_symbols,
+                            false_symbols,
+                            unknown_symbols: Vec::new(),
+                            labels: LabelItem::Expression {
+                                op: LabelOp::And,
+                                items: symbols,
+                            },
+                        })
+                    }
+                }
+                ExpressionResult::Literal(false) => return None,
                 ExpressionResult::Expression(symbs) => {
                     let new_truth = symbs
                         .iter()
@@ -201,11 +182,29 @@ impl LabelItem {
                         .collect();
 
                     if new_truth == truth {
-                        return (ExpressionResult::Expression(symbs), truths);
+                        return Some(ComponentSetLabels {
+                            true_symbols,
+                            false_symbols,
+                            unknown_symbols: symbs.filter_map_vec_into(|(sym, v)| match v {
+                                MustBe::Unknown => Some(sym),
+                                _ => None,
+                            }),
+                            labels: LabelItem::Expression {
+                                op: LabelOp::And,
+                                items: symbols,
+                            },
+                        });
                     } else {
                         truth = new_truth;
                         for (sym, v) in &truth {
-                            truths.insert(*sym, *v);
+                            match v {
+                                true => true_symbols.push(*sym),
+                                false => false_symbols.push(*sym),
+                            }
+                            symbols.push(LabelItem::Item {
+                                not: *v,
+                                comp: *sym,
+                            });
                         }
                     }
                 }
@@ -213,7 +212,7 @@ impl LabelItem {
         }
     }
 
-    fn get_symbols_impl(&self, truth: &HashMap<ComponentSymbol, bool>) -> ExpressionResult {
+    fn get_symbols(&self, truth: &HashMap<ComponentSymbol, bool>) -> ExpressionResult {
         match self {
             LabelItem::Item { not, comp } => {
                 let must_be = !not;
@@ -225,8 +224,25 @@ impl LabelItem {
                 }
             }
             LabelItem::Expression { op, items } => {
-                Self::combine_symbols(items.map_vec(|item| item.get_symbols_impl(truth)), *op)
+                Self::combine_symbols(items.map_vec(|item| item.get_symbols(truth)), *op)
             }
         }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct ComponentSetLabels {
+    pub labels: LabelItem,
+    pub true_symbols: Vec<ComponentSymbol>,
+    pub false_symbols: Vec<ComponentSymbol>,
+    pub unknown_symbols: Vec<ComponentSymbol>,
+}
+
+impl ComponentSetLabels {
+    pub fn iter_symbols<'a>(&'a self) -> impl Iterator<Item = &'a ComponentSymbol> {
+        self.true_symbols
+            .iter()
+            .chain(self.false_symbols.iter())
+            .chain(self.unknown_symbols.iter())
     }
 }

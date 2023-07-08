@@ -18,7 +18,7 @@ use crate::{
 use super::{
     constants::{component_set_fn, component_set_var, component_var},
     items_crate::ItemComponent,
-    labels::SymbolMap,
+    labels::{ComponentSetLabels, SymbolMap},
     parse_macro_call::ParseMacroCall,
     path::{ItemPath, ResolveResultTrait},
     util::Zip2Msgs,
@@ -388,7 +388,7 @@ impl std::fmt::Display for AstComponentSet {
 }
 
 // Resolve Ast structs to actual items
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum LabelItem {
     Item { not: bool, comp: ComponentSymbol },
     Expression { op: LabelOp, items: Vec<LabelItem> },
@@ -480,16 +480,12 @@ impl ComponentSetItem {
 }
 
 #[derive(Debug)]
-pub struct ComponentSetLabels {
-    pub labels: LabelItem,
-    pub symbols: SymbolMap,
-}
-
-#[derive(Debug)]
 pub struct ComponentSet {
     pub path: ItemPath,
     pub args: Vec<ComponentSetItem>,
     pub labels: Option<ComponentSetLabels>,
+    // First singleton found in args or required in labels
+    pub first_singleton: Option<ComponentSymbol>,
 }
 
 impl ComponentSet {
@@ -518,24 +514,45 @@ impl ComponentSet {
             .zip(labels.map_or(Ok(None), |l| {
                 LabelItem::resolve(l, (m, cr, crates)).map(|t| Some(t))
             }))
-            .map(|(args, labels)| {
-                let labels = labels.map(|labels| ComponentSetLabels {
-                    symbols: labels.get_symbols(args.iter().map(|c| (c.comp, true)).collect()),
-                    labels,
-                });
-                Self {
+            .and_then(|(args, labels)| {
+                match labels {
+                    Some(labels) => match labels
+                        .evaluate_labels(args.iter().map(|sym| (sym.comp, true)).collect())
+                    {
+                        Some(labels) => Ok(Some(labels)),
+                        None => {
+                            return Err(vec![format!(
+                                "In Component Set '{ident}': Label expression is never true",
+                            )])
+                        }
+                    },
+                    None => Ok(None),
+                }
+                .map(|labels| Self {
                     path: ItemPath {
                         cr_idx: cr.idx,
                         path: m.path.to_vec().push_into(ident),
                     },
-                    args,
+                    first_singleton: args
+                        .iter()
+                        .find(|item| item.comp.args.is_singleton)
+                        .map(|item| item.comp)
+                        .or_else(|| {
+                            labels.as_ref().and_then(|labels| {
+                                labels
+                                    .true_symbols
+                                    .iter()
+                                    .find(|c_sym| c_sym.args.is_singleton)
+                                    .copied()
+                            })
+                        }),
                     labels,
-                }
+                    args,
+                })
             })
     }
 
     // TODO: eid need ref
-    // TODO: remove duplicate arg types
     pub fn quote(
         &self,
         ty: &syn::Path,
@@ -553,46 +570,27 @@ impl ComponentSet {
         args.sort_by_key(|item| item.comp.idx);
         args.dedup_by_key(|item| item.comp.idx);
 
-        // Check args and labels for singleton
-        let mut start_singleton = args
-            .iter()
-            .find(|item| item.comp.args.is_singleton)
-            .map(|item| component_var(item.comp.idx))
-            .or_else(|| {
-                self.labels.as_ref().and_then(|labels| {
-                    // No need to filter out arguments as there aren't any singletons
-                    labels
-                        .symbols
-                        .iter()
-                        .find(|(comp, must_be)| {
-                            comp.args.is_singleton && must_be == &&MustBe::Value(true)
-                        })
-                        .map(|(comp, _)| component_var(comp.idx))
-                })
-            });
-
         // This variable stores the vector as it is being created
         let v = format_ident!("v");
 
         // Filter key vector by labels
-        let filter_labels = self
-            .labels
-            .as_ref()
-            .map(|ComponentSetLabels { labels, symbols }| {
-                let label_expr = labels.quote(&|c_sym| component_var(c_sym.idx));
-                let label_vars = symbols.iter().filter_map_vec_into(|(c_sym, _)| {
-                    args.iter()
-                        .find(|c| c.comp.idx == c_sym.idx)
-                        .map_none(component_var(c_sym.idx))
-                });
-                quote!(
-                    #filter(#v, [#(&#comps_var.#label_vars),*], |[#(#label_vars),*]| #label_expr)
-                )
+        let filter_labels = self.labels.as_ref().map(|cs| {
+            let label_expr = cs.labels.quote(&|c_sym| component_var(c_sym.idx));
+            let label_vars = cs.iter_symbols().filter_map_vec_into(|c_sym| {
+                args.iter()
+                    .find(|c| c.comp.idx == c_sym.idx)
+                    .map_none(component_var(c_sym.idx))
             });
+            quote!(
+                #filter(#v, [#(&#comps_var.#label_vars),*], |[#(#label_vars),*]| #label_expr)
+            )
+        });
 
         // Codegen
-        let (body, ret) = match start_singleton {
+        let (body, ret) = match &self.first_singleton {
             Some(s) => {
+                let s = component_var(s.idx);
+
                 // Match statement for components
                 let (gets, comps) = args.unzip_vec(|item| {
                     let var = component_var(item.comp.idx);
@@ -652,21 +650,13 @@ impl ComponentSet {
                             quote!(#comps_var.#var.iter().collect())
                         }
                     }
-                    None => {
-                        match self.labels.as_ref().and_then(|labels| {
-                            // No need to filter out arguments as there aren't any
-                            labels
-                                .symbols
-                                .iter()
-                                .find(|(_, must_be)| must_be == &&MustBe::Value(true))
-                        }) {
-                            Some((comp, _)) => {
-                                let var = component_var(comp.idx);
-                                quote!(#comps_var.#var.iter().collect())
-                            }
-                            None => quote!(#comps_var.#eids.iter().map(|k| (k, ())).collect()),
+                    None => match self.labels.as_ref().and_then(|cs| cs.true_symbols.first()) {
+                        Some(comp) => {
+                            let var = component_var(comp.idx);
+                            quote!(#comps_var.#var.iter().collect())
                         }
-                    }
+                        None => quote!(#comps_var.#eids.iter().map(|k| (k, ())).collect()),
+                    },
                 };
 
                 // Intersect vector with other components

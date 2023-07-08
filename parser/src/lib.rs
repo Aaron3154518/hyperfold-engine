@@ -14,7 +14,7 @@ use std::{
 
 use parse::{AstCrate, ComponentSymbol};
 use regex::Regex;
-use resolve::{resolve_path, ItemsCrate, LabelItem, LabelOp, MustBe};
+use resolve::{resolve_path, ComponentSetLabels, ItemsCrate, LabelItem, LabelOp, MustBe};
 use shared::{hash_map, parse_args::ComponentMacroArgs, util::JoinMapInto};
 use util::{end, format_code};
 
@@ -33,56 +33,87 @@ pub mod util;
 // 5) Parse systems; Validate arguments; insert symbols
 // 6) Codegen
 
+fn labels_none(labels: &LabelItem, truth: HashMap<ComponentSymbol, bool>) {
+    let given_str = format!("Given: {truth:#?}");
+    let actual = labels.evaluate_labels(truth);
+    match actual {
+        Some(actual) => {
+            eprintln!("Failed: {labels}\n{given_str}\nExpected: None\nActual: {actual:#?}")
+        }
+        None => eprintln!("Passed: {labels}\n{given_str}"),
+    }
+}
+
 fn labels_eq(
     labels: &LabelItem,
     truth: HashMap<ComponentSymbol, bool>,
-    expected: HashMap<ComponentSymbol, MustBe>,
+    expected_labels: String,
+    expected_truths: Vec<ComponentSymbol>,
+    expected_falses: Vec<ComponentSymbol>,
+    expected_unknowns: Vec<ComponentSymbol>,
 ) {
     let given_str = format!("Given: {truth:#?}");
-    let actual = labels.get_symbols(truth);
-    match actual == expected {
-        true => eprintln!("Passed: {labels}\n{given_str}"),
-        false => {
-            eprintln!("Failed: {labels}\n{given_str}\nExpected: {expected:#?}\nActual: {actual:#?}")
+    let actual = labels.evaluate_labels(truth);
+    match actual {
+        Some(actual) => {
+            let mut msgs = Vec::new();
+            let actual_labels = format!("{}", actual.labels);
+            if expected_labels == actual_labels {
+                msgs.push(format!(
+                    "Expected: {expected_labels}\nActual: {actual_labels}"
+                ));
+            }
+            if expected_truths == actual.true_symbols {
+                msgs.push(format!(
+                    "Expected: {expected_truths:#?}\nActual: {:#?}",
+                    actual.true_symbols
+                ));
+            }
+            if expected_falses == actual.false_symbols {
+                msgs.push(format!(
+                    "Expected: {expected_falses:#?}\nActual: {:#?}",
+                    actual.false_symbols
+                ));
+            }
+            if expected_unknowns == actual.unknown_symbols {
+                msgs.push(format!(
+                    "Expected: {expected_unknowns:#?}\nActual: {:#?}",
+                    actual.unknown_symbols
+                ));
+            }
+            match msgs.is_empty() {
+                true => eprintln!("Passed: {labels}\n{given_str}"),
+                false => eprintln!("Failed: {labels}\n{given_str}\n{}", msgs.join("\n")),
+            }
         }
+        None => eprintln!("Failed: {labels}\n{given_str}\nExpected: Some\nActual: None"),
     }
 }
 
 pub fn test_labels() {
+    let args = ComponentMacroArgs::from(&Vec::new());
     // (1 && (0 || !1 || !0))
     let labels = LabelItem::Expression {
         op: LabelOp::And,
         items: vec![
             LabelItem::Item {
                 not: false,
-                comp: ComponentSymbol {
-                    idx: 1,
-                    args: ComponentMacroArgs::from(&Vec::new()),
-                },
+                comp: ComponentSymbol { idx: 1, args },
             },
             LabelItem::Expression {
                 op: LabelOp::Or,
                 items: vec![
                     LabelItem::Item {
                         not: false,
-                        comp: ComponentSymbol {
-                            idx: 0,
-                            args: ComponentMacroArgs::from(&Vec::new()),
-                        },
+                        comp: ComponentSymbol { idx: 0, args },
                     },
                     LabelItem::Item {
                         not: true,
-                        comp: ComponentSymbol {
-                            idx: 1,
-                            args: ComponentMacroArgs::from(&Vec::new()),
-                        },
+                        comp: ComponentSymbol { idx: 1, args },
                     },
                     LabelItem::Item {
                         not: true,
-                        comp: ComponentSymbol {
-                            idx: 0,
-                            args: ComponentMacroArgs::from(&Vec::new()),
-                        },
+                        comp: ComponentSymbol { idx: 0, args },
                     },
                 ],
             },
@@ -91,35 +122,26 @@ pub fn test_labels() {
     labels_eq(
         &labels,
         HashMap::new(),
-        hash_map!({
-            ComponentSymbol {
-                idx: 0,
-                args: ComponentMacroArgs::from(&Vec::new()),
-            } => MustBe::Unknown,
-            ComponentSymbol {
-                idx: 1,
-                args: ComponentMacroArgs::from(&Vec::new()),
-            } => MustBe::Value(true)
-        }),
+        "1 && (0 || !0)".to_string(),
+        vec![ComponentSymbol { idx: 1, args }],
+        vec![],
+        vec![ComponentSymbol { idx: 0, args }],
     );
     labels_eq(
         &labels,
         hash_map!({
             ComponentSymbol {
                 idx: 0,
-                args: ComponentMacroArgs::from(&Vec::new()),
+                args,
             } => true
         }),
-        hash_map!({
-            ComponentSymbol {
-                idx: 0,
-                args: ComponentMacroArgs::from(&Vec::new()),
-            } => MustBe::Value(true),
-            ComponentSymbol {
-                idx: 1,
-                args: ComponentMacroArgs::from(&Vec::new()),
-            } => MustBe::Value(true)
-        }),
+        "1 && 0".to_string(),
+        vec![
+            ComponentSymbol { idx: 0, args },
+            ComponentSymbol { idx: 1, args },
+        ],
+        vec![],
+        vec![],
     )
 }
 

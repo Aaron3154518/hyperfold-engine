@@ -22,13 +22,13 @@ use crate::{
 };
 
 use super::{
-    component_set::{ComponentSet, LabelItem, LabelOp, ComponentSetLabels},
+    component_set::{ComponentSet, LabelItem, LabelOp},
     items_crate::{ItemComponent, ItemGlobal, Items},
     labels::MustBe,
     path::{resolve_syn_path, ResolveResultTrait},
     paths::GetPaths,
     util::{CombineMsgs, MsgTrait, Zip2Msgs},
-    ItemEvent, ItemSystem,
+    ComponentSetLabels, ItemEvent, ItemSystem,
 };
 
 pub struct EventFnArg {
@@ -89,7 +89,10 @@ impl ComponentRefTracker {
         let (mut_cnt, immut_cnt) = (self.mut_refs.len(), self.immut_refs.len());
 
         (mut_cnt > 1)
-            .err(vec![format!("Multiple mutable references to '{comp_name}'")], ())
+            .err(
+                vec![format!("Multiple mutable references to '{comp_name}'")],
+                (),
+            )
             .and_msgs((mut_cnt > 0 && immut_cnt > 0).err(
                 vec![format!("Mutable and immutable references to '{comp_name}'")],
                 (),
@@ -215,7 +218,11 @@ impl ItemSystem {
                 }
             })
             .and_msgs(Self::validate_ref(arg, 1))
-            .and_msgs(globals.insert(i).ok((),vec![ format!("Duplicate global: {arg}")]))
+            .and_msgs(
+                globals
+                    .insert(i)
+                    .ok((), vec![format!("Duplicate global: {arg}")]),
+            )
     }
 
     fn validate_event<'a>(arg: &FnArg, i: usize, items: &'a Items) -> MsgsResult<&'a ItemEvent> {
@@ -243,7 +250,7 @@ impl ItemSystem {
             .and_then(|cs| {
                 let path = cs.path.path.join("::");
 
-                let mut singletons = Vec::new();
+                // Add component refs
                 for item in cs.args.iter() {
                     if !component_refs.contains_key(&item.comp.idx) {
                         component_refs
@@ -253,63 +260,32 @@ impl ItemSystem {
                     if let Some(refs) = component_refs.get_mut(&item.comp.idx) {
                         refs.add_ref(path.to_string(), item.is_mut);
                     }
-
-                    if let Some(c) = items.components.get(item.comp.idx) {
-                        if c.args.is_singleton {
-                            singletons.push(c.path.path.join("::"));
-                        }
-                    }
                 }
 
-                let mut unknown_singleton_labels = Vec::new();
-                let mut impossible_labels = Vec::new();
-                match &cs.labels {
-                    Some(ComponentSetLabels{symbols, .. }) => symbols.iter().map_vec_into( 
-                        |(c_sym, must_be)| {
-                            items.components.get(c_sym.idx).ok_or(vec![format!("Invalid label index: {}", c_sym.idx)])
-                            .map(
-                                |c| {
-                                    let path = c.path.path.join("::");
-                                    match must_be {
-                                        MustBe::Value(true) => {
-                                            if c.args.is_singleton {
-                                                singletons.push(path);
-                                            }
-                                        }
-                                        MustBe::Value(false) => (),
-                                        MustBe::Unknown => {
-                                            if c.args.is_singleton {
-                                                unknown_singleton_labels.push(path);
-                                            }
-                                        }
-                                        MustBe::Impossible => impossible_labels.push(path),
-                                    };
+                match is_vec || cs.first_singleton.is_some() {
+                    true => Ok(cs),
+                    // Must have a required singleton in the labels
+                    false => {
+                        let mut errs = vec![format!("{TAB}Entity set must contain singletons or be wrapped with {entities}<>")];
+                        if let Some(labels) = &cs.labels {
+                            for (symbs, verb) in [(&labels.false_symbols, "must"), (&labels.unknown_symbols, "may")] {
+                                let comps = labels.false_symbols
+                                    .filter_map_vec(|c_sym|
+                                        c_sym.args.is_singleton
+                                            .then_some(items.components.get(c_sym.idx)
+                                            .map_or_else(|| "Unknown".to_string(), 
+                                            |c| c.path.path.join("::")
+                                    )));
+                                if !comps.is_empty() {
+                                    errs.push(format!("{TAB}{TAB}These singleton are included as labels but {verb} be false: {}", comps.join(", ")))
                                 }
-                            )
+                            }
                         }
-                    ).combine_msgs().map(|_| ()),
-                    None => Ok(()),
-                }
-                .and_msgs(impossible_labels.is_empty().ok((), vec![format!(
-                    "{TAB}Labels cannot be both required and forbidden:\n{TAB}{TAB}{}",
-                    impossible_labels.join(", ")
-                )]))
-                .and_msgs((is_vec || !singletons.is_empty()).ok((),{
-                    let mut errs = vec![format!(
-                        "{TAB}Entity set has no singletons and must be wrapped with {entities}<>"
-                    )];
-                    if !unknown_singleton_labels.is_empty() {
-                        errs.push(format!(
-                            "{TAB}{TAB}Some singleton labels were specified but not required:\n{TAB}{TAB}{TAB}{}",
-                            unknown_singleton_labels.join(", ")
-                        ));
-                    }
-                    errs
-                }))
-                .map_err(|mut errs| {
+                        Err(errs)
+                    },
+                }.map_err(|mut errs| {
                     [vec![format!("In entity set argument: {path} {{")], errs.push_into("}".to_string())].concat()
                 })
-                .map(|_|  cs)
             })
             .and_msgs(Self::validate_ref(arg, 0))
     }
@@ -441,9 +417,15 @@ impl FnArg {
                                     )]),
                                 }
                             }
-                            _ => Err(vec![format!("Invalid argument type: {}", sym.path.join("::"))]),
+                            _ => Err(vec![format!(
+                                "Invalid argument type: {}",
+                                sym.path.join("::")
+                            )]),
                         },
-                        _ => Err(vec![format!("Invalid argument type: {}", sym.path.join("::"))]),
+                        _ => Err(vec![format!(
+                            "Invalid argument type: {}",
+                            sym.path.join("::")
+                        )]),
                     })
                     .map(|data| Self {
                         ty: data,
