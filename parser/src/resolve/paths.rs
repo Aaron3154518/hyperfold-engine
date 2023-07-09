@@ -163,7 +163,6 @@ pub enum EnginePaths {
     // Functions
     Filter,
     Intersect,
-    IntersectMut,
     // Events
     CoreUpdate,
     CoreEvents,
@@ -190,7 +189,6 @@ impl GetPaths for EnginePaths {
             EnginePaths::Singleton => "Singleton",
             EnginePaths::Filter => "filter",
             EnginePaths::Intersect => "intersect",
-            EnginePaths::IntersectMut => "intersect_mut",
             EnginePaths::CoreUpdate => "Update",
             EnginePaths::CoreEvents => "Events",
             EnginePaths::CorePreRender => "PreRender",
@@ -207,7 +205,7 @@ impl GetPaths for EnginePaths {
     fn get_path(&self) -> Vec<&str> {
         match self {
             EnginePaths::Singleton => vec![ECS, "components"],
-            EnginePaths::Filter | EnginePaths::Intersect | EnginePaths::IntersectMut => {
+            EnginePaths::Filter | EnginePaths::Intersect => {
                 vec!["intersect"]
             }
             EnginePaths::CoreUpdate

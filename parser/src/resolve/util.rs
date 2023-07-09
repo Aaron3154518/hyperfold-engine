@@ -1,45 +1,25 @@
+use proc_macro2::TokenStream;
+use quote::{format_ident, quote};
 use shared::util::{JoinMap, JoinMapInto, PushInto, ThenOk};
+
+// Returns `mut` or ``
+pub fn get_mut(is_mut: bool) -> TokenStream {
+    match is_mut {
+        true => quote!(mut),
+        false => quote!(),
+    }
+}
+
+// Returns `{ident}` if not mut, otherwise `{ident}_mut`
+pub fn get_fn_name(ident: &str, is_mut: bool) -> syn::Ident {
+    match is_mut {
+        true => format_ident!("{ident}_mut"),
+        false => format_ident!("{ident}"),
+    }
+}
 
 // Crate index, item index
 pub type ItemIndex = (usize, usize);
-
-// Type for propogating warnings
-pub enum Warning<T> {
-    Ok(T),
-    Warn(T, Vec<String>),
-}
-
-impl<T> Warning<T> {
-    pub fn get(self, f: impl FnOnce(Vec<String>)) -> T {
-        match self {
-            Warning::Ok(t) => t,
-            Warning::Warn(t, warn) => {
-                f(warn);
-                t
-            }
-        }
-    }
-
-    pub fn get_ref<'a>(&'a self, f: impl FnOnce(&'a Vec<String>)) -> &'a T {
-        match self {
-            Warning::Ok(t) => t,
-            Warning::Warn(t, warn) => {
-                f(warn);
-                t
-            }
-        }
-    }
-
-    pub fn get_mut<'a>(&'a mut self, f: impl FnOnce(&'a mut Vec<String>)) -> &'a mut T {
-        match self {
-            Warning::Ok(t) => t,
-            Warning::Warn(t, warn) => {
-                f(warn);
-                t
-            }
-        }
-    }
-}
 
 // Type for propogating errors
 pub type MsgsResult<T> = Result<T, Vec<String>>;

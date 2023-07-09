@@ -14,7 +14,9 @@ use std::{
 
 use parse::{AstCrate, ComponentSymbol};
 use regex::Regex;
-use resolve::{resolve_path, ComponentSetLabels, ItemsCrate, LabelItem, LabelOp, MustBe};
+use resolve::{
+    resolve_path, ComponentSetLabels, ItemsCrate, LabelItem, LabelOp, LabelsExpression, MustBe,
+};
 use shared::{hash_map, parse_args::ComponentMacroArgs, util::JoinMapInto};
 use util::{end, format_code};
 
@@ -61,12 +63,12 @@ fn labels_eq(
         ComponentSetLabels::Constant(v) => {
             msgs.push(format!("Expected: {expected_labels}\nActual: {v}"))
         }
-        ComponentSetLabels::Expression {
+        ComponentSetLabels::Expression(LabelsExpression {
             labels,
             true_symbols,
             false_symbols,
             unknown_symbols,
-        } => {
+        }) => {
             let actual_labels = format!("{}", labels);
             if expected_labels != actual_labels {
                 msgs.push(format!(

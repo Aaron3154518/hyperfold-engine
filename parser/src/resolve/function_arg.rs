@@ -267,9 +267,9 @@ impl ItemSystem {
                     // Must have a required singleton in the labels
                     false => {
                         let mut errs = vec![format!("{TAB}Entity set must contain singletons or be wrapped with {entities}<>")];
-                        if let Some(ComponentSetLabels::Expression { false_symbols, unknown_symbols, .. }) = &cs.labels {
-                            for (symbs, verb) in [(&false_symbols, "must"), (&unknown_symbols, "may")] {
-                                let comps = false_symbols
+                        if let Some(ComponentSetLabels::Expression(e)) = &cs.labels {
+                            for (symbs, verb) in [(&e.false_symbols, "must"), (&e.unknown_symbols, "may")] {
+                                let comps = symbs
                                     .filter_map_vec(|c_sym|
                                         c_sym.args.is_singleton
                                             .then_some(items.components.get(c_sym.idx)

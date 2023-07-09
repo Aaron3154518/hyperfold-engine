@@ -1,7 +1,5 @@
 use std::marker::PhantomData;
 
-use crate::intersect::HasKey;
-
 use super::entities::Entity;
 
 // Containers
@@ -55,37 +53,43 @@ where
         }
     }
 
-    pub fn get_key(&self) -> Option<K>
-    where
-        K: Copy,
-    {
+    pub fn contains_key(&self, key: &K) -> bool {
+        self.get_key().is_some_and(|k| k == key)
+    }
+
+    pub fn get_key<'a>(&'a self) -> Option<&'a K> {
         match self {
-            Singleton::Some { k, .. } => Some(*k),
+            Singleton::Some { k, .. } => Some(k),
             Singleton::None => None,
         }
     }
 
-    pub fn get<'a>(&'a self, key: &K) -> Option<&'a V> {
+    pub fn get_value<'a>(&'a self, key: &K) -> Option<&'a V> {
+        match self {
+            Singleton::Some { k, v } => (k == key).then_some(v),
+            Singleton::None => None,
+        }
+    }
+
+    pub fn get_value_mut<'a>(&'a mut self, key: &K) -> Option<&'a mut V> {
         match self {
             Singleton::Some { k, v } => (k == key).then_some(v),
             Singleton::None => None,
         }
     }
 
-    pub fn get_mut<'a>(&'a mut self, key: &K) -> Option<&'a mut V> {
+    pub fn get<'a>(&'a self) -> Option<(&'a K, &'a V)> {
         match self {
-            Singleton::Some { k, v } => (k == key).then_some(v),
+            Singleton::Some { k, v } => Some((k, v)),
             Singleton::None => None,
         }
     }
-}
 
-impl<K, V> HasKey<K> for Singleton<K, V>
-where
-    K: PartialEq,
-{
-    fn has_key(&self, key: &K) -> bool {
-        matches!(self, Singleton::Some { k, .. } if k == key)
+    pub fn get_mut<'a>(&'a mut self) -> Option<(&'a K, &'a mut V)> {
+        match self {
+            Singleton::Some { k, v } => Some((k, v)),
+            Singleton::None => None,
+        }
     }
 }
 

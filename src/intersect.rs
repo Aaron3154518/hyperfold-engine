@@ -1,40 +1,10 @@
-use std::collections::HashMap;
 use std::hash::Hash;
-use std::vec::IntoIter;
 
 use itertools::Itertools;
 
-pub trait HasKey<K> {
-    fn has_key(&self, k: &K) -> bool;
-}
-
-impl<K, V> HasKey<K> for HashMap<K, V>
-where
-    K: Eq + Hash,
-{
-    fn has_key(&self, k: &K) -> bool {
-        self.contains_key(k)
-    }
-}
-
-pub fn filter<'a, const N: usize, K, V, F>(
-    keys: Vec<(&'a K, V)>,
-    maps: [&dyn HasKey<K>; N],
-    filter: F,
-) -> Vec<(&'a K, V)>
-where
-    K: Hash + Eq,
-    F: Fn([bool; N]) -> bool,
-{
-    let maps = maps.each_ref();
-    keys.into_iter()
-        .filter(|(k, _)| filter(maps.map(|map| map.has_key(k))))
-        .collect()
-}
-
-pub fn intersect_impl<'a, K, V1, V2, V3, F>(
-    mut it1: IntoIter<(K, V1)>,
-    mut it2: IntoIter<(K, V2)>,
+pub fn intersect<'a, K, V1, V2, V3, F>(
+    it1: impl IntoIterator<Item = (K, V1)>,
+    it2: impl IntoIterator<Item = (K, V2)>,
     f: F,
 ) -> Vec<(K, V3)>
 where
@@ -42,6 +12,8 @@ where
     V3: 'a,
     F: Fn(V1, V2) -> V3,
 {
+    let mut it1 = it1.into_iter().sorted_by(|(k1, _), (k2, _)| k1.cmp(k2));
+    let mut it2 = it2.into_iter().sorted_by(|(k1, _), (k2, _)| k1.cmp(k2));
     let mut res = Vec::new();
     let mut kv1 = it1.next();
     let mut kv2 = it2.next();
@@ -56,38 +28,4 @@ where
         }
     }
     res
-}
-
-pub fn intersect<'a, K, V1, V2, V3, F>(
-    hm1: Vec<(&'a K, V1)>,
-    hm2: &'a HashMap<K, V2>,
-    f: F,
-) -> Vec<(&'a K, V3)>
-where
-    K: Ord + Eq + Hash,
-    V3: 'a,
-    F: Fn(V1, &'a V2) -> V3,
-{
-    intersect_impl(
-        hm1.into_iter().sorted_by_key(|(k, _)| *k),
-        hm2.iter().sorted_by_key(|(k, _)| *k),
-        f,
-    )
-}
-
-pub fn intersect_mut<'a, K, V1, V2, V3, F>(
-    hm1: Vec<(&'a K, V1)>,
-    hm2: &'a mut HashMap<K, V2>,
-    f: F,
-) -> Vec<(&'a K, V3)>
-where
-    K: Ord + Eq + Hash,
-    V3: 'a,
-    F: Fn(V1, &'a mut V2) -> V3,
-{
-    intersect_impl(
-        hm1.into_iter().sorted_by_key(|(k, _)| *k),
-        hm2.iter_mut().sorted_by_key(|(k, _)| *k),
-        f,
-    )
 }

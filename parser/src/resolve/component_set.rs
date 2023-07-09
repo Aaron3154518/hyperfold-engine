@@ -11,8 +11,8 @@ use crate::{
         AstCrate, ComponentSymbol, DiscardSymbol, MatchSymbol, ModInfo, SymbolType,
         {AstMod, Symbol},
     },
-    resolve::path::resolve_path,
-    resolve::util::{CombineMsgs, MsgsResult},
+    resolve::util::{get_mut, CombineMsgs, MsgsResult},
+    resolve::{path::resolve_path, util::get_fn_name},
 };
 
 use super::{
@@ -551,165 +551,203 @@ impl ComponentSet {
             })
     }
 
-    // TODO: eid need ref
+    // Inline init + filtering first, then build
     pub fn quote(
         &self,
         cs_idx: usize,
         ty: &syn::Path,
         filter: &syn::Path,
         intersect: &syn::Path,
-        intersect_mut: &syn::Path,
     ) -> TokenStream {
-        let eid = CodegenIdents::GenEid.to_ident();
-        let eids = CodegenIdents::GenEids.to_ident();
-        let comps_var = CodegenIdents::GenCFoo.to_ident();
-        let comps_type = CodegenIdents::CFoo.to_ident();
-
-        let fn_name_vec = component_set_fn(cs_idx, true);
-
         // Remove duplicate arguments
         let mut args = self.args.to_vec();
         args.sort_by_key(|item| item.comp.idx);
         args.dedup_by_key(|item| item.comp.idx);
 
-        let gen_filter_fn = |v, e: &LabelsExpression| {
-            let label_expr = e.labels.quote(&|c_sym| component_var(c_sym.idx));
-            let label_vars = e.iter_symbols().filter_map_vec_into(|c_sym| {
-                args.iter()
-                    .find(|c| c.comp.idx == c_sym.idx)
-                    .map_none(component_var(c_sym.idx))
-            });
-            quote!(
-                #filter(#v, [#(&#comps_var.#label_vars),*], |[#(#label_vars),*]| #label_expr)
-            )
+        // Get first arg, priority to singleton
+        let singleton_arg = args.iter().find(|item| item.comp.args.is_singleton);
+        let first_arg = singleton_arg.or(args.first());
+
+        // Generate final function signatures in case we return early
+        let comps_var = CodegenIdents::GenCFoo.to_ident();
+        let comps_type = CodegenIdents::CFoo.to_ident();
+        let fn_name = component_set_fn(cs_idx, false);
+        let function = quote!(#fn_name(#comps_var: &mut #comps_type) -> Option<#ty>);
+        let fn_name_vec = component_set_fn(cs_idx, true);
+        let function_vec = quote!(#fn_name_vec(#comps_var: &mut #comps_type) -> Vec<#ty>);
+
+        // Get labels expression and first/singleton label
+        let mut first_label = None;
+        let mut singleton_label = None;
+        let labels = match &self.labels {
+            Some(labels) => match labels {
+                // Label expression is always true, ignore labels
+                ComponentSetLabels::Constant(true) => None,
+                // Label expression is always false, skip computations
+                ComponentSetLabels::Constant(false) => {
+                    let fn_vec = quote!(fn #function_vec { vec![] });
+                    return match singleton_arg {
+                        Some(_) => quote!(
+                            fn #function { None }
+                            #fn_vec
+                        ),
+                        None => fn_vec,
+                    };
+                }
+                ComponentSetLabels::Expression(expr) => {
+                    singleton_label = expr
+                        .true_symbols
+                        .iter()
+                        .find(|c_sym| c_sym.args.is_singleton);
+                    first_label = singleton_label.clone().or(expr.true_symbols.first());
+                    Some(expr)
+                }
+            },
+            None => None,
         };
 
-        match self.first_singleton {
-            Some(s) => {
-                let s = component_var(s.idx);
-
-                // Match statement for components
-                let (gets, comps) = args.unzip_vec(|item| {
-                    let var = component_var(item.comp.idx);
-                    (
-                        match item.is_mut {
-                            true => quote!(#comps_var.#var.get_mut),
-                            false => quote!(#comps_var.#var.get),
-                        },
-                        var,
-                    )
-                });
-
-                // Args to component set struct
-                let (arg_vars, arg_vals) = self.args.unzip_vec(|item| {
-                    (format_ident!("{}", item.var), component_var(item.comp.idx))
-                });
-
-                let create_cs = quote!(
-                    if let (#(Some(#comps),)*) = (#(#gets(&k),)*) {
-                        return Some(#ty {
-                            #eid: k,
-                            #(#arg_vars: #arg_vals),*
-                        });
-                    }
-                );
-
-                // If statement for label expression
-                let body = match &self.labels {
-                    None | Some(ComponentSetLabels::Constant(true)) => Some(quote!(
-                        #create_cs
-                    )),
-                    Some(ComponentSetLabels::Constant(false)) => None,
-                    Some(ComponentSetLabels::Expression(e)) => {
-                        let filter = gen_filter_fn(quote!(vec![(&k, ())]), e);
-                        Some(quote!(
-                            if !#filter.is_empty() {
-                                #create_cs
-                            }
-                        ))
+        // Create statement to initialize the result
+        let eids = CodegenIdents::GenEids.to_ident();
+        // Returns
+        //   Has Singleton ? Option<&'a K> : Vec<(&'a K, ())>
+        //   Where 'a is bound to #eids
+        let init = match (first_arg, first_label) {
+            // Arg or label
+            (Some(ComponentSetItem { comp, .. }), _) | (_, Some(comp)) => {
+                let var = component_var(comp.idx);
+                match comp.args.is_singleton {
+                    // Option<K>
+                    true => quote!(#comps_var.#var.get_key().and_then(|k| #comps_var.#eids.get(k))),
+                    // Vec<K>
+                    false => {
+                        quote!(var.keys().filter_map(|k| #comps_var.#eids.get(k).map(|k| (k, ()))).collect())
                     }
                 }
-                .map_or(quote!(None), |body| {
-                    quote!(
-                        if let Some(k) = #s.get_key() {
-                            #body
-                        }
-                        None
-                    )
-                });
+            }
+            // No arg and no label
+            (None, None) => {
+                // Vec<K>
+                quote!(#comps_var.#eids.iter().map(|k| (k, ())).collect())
+            }
+        };
 
-                let fn_name = component_set_fn(cs_idx, false);
-
-                quote!(
-                    fn #fn_name(#comps_var: &mut #comps_type) -> Option<#ty> {
-                        #body
+        // Add filter if labels are present
+        let cs = component_set_var(cs_idx);
+        let init_and_filter = match &labels {
+            Some(expr) => {
+                let f = quote!(f);
+                let label_expr = expr.labels.quote(&|c_sym| component_var(c_sym.idx));
+                let label_vars = expr
+                    .iter_symbols()
+                    .map_vec_into(|c_sym| component_var(c_sym.idx));
+                let label_fn = quote!(|[#(#label_vars),*]| #label_expr);
+                let eval_labels = quote!(#f([#(&#comps_var.#label_vars.contains_key(k)),*]));
+                match (first_arg, first_label) {
+                    // Option<K>
+                    (Some(ComponentSetItem { comp, .. }), _) | (_, Some(comp))
+                        if comp.args.is_singleton =>
+                    {
+                        quote!(
+                            let #cs = #init;
+                            let #f = #label_fn;
+                            let #cs = #cs.and_then(|k| #eval_labels.then_some(k));
+                        )
                     }
-                    fn #fn_name_vec(#comps_var: &mut #comps_type) -> Vec<#ty> {
-                        match #fn_name(#comps_var) {
-                            Some(t) => vec![t],
-                            None => vec![]
-                        }
+                    // Vec<(K, V)>
+                    _ => quote!(
+                        let mut #cs = #init;
+                        let #f = #label_fn;
+                        #cs.drain_filter(|(k, _)| !#eval_labels);
+                    ),
+                }
+            }
+            None => quote!(let #cs = #init;),
+        };
+
+        // Create statements to add in data
+        let eid = CodegenIdents::GenEid.to_ident();
+        // Unique component variables
+        let var = args.map_vec(|item| component_var(item.comp.idx));
+        // Full list of component names and variables
+        let arg_name = self.args.map_vec(|item| format_ident!("{}", item.var));
+        let arg_var = self.args.map_vec(|item| component_var(item.comp.idx));
+        let build = match (first_arg, first_label) {
+            // Option<K>, No args
+            (None, Some(comp)) if comp.args.is_singleton => {
+                quote!(let #cs = #cs.map(|k| #ty { #eid: k });)
+            }
+            // Option<K>
+            (Some(ComponentSetItem { comp, .. }), _) | (_, Some(comp))
+                if comp.args.is_singleton =>
+            {
+                let get = args.map_vec(|item| get_fn_name("get", item.is_mut));
+                quote!(
+                    let #cs = #cs.and_then(|k| match (#(#comps_var.#var.#get(k)),*) {
+                        (#(Some(#var)),*) => Some(#ty {
+                            #eid: k,
+                            #(#arg_name: #arg_var),*
+                        }),
+                        _ => None
+                    });
+                )
+            }
+            // Vec<(K, V)>, No args
+            (None, _) => {
+                quote!(
+                    let #cs = #cs
+                        .into_iter()
+                        .map(|(k, _)| #ty { eid: k })
+                        .collect();
+                )
+            }
+            // Vec<(K, V)>
+            _ => {
+                let value_fn = (0..args.len()).map_vec_into(|i| match i {
+                    0 => quote!(|_, v| => v),
+                    i => {
+                        let tmps = (0..i).map_vec_into(|i| format_ident!("v{i}"));
+                        let tmp_n = format_ident!("v{}", i);
+                        quote!(|(#(#tmps),*), #tmp_n| (#(#tmps,)* #tmp_n))
+                    }
+                });
+                let iter = args.map_vec(|item| get_fn_name("iter", item.is_mut));
+                quote!(
+                    #(let #cs = #intersect(#cs, #comps_var.#var.#iter(), #value_fn);)*
+                    let #cs = #cs
+                        .into_iter()
+                        .map(|k, (#(#var),*)| #ty {
+                            #eid: k,
+                            #(#arg_name: #arg_var),*
+                        })
+                        .collect();
+                )
+            }
+        };
+
+        // Generate final functions
+        match (first_arg, first_label) {
+            // Option<K>
+            (Some(ComponentSetItem { comp, .. }), _) | (_, Some(comp))
+                if comp.args.is_singleton =>
+            {
+                quote!(
+                    fn #function {
+                        #init_and_filter
+                        #build
+                        #cs
+                    }
+                    fn #function_vec {
+                        Self::#fn_name(#comps_var).map_or(vec![], |t| vec![t])
                     }
                 )
             }
-            None => {
-                let v = quote!(v);
-
-                let mut arg_it = self.args.iter().enumerate();
-
-                // Set initial vector
-                let init = match arg_it.next() {
-                    Some((_, arg)) => {
-                        let var = component_var(arg.comp.idx);
-                        if arg.is_mut {
-                            quote!(#comps_var.#var.iter_mut().collect())
-                        } else {
-                            quote!(#comps_var.#var.iter().collect())
-                        }
-                    }
-                    None => match &self.labels.as_ref().and_then(|cs| cs.first_true_symbol()) {
-                        Some(comp) => {
-                            let var = component_var(comp.idx);
-                            quote!(#comps_var.#var.iter().collect())
-                        }
-                        None => quote!(#comps_var.#eids.iter().map(|k| (k, ())).collect()),
-                    },
-                };
-
-                // Intersect vector with other components
-                let intersects = arg_it.map_vec_into(|(i, arg)| {
-                    let tmps = (0..i).map_vec_into(|i| format_ident!("v{i}"));
-                    let tmp_n = format_ident!("v{}", i);
-                    let closure = quote!(|(#(#tmps),*), #tmp_n| (#(#tmps,)* #tmp_n));
-                    let var = component_var(arg.comp.idx);
-                    if arg.is_mut {
-                        quote!(#intersect_mut(#v, &mut #comps_var.#var, #closure))
-                    } else {
-                        quote!(#intersect(#v, &#comps_var.#var, #closure))
-                    }
-                });
-
-                // Return statement, none means return empty vector
-                let ret = match &self.labels {
-                    None | Some(ComponentSetLabels::Constant(true)) => Some(quote!(
-                        #v
-                    )),
-                    Some(ComponentSetLabels::Constant(false)) => None,
-                    Some(ComponentSetLabels::Expression(e)) => Some(gen_filter_fn(v, e)),
-                };
-
-                let body = match ret {
-                    Some(ret) => quote!(
-                        let #v = #init;
-                        #(let #v = #intersects;)*
-                        #ret
-                    ),
-                    None => quote!(vec![]),
-                };
-
+            // Vec<K>
+            _ => {
                 quote!(
-                    fn #fn_name_vec(#comps_var: &mut #comps_type) -> Vec<#ty> {
-                        #body
+                    fn #function_vec {
+                        #init_and_filter
+                        #build
+                        #cs
                     }
                 )
             }
