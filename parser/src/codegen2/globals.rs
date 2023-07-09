@@ -47,7 +47,7 @@ pub fn globals(
     globals: &Vec<ItemGlobal>,
     crates: &Crates,
 ) -> MsgsResult<TokenStream> {
-    let struct_name = CodegenIdents::GFoo.to_ident();
+    let struct_name = CodegenIdents::GFooType.to_ident();
     let vars = (0..globals.len()).map_vec_into(|i| global_var(i));
     let types = globals
         .map_vec(|g| {

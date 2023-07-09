@@ -30,7 +30,7 @@ pub fn events_enum(events: &Vec<ItemEvent>) -> TokenStream {
 }
 
 pub fn events(cr_idx: usize, events: &Vec<ItemEvent>, crates: &Crates) -> MsgsResult<TokenStream> {
-    let struct_name = CodegenIdents::EFoo.to_ident();
+    let struct_name = CodegenIdents::EFooType.to_ident();
     let enum_name = CodegenIdents::E.to_ident();
     let (vars, variants) = (0..events.len()).unzip_vec_into(|i| (event_var(i), event_variant(i)));
     let types = events
@@ -127,7 +127,7 @@ pub fn event_trait_impls(
         .map(|v| v.into_iter().map_vec_into(|(i, path)| vec_to_path(path)))
         .ok_or(vec![format!("Invalid crate index: {cr_idx}")]);
 
-    let struct_name = CodegenIdents::EFoo.to_ident();
+    let struct_name = CodegenIdents::EFooType.to_ident();
     let enum_name = CodegenIdents::E.to_ident();
     let namespace = CodegenIdents::Namespace.to_ident();
     let add_event = CodegenIdents::AddEvent.to_ident();

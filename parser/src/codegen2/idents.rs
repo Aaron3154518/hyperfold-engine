@@ -9,14 +9,14 @@ pub enum CodegenIdents {
     // General
     Namespace,
     // Systems
-    SFoo,
+    SFooType,
     // Globals
-    GFoo,
+    GFooType,
     // Components
-    CFoo,
+    CFooType,
     AddComponent,
     // Events
-    EFoo,
+    EFooType,
     AddEvent,
     E,
     ELen,
@@ -25,20 +25,20 @@ pub enum CodegenIdents {
     GenV,
     GenEid,
     GenEids,
-    GenCFoo,
-    GenGFoo,
-    GenEFoo,
+    CFooVar,
+    GFooVar,
+    EFooVar,
 }
 
 impl CodegenIdents {
     pub fn as_str(&self) -> &str {
         match self {
             CodegenIdents::Namespace => NAMESPACE,
-            CodegenIdents::SFoo => "SFoo",
-            CodegenIdents::GFoo => "GFoo",
-            CodegenIdents::CFoo => EngineGlobals::CFoo.get_ident(),
+            CodegenIdents::SFooType => "SFoo",
+            CodegenIdents::GFooType => "GFoo",
+            CodegenIdents::CFooType => EngineGlobals::CFoo.get_ident(),
             CodegenIdents::AddComponent => NamespaceTraits::AddComponent.get_ident(),
-            CodegenIdents::EFoo => EngineGlobals::EFoo.get_ident(),
+            CodegenIdents::EFooType => EngineGlobals::EFoo.get_ident(),
             CodegenIdents::AddEvent => NamespaceTraits::AddEvent.get_ident(),
             CodegenIdents::E => "E",
             CodegenIdents::ELen => "E_LEN",
@@ -46,9 +46,9 @@ impl CodegenIdents {
             CodegenIdents::GenV => "v",
             CodegenIdents::GenEid => "eid",
             CodegenIdents::GenEids => "eids",
-            CodegenIdents::GenCFoo => "cfoo",
-            CodegenIdents::GenGFoo => "gfoo",
-            CodegenIdents::GenEFoo => "efoo",
+            CodegenIdents::CFooVar => "cfoo",
+            CodegenIdents::GFooVar => "gfoo",
+            CodegenIdents::EFooVar => "efoo",
         }
     }
 

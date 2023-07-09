@@ -6,7 +6,7 @@ use shared::util::{Call, Catch, FindFrom, Get, JoinMap, JoinMapInto, MapNone, No
 use syn::{spanned::Spanned, Error, Token};
 
 use crate::{
-    codegen2::CodegenIdents,
+    codegen2::{util::Quote, CodegenIdents},
     parse::{
         AstCrate, ComponentSymbol, DiscardSymbol, MatchSymbol, ModInfo, SymbolType,
         {AstMod, Symbol},
@@ -16,7 +16,8 @@ use crate::{
 };
 
 use super::{
-    constants::{component_set_fn, component_set_var, component_var},
+    constants::{component_set_keys_fn, component_set_var, component_var},
+    function_arg::ComponentSetFnArg,
     items_crate::ItemComponent,
     labels::{ComponentSetLabels, LabelsExpression, SymbolMap},
     parse_macro_call::ParseMacroCall,
@@ -401,7 +402,7 @@ impl LabelItem {
                 .expect_symbol()
                 .expect_component()
                 .discard_symbol()
-                .map(|c_sym| Self::Item { not, comp: c_sym }),
+                .map(|comp| Self::Item { not, comp: comp }),
             AstLabelItem::Expression { op, items } => items
                 .into_iter()
                 .map_vec_into(|item| Self::resolve(item, (m, cr, crates)))
@@ -484,11 +485,40 @@ pub struct ComponentSet {
     pub path: ItemPath,
     pub args: Vec<ComponentSetItem>,
     pub labels: Option<ComponentSetLabels>,
-    // First singleton found in args or required in labels
-    pub first_singleton: Option<ComponentSymbol>,
 }
 
 impl ComponentSet {
+    // Gets first arg, precedence given to singleton args
+    pub fn first_arg(&self) -> Option<&ComponentSetItem> {
+        self.args
+            .iter()
+            .find(|item| item.comp.args.is_singleton)
+            .or(self.args.first())
+    }
+
+    // Gets first required true label, precedence given to singleton labels
+    pub fn first_label(&self) -> Option<&ComponentSymbol> {
+        match &self.labels {
+            Some(ComponentSetLabels::Expression(LabelsExpression { true_symbols, .. })) => {
+                true_symbols
+                    .iter()
+                    .find(|comp| comp.args.is_singleton)
+                    .or(true_symbols.first())
+            }
+            _ => None,
+        }
+    }
+
+    // Gets first arg or required true label that is singleton
+    pub fn first_singleton(&self) -> Option<&ComponentSymbol> {
+        self.first_arg()
+            .and_then(|arg| arg.comp.args.is_singleton.then_some(&arg.comp))
+            .or_else(|| {
+                self.first_label()
+                    .and_then(|comp| comp.args.is_singleton.then_some(comp))
+            })
+    }
+
     pub fn parse(tokens: TokenStream, (m, cr, crates): ModInfo) -> MsgsResult<Self> {
         syn::parse2(tokens)
             .map_err(|_| {
@@ -533,31 +563,19 @@ impl ComponentSet {
                         cr_idx: cr.idx,
                         path: m.path.to_vec().push_into(ident),
                     },
-                    first_singleton: args
-                        .iter()
-                        .find(|item| item.comp.args.is_singleton)
-                        .map(|item| item.comp)
-                        .or_else(|| match &labels {
-                            Some(ComponentSetLabels::Expression(e)) => e
-                                .true_symbols
-                                .iter()
-                                .find(|c_sym| c_sym.args.is_singleton)
-                                .copied(),
-                            _ => None,
-                        }),
                     labels,
                     args,
                 }
             })
     }
 
-    // Inline init + filtering first, then build
+    // Generates function which get the keys used in a component set
     pub fn quote(
         &self,
         cs_idx: usize,
-        ty: &syn::Path,
         filter: &syn::Path,
-        intersect: &syn::Path,
+        entity: &syn::Path,
+        entity_set: &syn::Path,
     ) -> TokenStream {
         // Remove duplicate arguments
         let mut args = self.args.to_vec();
@@ -569,12 +587,14 @@ impl ComponentSet {
         let first_arg = singleton_arg.or(args.first());
 
         // Generate final function signatures in case we return early
-        let comps_var = CodegenIdents::GenCFoo.to_ident();
-        let comps_type = CodegenIdents::CFoo.to_ident();
-        let fn_name = component_set_fn(cs_idx, false);
-        let function = quote!(#fn_name(#comps_var: &mut #comps_type) -> Option<#ty>);
-        let fn_name_vec = component_set_fn(cs_idx, true);
-        let function_vec = quote!(#fn_name_vec(#comps_var: &mut #comps_type) -> Vec<#ty>);
+        let comps_var = CodegenIdents::CFooVar.to_ident();
+        let comps_type = CodegenIdents::CFooType.to_ident();
+        let eids = CodegenIdents::GenEids.to_ident();
+
+        let get_keys = component_set_keys_fn(cs_idx, false);
+        let get_keys_fn = quote!(#get_keys<'a>(#comps_var: &#comps_type, #eids: &'a #entity_set) -> Option<&'a #entity>);
+        let get_keys_vec = component_set_keys_fn(cs_idx, true);
+        let get_keys_vec_fn = quote!(#get_keys_vec<'a>(#comps_var: &#comps_type, #eids: &'a #entity_set) -> Vec<(&'a #entity, ())>);
 
         // Get labels expression and first/singleton label
         let mut first_label = None;
@@ -585,20 +605,17 @@ impl ComponentSet {
                 ComponentSetLabels::Constant(true) => None,
                 // Label expression is always false, skip computations
                 ComponentSetLabels::Constant(false) => {
-                    let fn_vec = quote!(fn #function_vec { vec![] });
+                    let fn_vec = quote!(fn #get_keys_vec_fn { vec![] });
                     return match singleton_arg {
                         Some(_) => quote!(
-                            fn #function { None }
+                            fn #get_keys_fn { None }
                             #fn_vec
                         ),
                         None => fn_vec,
                     };
                 }
                 ComponentSetLabels::Expression(expr) => {
-                    singleton_label = expr
-                        .true_symbols
-                        .iter()
-                        .find(|c_sym| c_sym.args.is_singleton);
+                    singleton_label = expr.true_symbols.iter().find(|comp| comp.args.is_singleton);
                     first_label = singleton_label.clone().or(expr.true_symbols.first());
                     Some(expr)
                 }
@@ -607,7 +624,6 @@ impl ComponentSet {
         };
 
         // Create statement to initialize the result
-        let eids = CodegenIdents::GenEids.to_ident();
         // Returns
         //   Has Singleton ? Option<&'a K> : Vec<(&'a K, ())>
         //   Where 'a is bound to #eids
@@ -618,16 +634,16 @@ impl ComponentSet {
                 match comp.args.is_singleton {
                     // Option<K>
                     true => quote!(#comps_var.#var.get_key().and_then(|k| #comps_var.#eids.get(k))),
-                    // Vec<K>
+                    // Vec<(K, V)>
                     false => {
-                        quote!(var.keys().filter_map(|k| #comps_var.#eids.get(k).map(|k| (k, ()))).collect())
+                        quote!(#comps_var.#var.keys().filter_map(|k| #eids.get(k).map(|k| (k, ()))).collect())
                     }
                 }
             }
             // No arg and no label
             (None, None) => {
-                // Vec<K>
-                quote!(#comps_var.#eids.iter().map(|k| (k, ())).collect())
+                // Vec<(K, V)>
+                quote!(#eids.iter().map(|k| (k, ())).collect())
             }
         };
 
@@ -636,10 +652,10 @@ impl ComponentSet {
         let init_and_filter = match &labels {
             Some(expr) => {
                 let f = quote!(f);
-                let label_expr = expr.labels.quote(&|c_sym| component_var(c_sym.idx));
+                let label_expr = expr.labels.quote(&|comp| component_var(comp.idx));
                 let label_vars = expr
                     .iter_symbols()
-                    .map_vec_into(|c_sym| component_var(c_sym.idx));
+                    .map_vec_into(|comp| component_var(comp.idx));
                 let label_fn = quote!(|[#(#label_vars),*]| #label_expr);
                 let eval_labels = quote!(#f([#(&#comps_var.#label_vars.contains_key(k)),*]));
                 match (first_arg, first_label) {
@@ -664,17 +680,55 @@ impl ComponentSet {
             None => quote!(let #cs = #init;),
         };
 
-        // Create statements to add in data
+        // Generate final functions
+        match (first_arg, first_label) {
+            // Option<K>
+            (Some(ComponentSetItem { comp, .. }), _) | (_, Some(comp))
+                if comp.args.is_singleton =>
+            {
+                quote!(
+                    fn #get_keys_fn {
+                        #init_and_filter
+                        #cs
+                    }
+                    fn #get_keys_vec_fn {
+                        Self::#get_keys(#comps_var, #eids).map_or(vec![], |t| vec![t])
+                    }
+                )
+            }
+            // Vec<K>
+            _ => {
+                quote!(
+                    fn #get_keys_vec_fn {
+                        #init_and_filter
+                        #cs
+                    }
+                )
+            }
+        }
+    }
+
+    // Generates inline code to construct values from keys
+    pub fn quote_build(&self, v: syn::Ident, ty: &syn::Path, intersect: &syn::Path) -> TokenStream {
+        // Remove duplicate arguments
+        let mut args = self.args.to_vec();
+        args.sort_by_key(|item| item.comp.idx);
+        args.dedup_by_key(|item| item.comp.idx);
+
+        let (first_arg, first_label) = (self.first_arg(), self.first_label());
+
         let eid = CodegenIdents::GenEid.to_ident();
+        let comps_var = CodegenIdents::CFooVar.to_ident();
+
         // Unique component variables
         let var = args.map_vec(|item| component_var(item.comp.idx));
         // Full list of component names and variables
         let arg_name = self.args.map_vec(|item| format_ident!("{}", item.var));
         let arg_var = self.args.map_vec(|item| component_var(item.comp.idx));
-        let build = match (first_arg, first_label) {
+        match (first_arg, first_label) {
             // Option<K>, No args
             (None, Some(comp)) if comp.args.is_singleton => {
-                quote!(let #cs = #cs.map(|k| #ty { #eid: k });)
+                quote!(let #v = #v.map(|k| #ty { #eid: k });)
             }
             // Option<K>
             (Some(ComponentSetItem { comp, .. }), _) | (_, Some(comp))
@@ -682,7 +736,7 @@ impl ComponentSet {
             {
                 let get = args.map_vec(|item| get_fn_name("get", item.is_mut));
                 quote!(
-                    let #cs = #cs.and_then(|k| match (#(#comps_var.#var.#get(k)),*) {
+                    let #v = #v.and_then(|k| match (#(#comps_var.#var.#get(k)),*) {
                         (#(Some(#var)),*) => Some(#ty {
                             #eid: k,
                             #(#arg_name: #arg_var),*
@@ -694,8 +748,7 @@ impl ComponentSet {
             // Vec<(K, V)>, No args
             (None, _) => {
                 quote!(
-                    let #cs = #cs
-                        .into_iter()
+                    let #v = #v.into_iter()
                         .map(|(k, _)| #ty { eid: k })
                         .collect();
                 )
@@ -703,7 +756,7 @@ impl ComponentSet {
             // Vec<(K, V)>
             _ => {
                 let value_fn = (0..args.len()).map_vec_into(|i| match i {
-                    0 => quote!(|_, v| => v),
+                    0 => quote!(|_, v| v),
                     i => {
                         let tmps = (0..i).map_vec_into(|i| format_ident!("v{i}"));
                         let tmp_n = format_ident!("v{}", i);
@@ -712,9 +765,8 @@ impl ComponentSet {
                 });
                 let iter = args.map_vec(|item| get_fn_name("iter", item.is_mut));
                 quote!(
-                    #(let #cs = #intersect(#cs, #comps_var.#var.#iter(), #value_fn);)*
-                    let #cs = #cs
-                        .into_iter()
+                    #(let #v = #intersect(#v, #comps_var.#var.#iter(), #value_fn);)*
+                    let #v = #v.into_iter()
                         .map(|k, (#(#var),*)| #ty {
                             #eid: k,
                             #(#arg_name: #arg_var),*
@@ -722,36 +774,59 @@ impl ComponentSet {
                         .collect();
                 )
             }
-        };
-
-        // Generate final functions
-        match (first_arg, first_label) {
-            // Option<K>
-            (Some(ComponentSetItem { comp, .. }), _) | (_, Some(comp))
-                if comp.args.is_singleton =>
-            {
-                quote!(
-                    fn #function {
-                        #init_and_filter
-                        #build
-                        #cs
-                    }
-                    fn #function_vec {
-                        Self::#fn_name(#comps_var).map_or(vec![], |t| vec![t])
-                    }
-                )
-            }
-            // Vec<K>
-            _ => {
-                quote!(
-                    fn #function_vec {
-                        #init_and_filter
-                        #build
-                        #cs
-                    }
-                )
-            }
         }
+    }
+
+    // Returns (code to build cs's, Vec<expression to pass each cs into a function>, Vec<singleton cs vars>)
+    pub fn quote_args(
+        component_sets: &Vec<(ComponentSetFnArg, &Self, syn::Path)>,
+        intersect: &syn::Path,
+    ) -> (TokenStream, Vec<TokenStream>, Vec<TokenStream>) {
+        let eids = CodegenIdents::GenEids.to_ident();
+        let comps_var = CodegenIdents::CFooVar.to_ident();
+
+        let mut c_sets = component_sets.iter().collect::<Vec<_>>();
+        c_sets.sort_by_key(|(arg, ..)| arg.idx);
+        c_sets.dedup_by_key(|(arg, ..)| arg.idx);
+
+        // Get all the keys
+        // Now we have immutable references to eids
+        let (var, get_keys_fn) = c_sets.unzip_vec(|(arg, ..)| {
+            (
+                component_set_var(arg.idx),
+                component_set_keys_fn(arg.idx, arg.is_vec),
+            )
+        });
+
+        // Build sets
+        let build = c_sets
+            .iter()
+            .zip(var.iter())
+            .map_vec_into(|((_, cs, ty), v)| cs.quote_build(v.clone(), ty, intersect));
+
+        (
+            quote!(
+                #(let #var = #get_keys_fn(#comps_var, &#comps_var.#eids);)*
+                #(#build)*
+            ),
+            component_sets.map_vec(|(arg, ..)| {
+                let var = component_set_var(arg.idx);
+                // Get last instance of the component set arg
+                match component_sets
+                    .iter()
+                    .rev()
+                    .find(|(arg2, ..)| arg.idx == arg2.idx)
+                {
+                    // If we aren't the last instance, pass a clone
+                    Some((arg2, ..)) if arg2.arg_idx != arg.arg_idx => quote!(#var.clone()),
+                    _ => var.quote(),
+                }
+            }),
+            component_sets.filter_map_vec(|(arg, cs, _)| match cs.first_singleton() {
+                Some(_) => Some(component_set_var(arg.idx).quote()),
+                None => None,
+            }),
+        )
     }
 }
 

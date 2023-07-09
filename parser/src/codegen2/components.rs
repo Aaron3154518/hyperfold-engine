@@ -100,7 +100,7 @@ pub fn components(
     components: &Vec<ItemComponent>,
     crates: &Crates,
 ) -> MsgsResult<TokenStream> {
-    let struct_name = CodegenIdents::CFoo.to_ident();
+    let struct_name = CodegenIdents::CFooType.to_ident();
     let vars = (0..components.len()).map_vec_into(|i| component_var(i));
     let types = components
         .map_vec(|c| {
@@ -170,7 +170,7 @@ pub fn component_trait_impls(
         .map(|v| v.into_iter().map_vec_into(|(i, path)| vec_to_path(path)))
         .ok_or(vec![format!("Invalid crate index: {cr_idx}")]);
 
-    let struct_name = CodegenIdents::CFoo.to_ident();
+    let struct_name = CodegenIdents::CFooType.to_ident();
     let namespace = CodegenIdents::Namespace.to_ident();
     let add_comp = CodegenIdents::AddComponent.to_ident();
     let add_comp_trait = crates.get_syn_path(cr_idx, EngineTraits::AddComponent);

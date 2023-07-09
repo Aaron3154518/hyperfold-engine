@@ -9,7 +9,7 @@ mod paths;
 pub mod util;
 
 pub use component_set::{ComponentSet, LabelItem, LabelOp};
-pub use function_arg::{FnArgType, FnArgs};
+pub use function_arg::{ComponentSetFnArg, EventFnArg, FnArgType, FnArgs, GlobalFnArg};
 pub use items_crate::{ItemComponent, ItemEvent, ItemGlobal, ItemSystem, Items, ItemsCrate};
 pub use labels::{ComponentSetLabels, LabelsExpression, MustBe};
 pub use path::{resolve_path, ItemPath};
