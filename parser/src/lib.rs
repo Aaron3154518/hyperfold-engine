@@ -2,6 +2,7 @@
 #![feature(hash_drain_filter)]
 #![feature(array_methods)]
 #![feature(iter_intersperse)]
+#![feature(lazy_cell)]
 #![allow(unused)]
 
 use std::{

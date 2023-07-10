@@ -6,7 +6,7 @@ use shared::util::{Call, Catch, FindFrom, Get, JoinMap, JoinMapInto, MapNone, No
 use syn::{spanned::Spanned, Error, Token};
 
 use crate::{
-    codegen2::{util::Quote, CodegenIdents},
+    codegen2::{util::Quote, CodegenIdents, CODEGEN_IDENTS},
     parse::{
         AstCrate, ComponentSymbol, DiscardSymbol, MatchSymbol, ModInfo, SymbolType,
         {AstMod, Symbol},
@@ -587,14 +587,17 @@ impl ComponentSet {
         let first_arg = singleton_arg.or(args.first());
 
         // Generate final function signatures in case we return early
-        let comps_var = CodegenIdents::CFooVar.to_ident();
-        let comps_type = CodegenIdents::CFooType.to_ident();
-        let eids = CodegenIdents::GenEids.to_ident();
+        let CodegenIdents {
+            components,
+            eids_var,
+            comps_var,
+            ..
+        } = &*CODEGEN_IDENTS;
 
         let get_keys = component_set_keys_fn(cs_idx, false);
-        let get_keys_fn = quote!(#get_keys<'a>(#comps_var: &#comps_type, #eids: &'a #entity_set) -> Option<&'a #entity>);
+        let get_keys_fn = quote!(#get_keys<'a>(#comps_var: &#components, #eids_var: &'a #entity_set) -> Option<&'a #entity>);
         let get_keys_vec = component_set_keys_fn(cs_idx, true);
-        let get_keys_vec_fn = quote!(#get_keys_vec<'a>(#comps_var: &#comps_type, #eids: &'a #entity_set) -> Vec<(&'a #entity, ())>);
+        let get_keys_vec_fn = quote!(#get_keys_vec<'a>(#comps_var: &#components, #eids_var: &'a #entity_set) -> Vec<(&'a #entity, ())>);
 
         // Get labels expression and first/singleton label
         let mut first_label = None;
@@ -633,17 +636,19 @@ impl ComponentSet {
                 let var = component_var(comp.idx);
                 match comp.args.is_singleton {
                     // Option<K>
-                    true => quote!(#comps_var.#var.get_key().and_then(|k| #comps_var.#eids.get(k))),
+                    true => {
+                        quote!(#comps_var.#var.get_key().and_then(|k| #comps_var.#eids_var.get(k)))
+                    }
                     // Vec<(K, V)>
                     false => {
-                        quote!(#comps_var.#var.keys().filter_map(|k| #eids.get(k).map(|k| (k, ()))).collect())
+                        quote!(#comps_var.#var.keys().filter_map(|k| #eids_var.get(k).map(|k| (k, ()))).collect())
                     }
                 }
             }
             // No arg and no label
             (None, None) => {
                 // Vec<(K, V)>
-                quote!(#eids.iter().map(|k| (k, ())).collect())
+                quote!(#eids_var.iter().map(|k| (k, ())).collect())
             }
         };
 
@@ -692,7 +697,7 @@ impl ComponentSet {
                         #cs
                     }
                     fn #get_keys_vec_fn {
-                        Self::#get_keys(#comps_var, #eids).map_or(vec![], |t| vec![t])
+                        Self::#get_keys(#comps_var, #eids_var).map_or(vec![], |t| vec![t])
                     }
                 )
             }
@@ -717,8 +722,9 @@ impl ComponentSet {
 
         let (first_arg, first_label) = (self.first_arg(), self.first_label());
 
-        let eid = CodegenIdents::GenEid.to_ident();
-        let comps_var = CodegenIdents::CFooVar.to_ident();
+        let CodegenIdents {
+            eid_var, comps_var, ..
+        } = &*CODEGEN_IDENTS;
 
         // Unique component variables
         let var = args.map_vec(|item| component_var(item.comp.idx));
@@ -728,7 +734,7 @@ impl ComponentSet {
         match (first_arg, first_label) {
             // Option<K>, No args
             (None, Some(comp)) if comp.args.is_singleton => {
-                quote!(let #v = #v.map(|k| #ty { #eid: k });)
+                quote!(let #v = #v.map(|k| #ty { #eid_var: k });)
             }
             // Option<K>
             (Some(ComponentSetItem { comp, .. }), _) | (_, Some(comp))
@@ -738,7 +744,7 @@ impl ComponentSet {
                 quote!(
                     let #v = #v.and_then(|k| match (#(#comps_var.#var.#get(k)),*) {
                         (#(Some(#var)),*) => Some(#ty {
-                            #eid: k,
+                            #eid_var: k,
                             #(#arg_name: #arg_var),*
                         }),
                         _ => None
@@ -768,7 +774,7 @@ impl ComponentSet {
                     #(let #v = #intersect(#v, #comps_var.#var.#iter(), #value_fn);)*
                     let #v = #v.into_iter()
                         .map(|k, (#(#var),*)| #ty {
-                            #eid: k,
+                            #eid_var: k,
                             #(#arg_name: #arg_var),*
                         })
                         .collect();
@@ -782,8 +788,11 @@ impl ComponentSet {
         component_sets: &Vec<(ComponentSetFnArg, &Self, syn::Path)>,
         intersect: &syn::Path,
     ) -> (TokenStream, Vec<TokenStream>, Vec<TokenStream>) {
-        let eids = CodegenIdents::GenEids.to_ident();
-        let comps_var = CodegenIdents::CFooVar.to_ident();
+        let CodegenIdents {
+            eids_var,
+            comps_var,
+            ..
+        } = &*CODEGEN_IDENTS;
 
         let mut c_sets = component_sets.iter().collect::<Vec<_>>();
         c_sets.sort_by_key(|(arg, ..)| arg.idx);
@@ -806,7 +815,7 @@ impl ComponentSet {
 
         (
             quote!(
-                #(let #var = #get_keys_fn(#comps_var, &#comps_var.#eids);)*
+                #(let #var = Self::#get_keys_fn(#comps_var, &#comps_var.#eids_var);)*
                 #(#build)*
             ),
             component_sets.map_vec(|(arg, ..)| {

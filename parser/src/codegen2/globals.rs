@@ -3,7 +3,7 @@ use quote::quote;
 use shared::util::{JoinMap, JoinMapInto};
 
 use crate::{
-    codegen2::{idents::CodegenIdents, util::vec_to_path},
+    codegen2::{idents::CodegenIdents, util::vec_to_path, CODEGEN_IDENTS},
     match_ok,
     resolve::{
         constants::global_var,
@@ -14,8 +14,8 @@ use crate::{
 
 use super::Crates;
 
-struct CodegenArgs {
-    struct_name: syn::Ident,
+struct CodegenArgs<'a> {
+    struct_name: &'a syn::Ident,
     vars: Vec<syn::Ident>,
     types: Vec<syn::Path>,
 }
@@ -47,7 +47,6 @@ pub fn globals(
     globals: &Vec<ItemGlobal>,
     crates: &Crates,
 ) -> MsgsResult<TokenStream> {
-    let struct_name = CodegenIdents::GFooType.to_ident();
     let vars = (0..globals.len()).map_vec_into(|i| global_var(i));
     let types = globals
         .map_vec(|g| {
@@ -59,7 +58,7 @@ pub fn globals(
 
     match_ok!(types, {
         codegen(CodegenArgs {
-            struct_name,
+            struct_name: &CODEGEN_IDENTS.globals,
             vars,
             types,
         })

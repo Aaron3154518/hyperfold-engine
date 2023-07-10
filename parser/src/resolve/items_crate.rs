@@ -483,7 +483,8 @@ impl ItemsCrate {
         // Generate system call code
         let func_calls = codegen::systems(main_cr_idx, &items, crates);
 
-        // Generate app struct
+        // Generate manager struct
+        let manager_def = codegen::manager_def();
 
         // Write codegen to file
         match_ok!(
@@ -508,6 +509,7 @@ impl ItemsCrate {
                     trait_defs,
                     func_calls,
                     component_set_fns,
+                    manager_def,
                 })
             },
             err,
@@ -534,6 +536,7 @@ struct CodegenArgs<'a> {
     trait_defs: Vec<Traits>,
     component_set_fns: Vec<TokenStream>,
     func_calls: Vec<TokenStream>,
+    manager_def: TokenStream,
 }
 
 fn write_codegen<'a>(
@@ -548,6 +551,7 @@ fn write_codegen<'a>(
         trait_defs,
         func_calls,
         component_set_fns,
+        manager_def,
     }: CodegenArgs<'a>,
 ) {
     let main_cr_idx = crates.get_crate_index(Crate::Main);
@@ -563,11 +567,11 @@ fn write_codegen<'a>(
             if cr_idx == main_cr_idx {
                 // format!(
                 //     "{globals}\n{components}\n{add_component}\n{component_traits}\
-                //     \n{events_enum}\n{events}\n{add_event}\n{event_traits}\n{}",
+                //     \n{events_enum}\n{events}\n{add_event}\n{event_traits}\n{}\n{maanger_def}",
                 //     func_calls.join_map(|t| t.to_string(), "\n")
                 // )
                 format!(
-                    "{}\n{}",
+                    "{}\n{}\n{manager_def}",
                     component_set_fns.join_map(|t| t.to_string(), "\n"),
                     func_calls.join_map(|t| t.to_string(), "\n")
                 )

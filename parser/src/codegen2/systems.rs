@@ -3,6 +3,7 @@ use quote::quote;
 use shared::util::{JoinMap, JoinMapInto};
 
 use crate::{
+    codegen2::CODEGEN_IDENTS,
     match_ok,
     resolve::{
         constants::{component_set_keys_fn, component_set_var, global_var},
@@ -20,13 +21,13 @@ use super::{
     Crates,
 };
 
-fn codegen_init_system(mut globals: Vec<GlobalFnArg>, func_name: syn::Path) -> TokenStream {
-    let globals_var = CodegenIdents::GFooVar.to_ident();
-    globals.sort_by_key(|g| g.arg_idx);
-    let func_args = globals.map_vec(|g| {
+fn codegen_init_system(mut global_args: Vec<GlobalFnArg>, func_name: syn::Path) -> TokenStream {
+    let CodegenIdents { globals, .. } = &*CODEGEN_IDENTS;
+    global_args.sort_by_key(|g| g.arg_idx);
+    let func_args = global_args.map_vec(|g| {
         let mut_tok = if g.is_mut { quote!(mut) } else { quote!() };
         let var = global_var(g.idx);
-        quote!(&#mut_tok self.#globals_var.#var)
+        quote!(&#mut_tok self.#globals.#var)
     });
     quote!(fn foo() { let _ = #func_name(#(#func_args),*); })
 }
@@ -45,24 +46,27 @@ fn codegen_system(
         func_name,
         event_trait,
         intersect,
-        event,
-        globals,
+        event: event_arg,
+        globals: global_args,
         component_sets,
     }: CodegenSystemArgs,
 ) -> TokenStream {
-    let globals_var = CodegenIdents::GFooVar.to_ident();
-    let comps_var = CodegenIdents::CFooVar.to_ident();
-    let events_var = CodegenIdents::EFooVar.to_ident();
-    let globals_type = CodegenIdents::GFooType.to_ident();
-    let comps_type = CodegenIdents::CFooType.to_ident();
-    let events_type = CodegenIdents::EFooType.to_ident();
-    let event_arg = CodegenIdents::GenE.to_ident();
+    let CodegenIdents {
+        globals,
+        components,
+        events,
+        e_var,
+        comps_var,
+        globals_var,
+        events_var,
+        ..
+    } = &*CODEGEN_IDENTS;
 
     // Generate function argument tokens
-    let num_args = 1 + globals.len() + component_sets.len();
+    let num_args = 1 + global_args.len() + component_sets.len();
     let mut func_args = (0..num_args).map_vec_into(|_| quote!());
-    func_args[event.arg_idx] = event_arg.quote();
-    for g in globals {
+    func_args[event_arg.arg_idx] = e_var.quote();
+    for g in global_args {
         func_args[g.arg_idx] = {
             let mut_tok = if g.is_mut { quote!(mut) } else { quote!() };
             let var = global_var(g.idx);
@@ -88,8 +92,8 @@ fn codegen_system(
 
     quote!(
         fn foo() {
-            let _ =|#comps_var: &mut #comps_type, #globals_var: &mut #globals_type, #events_var: &mut #events_type| {
-                if let Some(e) = #event_trait::get_event(efoo) {
+            let _ =|#comps_var: &mut #components, #globals_var: &mut #globals, #events_var: &mut #events| {
+                if let Some(#e_var) = #event_trait::get_event(#events_var) {
                     #build_cs
                     #func
                 }

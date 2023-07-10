@@ -12,26 +12,34 @@ use crate::{
     },
 };
 
-use super::{traits::trait_defs, util::vec_to_path, Crates};
+use super::{traits::trait_defs, util::vec_to_path, Crates, CODEGEN_IDENTS};
 
 pub fn events_enum(events: &Vec<ItemEvent>) -> TokenStream {
-    let enum_name = CodegenIdents::E.to_ident();
-    let num_variants_var = CodegenIdents::ELen.to_ident();
+    let CodegenIdents {
+        event_enum,
+        event_enum_len,
+        ..
+    } = &*CODEGEN_IDENTS;
+
     let num_variants = events.len();
     let variants = (0..events.len()).map_vec_into(|i| event_variant(i));
 
     quote!(
         #[derive(Hash, Clone, Copy, Eq, PartialEq, Debug)]
-        enum #enum_name {
+        enum #event_enum {
             #(#variants),*
         }
-        const #num_variants_var: usize = #num_variants;
+        const #event_enum_len: usize = #num_variants;
     )
 }
 
 pub fn events(cr_idx: usize, events: &Vec<ItemEvent>, crates: &Crates) -> MsgsResult<TokenStream> {
-    let struct_name = CodegenIdents::EFooType.to_ident();
-    let enum_name = CodegenIdents::E.to_ident();
+    let CodegenIdents {
+        events: events_type,
+        event_enum,
+        ..
+    } = &*CODEGEN_IDENTS;
+
     let (vars, variants) = (0..events.len()).unzip_vec_into(|i| (event_var(i), event_variant(i)));
     let types = events
         .map_vec(|e| {
@@ -43,12 +51,12 @@ pub fn events(cr_idx: usize, events: &Vec<ItemEvent>, crates: &Crates) -> MsgsRe
 
     types.map(|types| {
         quote!(
-            pub struct #struct_name {
+            pub struct #events_type {
                 #(#vars: Vec<#types>),*,
-                events: std::collections::VecDeque<(#enum_name, usize)>
+                events: std::collections::VecDeque<(#event_enum, usize)>
             }
 
-            impl #struct_name {
+            impl #events_type {
                 fn new() -> Self {
                     Self {
                         #(#vars: Vec::new()),*,
@@ -60,11 +68,11 @@ pub fn events(cr_idx: usize, events: &Vec<ItemEvent>, crates: &Crates) -> MsgsRe
                     !self.events.is_empty()
                 }
 
-                fn add_event(&mut self, e: #enum_name) {
+                fn add_event(&mut self, e: #event_enum) {
                     self.events.push_back((e, 0));
                 }
 
-                fn get_events(&mut self) -> std::collections::VecDeque<(#enum_name, usize)> {
+                fn get_events(&mut self) -> std::collections::VecDeque<(#event_enum, usize)> {
                     std::mem::replace(&mut self.events, std::collections::VecDeque::new())
                 }
 
@@ -75,10 +83,10 @@ pub fn events(cr_idx: usize, events: &Vec<ItemEvent>, crates: &Crates) -> MsgsRe
                     )*
                 }
 
-                fn pop(&mut self, e: #enum_name) {
+                fn pop(&mut self, e: #event_enum) {
                     match e {
                         #(
-                            #enum_name::#variants => {
+                            #event_enum::#variants => {
                                 self.#vars.pop();
                             }
                         )*
@@ -99,7 +107,7 @@ pub fn event_trait_defs(
         crates,
         events,
         |e| &e.path,
-        CodegenIdents::AddEvent.to_ident(),
+        &CODEGEN_IDENTS.add_event,
         EngineTraits::AddEvent,
     )
 }
@@ -127,19 +135,22 @@ pub fn event_trait_impls(
         .map(|v| v.into_iter().map_vec_into(|(i, path)| vec_to_path(path)))
         .ok_or(vec![format!("Invalid crate index: {cr_idx}")]);
 
-    let struct_name = CodegenIdents::EFooType.to_ident();
-    let enum_name = CodegenIdents::E.to_ident();
-    let namespace = CodegenIdents::Namespace.to_ident();
-    let add_event = CodegenIdents::AddEvent.to_ident();
+    let CodegenIdents {
+        events: events_type,
+        event_enum,
+        namespace,
+        add_event,
+        ..
+    } = &*CODEGEN_IDENTS;
     let add_event_trait = crates.get_syn_path(cr_idx, EngineTraits::AddEvent);
 
     match_ok!(Zip3Msgs, types, crate_paths, add_event_trait, {
         quote!(
             #(
-                impl #add_event_trait<#types> for #struct_name {
+                impl #add_event_trait<#types> for #events_type {
                     fn new_event(&mut self, t: #types) {
                         self.#vars.push(t);
-                        self.add_event(#enum_name::#variants);
+                        self.add_event(#event_enum::#variants);
                     }
 
                     fn get_event<'a>(&'a self) -> Option<&'a #types> {
@@ -148,7 +159,7 @@ pub fn event_trait_impls(
                 }
             )*
             #(
-                impl #crate_paths::#namespace::#add_event for #struct_name {}
+                impl #crate_paths::#namespace::#add_event for #events_type {}
             )*
         )
     })

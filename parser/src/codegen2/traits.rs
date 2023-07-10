@@ -3,7 +3,7 @@ use quote::{format_ident, quote};
 use shared::util::{JoinMap, JoinMapInto};
 
 use crate::{
-    codegen2::{idents::CodegenIdents, util::vec_to_path},
+    codegen2::{idents::CodegenIdents, util::vec_to_path, CODEGEN_IDENTS},
     match_ok,
     resolve::{
         util::{MsgsResult, Zip2Msgs},
@@ -18,7 +18,7 @@ pub fn trait_defs<T, F>(
     crates: &Crates,
     items: &Vec<T>,
     get_item_path: F,
-    trait_ident: syn::Ident,
+    trait_ident: &syn::Ident,
     trait_source: impl GetPaths,
 ) -> MsgsResult<TokenStream>
 where
@@ -26,7 +26,7 @@ where
 {
     let macro_cr_idx = crates.get_crate_index(Crate::Macros);
 
-    let namespace = CodegenIdents::Namespace.to_ident();
+    let CodegenIdents { namespace, .. } = &*CODEGEN_IDENTS;
     let trait_source = crates.get_syn_path(cr_idx, trait_source);
 
     // Events for this crate

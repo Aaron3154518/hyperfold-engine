@@ -34,17 +34,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "macros"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "regex",
- "shared",
- "syn",
-]
-
-[[package]]
 name = "memchr"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -67,6 +56,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "once_cell"
+version = "1.18.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dd8b5dd2ae5ed71462c540258bedcb51965123ad7e7ccf4b9a8cafaa4a63576d"
+
+[[package]]
 name = "parse_cfg"
 version = "3.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -79,7 +74,7 @@ dependencies = [
 name = "parser"
 version = "0.1.0"
 dependencies = [
- "macros",
+ "once_cell",
  "parse_cfg",
  "proc-macro2",
  "quote",
@@ -143,6 +138,15 @@ dependencies = [
 name = "shared"
 version = "0.1.0"
 dependencies = [
+ "shared_macros",
+ "syn",
+]
+
+[[package]]
+name = "shared_macros"
+version = "0.1.0"
+dependencies = [
+ "quote",
  "syn",
 ]
 

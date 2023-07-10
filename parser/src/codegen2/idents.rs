@@ -1,3 +1,5 @@
+use once_cell::sync::Lazy;
+
 use quote::format_ident;
 
 use crate::{
@@ -5,54 +7,42 @@ use crate::{
     resolve::{EngineGlobals, EngineTraits, ExpandEnum, GetPaths, NamespaceTraits},
 };
 
-pub enum CodegenIdents {
-    // General
-    Namespace,
-    // Systems
-    SFooType,
-    // Globals
-    GFooType,
-    // Components
-    CFooType,
-    AddComponent,
-    // Events
-    EFooType,
-    AddEvent,
-    E,
-    ELen,
-    // Code generation
-    GenE,
-    GenV,
-    GenEid,
-    GenEids,
-    CFooVar,
-    GFooVar,
-    EFooVar,
-}
-
-impl CodegenIdents {
-    pub fn as_str(&self) -> &str {
-        match self {
-            CodegenIdents::Namespace => NAMESPACE,
-            CodegenIdents::SFooType => "SFoo",
-            CodegenIdents::GFooType => "GFoo",
-            CodegenIdents::CFooType => EngineGlobals::CFoo.get_ident(),
-            CodegenIdents::AddComponent => NamespaceTraits::AddComponent.get_ident(),
-            CodegenIdents::EFooType => EngineGlobals::EFoo.get_ident(),
-            CodegenIdents::AddEvent => NamespaceTraits::AddEvent.get_ident(),
-            CodegenIdents::E => "E",
-            CodegenIdents::ELen => "E_LEN",
-            CodegenIdents::GenE => "e",
-            CodegenIdents::GenV => "v",
-            CodegenIdents::GenEid => "eid",
-            CodegenIdents::GenEids => "eids",
-            CodegenIdents::CFooVar => "cfoo",
-            CodegenIdents::GFooVar => "gfoo",
-            CodegenIdents::EFooVar => "efoo",
+macro_rules! codegen_idents {
+    ($ty: ident { $($var: ident => $val: expr),*$(,)? }) => {
+        pub struct $ty {
+            $(pub $var: syn::Ident),*
         }
-    }
 
-    pub fn to_ident(&self) -> syn::Ident {
-        format_ident!("{}", self.as_str())
-    }
+        impl $ty {
+            pub fn new() -> Self {
+                Self {
+                    $($var: format_ident!("{}", $val)),*
+                }
+            }
+        }
+    };
 }
+
+codegen_idents!(CodegenIdents {
+    namespace => NAMESPACE,
+    manager => "SFoo",
+    globals => "GFoo",
+    components => EngineGlobals::CFoo.get_ident(),
+    events => EngineGlobals::EFoo.get_ident(),
+    add_component => NamespaceTraits::AddComponent.get_ident(),
+    add_event => NamespaceTraits::AddEvent.get_ident(),
+    event_enum => "E",
+    event_enum_len => "E_LEN",
+    e_var => "e",
+    v_var => "v",
+    eid_var => "eid",
+    eids_var => "eids",
+    comps_var => "cfoo",
+    globals_var => "gfoo",
+    events_var => "efoo",
+});
+
+unsafe impl Sync for CodegenIdents {}
+unsafe impl Send for CodegenIdents {}
+
+pub static CODEGEN_IDENTS: Lazy<CodegenIdents> = Lazy::new(|| CodegenIdents::new());

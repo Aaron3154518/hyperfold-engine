@@ -13,3 +13,4 @@ regex = "1.8.1"
 syn = { version = "2.0.15", features = ["full", "visit"] }
 toml = "0.7.3"
 shared = { path = "../shared" }
+once_cell = "1.18.0"

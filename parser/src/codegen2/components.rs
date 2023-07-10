@@ -5,7 +5,7 @@ use quote::quote;
 use shared::util::{AndThen, JoinMap, JoinMapInto, ThenOk};
 
 use crate::{
-    codegen2::idents::CodegenIdents,
+    codegen2::{idents::CodegenIdents, CODEGEN_IDENTS},
     match_ok,
     resolve::{
         constants::component_var,
@@ -17,7 +17,7 @@ use crate::{
 use super::{traits::trait_defs, util::vec_to_path, Crates};
 
 struct CodegenArgs<'a> {
-    struct_name: syn::Ident,
+    struct_name: &'a syn::Ident,
     components: &'a Vec<ItemComponent>,
     types: Vec<syn::Path>,
     entity_set: syn::Path,
@@ -100,7 +100,6 @@ pub fn components(
     components: &Vec<ItemComponent>,
     crates: &Crates,
 ) -> MsgsResult<TokenStream> {
-    let struct_name = CodegenIdents::CFooType.to_ident();
     let vars = (0..components.len()).map_vec_into(|i| component_var(i));
     let types = components
         .map_vec(|c| {
@@ -124,7 +123,7 @@ pub fn components(
         singleton,
         {
             codegen(CodegenArgs {
-                struct_name,
+                struct_name: &CODEGEN_IDENTS.components,
                 components,
                 types,
                 entity_set,
@@ -146,7 +145,7 @@ pub fn component_trait_defs(
         crates,
         components,
         |c| &c.path,
-        CodegenIdents::AddComponent.to_ident(),
+        &CODEGEN_IDENTS.add_component,
         EngineTraits::AddComponent,
     )
 }
@@ -170,9 +169,12 @@ pub fn component_trait_impls(
         .map(|v| v.into_iter().map_vec_into(|(i, path)| vec_to_path(path)))
         .ok_or(vec![format!("Invalid crate index: {cr_idx}")]);
 
-    let struct_name = CodegenIdents::CFooType.to_ident();
-    let namespace = CodegenIdents::Namespace.to_ident();
-    let add_comp = CodegenIdents::AddComponent.to_ident();
+    let CodegenIdents {
+        namespace,
+        components: components_type,
+        add_component,
+        ..
+    } = &*CODEGEN_IDENTS;
     let add_comp_trait = crates.get_syn_path(cr_idx, EngineTraits::AddComponent);
     let entity = crates.get_syn_path(cr_idx, EnginePaths::Entity);
     let singleton = crates.get_syn_path(cr_idx, EnginePaths::Singleton);
@@ -196,7 +198,7 @@ pub fn component_trait_impls(
             }
             quote!(
                 #(
-                    impl #add_comp_trait<#types> for #struct_name {
+                    impl #add_comp_trait<#types> for #components_type {
                         fn add_component(&mut self, e: #entity, t: #types) {
                             self.eids.insert(e);
                             #adds
@@ -204,7 +206,7 @@ pub fn component_trait_impls(
                     }
                 )*
                 #(
-                    impl #crate_paths::#namespace::#add_comp for #struct_name {}
+                    impl #crate_paths::#namespace::#add_component for #components_type {}
                 )*
             )
         }
