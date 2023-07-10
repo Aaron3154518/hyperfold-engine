@@ -9,7 +9,7 @@ use crate::{
     },
     resolve::{
         constants::{INDEX, INDEX_SEP, NAMESPACE},
-        util::{CombineMsgs, Zip2Msgs, Zip4Msgs, Zip5Msgs, Zip6Msgs, Zip7Msgs, Zip8Msgs},
+        util::{CombineMsgs, Zip2Msgs, Zip4Msgs, Zip5Msgs, Zip6Msgs, Zip7Msgs, Zip8Msgs, Zip9Msgs},
     },
     resolve::{
         function_arg::{FnArg, FnArgType},
@@ -477,26 +477,20 @@ impl ItemsCrate {
             })
             .combine_msgs();
 
-        // Generate component set code for building vectors
-        let component_set_fns = codegen::component_sets(main_cr_idx, &items.component_sets, crates);
-
-        // Generate system call code
-        let func_calls = codegen::systems(main_cr_idx, &items, crates);
-
         // Generate manager struct
         let manager_def = codegen::manager_def();
+        let manager_impl = codegen::manager_impl(main_cr_idx, &items, crates);
 
         // Write codegen to file
         match_ok!(
-            Zip8Msgs,
+            Zip7Msgs,
             globals,
             components,
             component_traits,
             events,
             event_traits,
             trait_defs,
-            component_set_fns,
-            func_calls,
+            manager_impl,
             {
                 write_codegen(CodegenArgs {
                     crates,
@@ -507,9 +501,8 @@ impl ItemsCrate {
                     events,
                     event_traits,
                     trait_defs,
-                    func_calls,
-                    component_set_fns,
                     manager_def,
+                    manager_impl,
                 })
             },
             err,
@@ -534,9 +527,8 @@ struct CodegenArgs<'a> {
     events: TokenStream,
     event_traits: TokenStream,
     trait_defs: Vec<Traits>,
-    component_set_fns: Vec<TokenStream>,
-    func_calls: Vec<TokenStream>,
     manager_def: TokenStream,
+    manager_impl: TokenStream,
 }
 
 fn write_codegen<'a>(
@@ -549,9 +541,8 @@ fn write_codegen<'a>(
         events,
         event_traits,
         trait_defs,
-        func_calls,
-        component_set_fns,
         manager_def,
+        manager_impl,
     }: CodegenArgs<'a>,
 ) {
     let main_cr_idx = crates.get_crate_index(Crate::Main);
@@ -570,11 +561,7 @@ fn write_codegen<'a>(
                 //     \n{events_enum}\n{events}\n{add_event}\n{event_traits}\n{}\n{maanger_def}",
                 //     func_calls.join_map(|t| t.to_string(), "\n")
                 // )
-                format!(
-                    "{}\n{}\n{manager_def}",
-                    component_set_fns.join_map(|t| t.to_string(), "\n"),
-                    func_calls.join_map(|t| t.to_string(), "\n")
-                )
+                format!("{manager_def}\n{manager_impl}")
             } else {
                 format!("{add_component}\n{add_event}")
             }

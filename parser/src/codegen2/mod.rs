@@ -15,6 +15,6 @@ pub use crate_paths::Crates;
 pub use events::{event_trait_defs, event_trait_impls, events, events_enum};
 pub use globals::globals;
 pub use idents::{CodegenIdents, CODEGEN_IDENTS};
-pub use manager::manager_def;
+pub use manager::{manager_def, manager_impl};
 pub use systems::systems;
 pub use traits::Traits;

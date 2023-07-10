@@ -37,6 +37,8 @@ codegen_idents!(CodegenIdents {
     v_var => "v",
     eid_var => "eid",
     eids_var => "eids",
+    stack_var => "stack",
+    services_var => "services",
     comps_var => "cfoo",
     globals_var => "gfoo",
     events_var => "efoo",

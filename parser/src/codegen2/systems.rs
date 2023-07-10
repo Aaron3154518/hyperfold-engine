@@ -6,7 +6,7 @@ use crate::{
     codegen2::CODEGEN_IDENTS,
     match_ok,
     resolve::{
-        constants::{component_set_keys_fn, component_set_var, global_var},
+        constants::{component_set_keys_fn, component_set_var, event_variant, global_var},
         util::{
             CombineMsgs, FlattenMsgs, MsgTrait, MsgsResult, Zip2Msgs, Zip3Msgs, Zip4Msgs, Zip6Msgs,
         },
@@ -29,7 +29,7 @@ fn codegen_init_system(mut global_args: Vec<GlobalFnArg>, func_name: syn::Path) 
         let var = global_var(g.idx);
         quote!(&#mut_tok self.#globals.#var)
     });
-    quote!(fn foo() { let _ = #func_name(#(#func_args),*); })
+    quote!(#func_name(#(#func_args),*))
 }
 
 pub struct CodegenSystemArgs<'a> {
@@ -91,13 +91,11 @@ fn codegen_system(
     };
 
     quote!(
-        fn foo() {
-            let _ =|#comps_var: &mut #components, #globals_var: &mut #globals, #events_var: &mut #events| {
-                if let Some(#e_var) = #event_trait::get_event(#events_var) {
-                    #build_cs
-                    #func
-                }
-            };
+        |#comps_var: &mut #components, #globals_var: &mut #globals, #events_var: &mut #events| {
+            if let Some(#e_var) = #event_trait::get_event(#events_var) {
+                #build_cs
+                #func
+            }
         }
     )
 }
@@ -158,32 +156,69 @@ fn codegen_systems(
     }
 }
 
+pub struct SystemsCodegenResult {
+    pub init_systems: Vec<TokenStream>,
+    pub systems: Vec<TokenStream>,
+    pub system_events: Vec<syn::Ident>,
+}
+
 // TODO: handle erros
-pub fn systems(cr_idx: usize, items: &Items, crates: &Crates) -> MsgsResult<Vec<TokenStream>> {
+pub fn systems(cr_idx: usize, items: &Items, crates: &Crates) -> MsgsResult<SystemsCodegenResult> {
     let event_trait = crates.get_syn_path(cr_idx, EngineTraits::AddEvent);
     let intersect = crates.get_syn_path(cr_idx, EnginePaths::Intersect);
 
-    items
-        .systems
-        .map_vec(|system| {
-            let event_trait = event_trait.get_ref();
-            let intersect = intersect.get_ref();
+    let mut init_systems = Vec::new();
+    let mut systems = Vec::new();
+    let mut system_events = Vec::new();
 
-            let func_name = crates.get_item_syn_path(cr_idx, &system.path);
-            let args = system.validate(items);
-            match_ok!(Zip4Msgs, func_name, args, event_trait, intersect, {
-                codegen_systems(CodegenArgs {
-                    cr_idx,
-                    crates,
-                    items,
-                    args,
-                    func_name,
-                    event_trait,
-                    intersect,
-                })
-            })
-            .flatten_msgs()
-        })
+    for system in &items.systems {
+        let event_trait = event_trait.get_ref();
+        let intersect = intersect.get_ref();
+
+        let func_name = crates.get_item_syn_path(cr_idx, &system.path);
+        let args = system.validate(items);
+        match_ok!(Zip4Msgs, func_name, args, event_trait, intersect, {
+            match args {
+                FnArgs::Init { globals } => {
+                    init_systems.push(codegen_init_system(globals, func_name))
+                }
+                FnArgs::System {
+                    event,
+                    globals,
+                    component_sets,
+                } => {
+                    let component_sets = component_sets
+                        .map_vec_into(|arg| {
+                            items
+                                .component_sets
+                                .get(arg.idx)
+                                .ok_or(vec![format!("Invalid component set index: {}", arg.idx)])
+                                .and_then(|cs| {
+                                    crates
+                                        .get_item_syn_path(cr_idx, &cs.path)
+                                        .map(|p| (arg, cs, p))
+                                })
+                        })
+                        .combine_msgs();
+
+                    system_events.push(event_variant(event.idx));
+
+                    systems.push(component_sets.map(|component_sets| {
+                        codegen_system(CodegenSystemArgs {
+                            func_name,
+                            event_trait,
+                            intersect,
+                            event,
+                            globals,
+                            component_sets,
+                        })
+                    }));
+                }
+            }
+        });
+    }
+
+    systems
         .filter_vec_into(|r| match r {
             Ok(_) => true,
             Err(err) => {
@@ -192,4 +227,9 @@ pub fn systems(cr_idx: usize, items: &Items, crates: &Crates) -> MsgsResult<Vec<
             }
         })
         .combine_msgs()
+        .map(|systems| SystemsCodegenResult {
+            init_systems,
+            systems,
+            system_events,
+        })
 }
