@@ -26,9 +26,8 @@ use super::{
     items_crate::{ItemComponent, ItemGlobal, Items},
     labels::MustBe,
     path::{resolve_syn_path, ResolveResultTrait},
-    paths::GetPaths,
     util::{CombineMsgs, MsgTrait, Zip2Msgs},
-    ComponentSetLabels, ItemEvent, ItemSystem,
+    ComponentSetLabels, ItemEvent, ItemSystem, ENGINE_PATHS,
 };
 
 pub struct EventFnArg {
@@ -241,7 +240,7 @@ impl ItemSystem {
         component_refs: &mut HashMap<usize, ComponentRefTracker>,
         items: &'a Items,
     ) -> MsgsResult<&'a ComponentSet> {
-        let entities = EnginePaths::Entities.get_ident();
+        let entities = ENGINE_PATHS.entities.get_ident();
 
         items
             .component_sets

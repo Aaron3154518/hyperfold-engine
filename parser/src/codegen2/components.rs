@@ -10,7 +10,7 @@ use crate::{
     resolve::{
         constants::component_var,
         util::{CombineMsgs, MsgsResult, Zip2Msgs, Zip5Msgs},
-        Crate, EngineGlobals, EnginePaths, EngineTraits, GetPaths, ItemComponent,
+        Crate, ItemComponent, ENGINE_GLOBALS, ENGINE_PATHS, ENGINE_TRAITS,
     },
 };
 
@@ -109,10 +109,10 @@ pub fn components(
         })
         .combine_msgs();
 
-    let entity_set = crates.get_syn_path(cr_idx, EnginePaths::EntitySet);
-    let entity_trash = crates.get_syn_path(cr_idx, EngineGlobals::EntityTrash);
-    let entity_map = crates.get_syn_path(cr_idx, EnginePaths::EntityMap);
-    let singleton = crates.get_syn_path(cr_idx, EnginePaths::Singleton);
+    let entity_set = crates.get_syn_path(cr_idx, &ENGINE_PATHS.entity_set);
+    let entity_trash = crates.get_syn_path(cr_idx, &ENGINE_GLOBALS.entity_trash);
+    let entity_map = crates.get_syn_path(cr_idx, &ENGINE_PATHS.entity_map);
+    let singleton = crates.get_syn_path(cr_idx, &ENGINE_PATHS.singleton);
 
     match_ok!(
         Zip5Msgs,
@@ -146,7 +146,7 @@ pub fn component_trait_defs(
         components,
         |c| &c.path,
         &CODEGEN_IDENTS.add_component,
-        EngineTraits::AddComponent,
+        &ENGINE_TRAITS.add_component,
     )
 }
 
@@ -175,9 +175,9 @@ pub fn component_trait_impls(
         add_component,
         ..
     } = &*CODEGEN_IDENTS;
-    let add_comp_trait = crates.get_syn_path(cr_idx, EngineTraits::AddComponent);
-    let entity = crates.get_syn_path(cr_idx, EnginePaths::Entity);
-    let singleton = crates.get_syn_path(cr_idx, EnginePaths::Singleton);
+    let add_comp_trait = crates.get_syn_path(cr_idx, &ENGINE_TRAITS.add_component);
+    let entity = crates.get_syn_path(cr_idx, &ENGINE_PATHS.entity);
+    let singleton = crates.get_syn_path(cr_idx, &ENGINE_PATHS.singleton);
 
     match_ok!(
         Zip5Msgs,

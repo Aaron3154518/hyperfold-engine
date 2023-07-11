@@ -172,6 +172,12 @@ impl<T> JoinMapInto<T, IntoIter<T>> for Vec<T> {
     }
 }
 
+impl<T, const N: usize> JoinMapInto<T, std::array::IntoIter<T, N>> for [T; N] {
+    fn get_iter_into(self) -> std::array::IntoIter<T, N> {
+        self.into_iter()
+    }
+}
+
 impl<K, V> JoinMapInto<(K, V), hash_map::IntoIter<K, V>> for HashMap<K, V> {
     fn get_iter_into(self) -> hash_map::IntoIter<K, V> {
         self.into_iter()

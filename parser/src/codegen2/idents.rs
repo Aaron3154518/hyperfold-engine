@@ -4,7 +4,7 @@ use quote::format_ident;
 
 use crate::{
     resolve::constants::NAMESPACE,
-    resolve::{EngineGlobals, EngineTraits, ExpandEnum, GetPaths, NamespaceTraits},
+    resolve::{ExpandEnum, ENGINE_GLOBALS, ENGINE_TRAITS},
 };
 
 macro_rules! codegen_idents {
@@ -27,10 +27,10 @@ codegen_idents!(CodegenIdents {
     namespace => NAMESPACE,
     manager => "SFoo",
     globals => "GFoo",
-    components => EngineGlobals::CFoo.get_ident(),
-    events => EngineGlobals::EFoo.get_ident(),
-    add_component => NamespaceTraits::AddComponent.get_ident(),
-    add_event => NamespaceTraits::AddEvent.get_ident(),
+    components => ENGINE_GLOBALS.c_foo.get_ident(),
+    events => ENGINE_GLOBALS.e_foo.get_ident(),
+    add_component => ENGINE_TRAITS.main_add_component.get_ident(),
+    add_event => ENGINE_TRAITS.main_add_event.get_ident(),
     event_enum => "E",
     event_enum_len => "E_LEN",
     e_var => "e",

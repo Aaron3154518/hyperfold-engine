@@ -1,7 +1,7 @@
 use quote::format_ident;
 
 use crate::{
-    resolve::paths::{EngineGlobals, EngineTraits, ExpandEnum, GetPaths, NamespaceTraits},
+    resolve::paths::{EngineGlobals, EngineTraits, ExpandEnum, NamespaceTraits},
     validate::constants::NAMESPACE,
 };
 

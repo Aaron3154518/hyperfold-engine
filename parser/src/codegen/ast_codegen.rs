@@ -12,7 +12,7 @@ use crate::{
     resolve::{
         items_crate::{ItemsCrate, ItemsCrateDependency},
         path::ItemPath,
-        paths::{Crates, EngineGlobals, EnginePaths, EngineTraits, ExpandEnum, GetPaths, Paths},
+        paths::{Crates, EngineGlobals, EnginePaths, EngineTraits, ExpandEnum, Paths},
     },
     validate::constants::{component_var, event_var, event_variant, global_var, NAMESPACE},
 };

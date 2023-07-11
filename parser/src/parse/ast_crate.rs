@@ -18,7 +18,7 @@ use super::{
 use crate::{
     codegen2::Crates,
     resolve::constants::NAMESPACE,
-    resolve::{Crate, ExpandEnum, GetPaths, ItemPath, NamespaceTraits},
+    resolve::{Crate, ExpandEnum, ItemPath},
     util::end,
 };
 
@@ -274,7 +274,7 @@ impl AstCrate {
 
     pub fn add_hardcoded_symbol(crates: &mut Crates, sym: HardcodedSymbol) {
         let path = sym.get_path();
-        crates.get_crate_mut(path.get_crate()).add_symbol(Symbol {
+        crates.get_crate_mut(path.cr).add_symbol(Symbol {
             kind: SymbolType::Hardcoded(sym),
             path: path.full_path(),
             public: true,

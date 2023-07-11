@@ -15,7 +15,7 @@ use crate::{
     },
     resolve::{
         items_crate::{self, ItemsCrate},
-        paths::{EngineGlobals, EnginePaths, EngineTraits, ExpandEnum, GetPaths, Paths},
+        paths::{EngineGlobals, EnginePaths, EngineTraits, ExpandEnum, Paths},
     },
     validate::{
         ast_system::SystemValidate,

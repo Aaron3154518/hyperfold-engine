@@ -10,8 +10,8 @@ use crate::{
         util::{
             CombineMsgs, FlattenMsgs, MsgTrait, MsgsResult, Zip2Msgs, Zip3Msgs, Zip4Msgs, Zip6Msgs,
         },
-        ComponentSet, ComponentSetFnArg, EnginePaths, EngineTraits, EventFnArg, FnArgType, FnArgs,
-        GlobalFnArg, ItemSystem, Items, NamespaceTraits,
+        ComponentSet, ComponentSetFnArg, EventFnArg, FnArgType, FnArgs, GlobalFnArg, ItemSystem,
+        Items, ENGINE_PATHS, ENGINE_TRAITS,
     },
 };
 
@@ -164,8 +164,8 @@ pub struct SystemsCodegenResult {
 
 // TODO: handle erros
 pub fn systems(cr_idx: usize, items: &Items, crates: &Crates) -> MsgsResult<SystemsCodegenResult> {
-    let event_trait = crates.get_syn_path(cr_idx, EngineTraits::AddEvent);
-    let intersect = crates.get_syn_path(cr_idx, EnginePaths::Intersect);
+    let event_trait = crates.get_syn_path(cr_idx, &ENGINE_TRAITS.add_event);
+    let intersect = crates.get_syn_path(cr_idx, &ENGINE_PATHS.intersect);
 
     let mut init_systems = Vec::new();
     let mut systems = Vec::new();

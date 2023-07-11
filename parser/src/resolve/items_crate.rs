@@ -9,6 +9,7 @@ use crate::{
     },
     resolve::{
         constants::{INDEX, INDEX_SEP, NAMESPACE},
+        paths::TRAITS,
         util::{CombineMsgs, Zip2Msgs, Zip4Msgs, Zip5Msgs, Zip6Msgs, Zip7Msgs, Zip8Msgs, Zip9Msgs},
     },
     resolve::{
@@ -33,7 +34,7 @@ use super::{
     component_set::ComponentSet,
     parse_macro_call::{parse_macro_calls, update_macro_calls, ParseMacroCall},
     path::{ItemPath, ResolveResultTrait},
-    paths::{ExpandEnum, GetPaths, MacroPaths, NamespaceTraits},
+    paths::ExpandEnum,
 };
 
 #[derive(Debug)]
@@ -352,9 +353,9 @@ impl ItemsCrate {
         }
 
         // Insert trait symbols
-        for tr in NamespaceTraits::VARIANTS {
-            let path = tr.full_path();
-            let gl_path = tr.get_global().full_path();
+        for tr in &*TRAITS {
+            let path = tr.main_trait.full_path();
+            let gl_path = tr.global_trait.full_path();
             // Reference global in entry crate
             items.globals.push(ItemGlobal {
                 path: ItemPath {

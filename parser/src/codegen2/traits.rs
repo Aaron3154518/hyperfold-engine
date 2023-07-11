@@ -7,7 +7,7 @@ use crate::{
     match_ok,
     resolve::{
         util::{MsgsResult, Zip2Msgs},
-        Crate, GetPaths, ItemPath,
+        Crate, CratePath, ItemPath,
     },
 };
 
@@ -19,7 +19,7 @@ pub fn trait_defs<T, F>(
     items: &Vec<T>,
     get_item_path: F,
     trait_ident: &syn::Ident,
-    trait_source: impl GetPaths,
+    trait_source: &CratePath,
 ) -> MsgsResult<TokenStream>
 where
     F: for<'a> Fn(&'a T) -> &'a ItemPath,

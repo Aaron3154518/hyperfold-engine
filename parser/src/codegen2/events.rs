@@ -8,7 +8,7 @@ use crate::{
     resolve::{
         constants::{event_var, event_variant},
         util::{CombineMsgs, MsgsResult, Zip2Msgs, Zip3Msgs, Zip5Msgs},
-        Crate, EnginePaths, EngineTraits, ItemEvent,
+        Crate, ItemEvent, ENGINE_TRAITS,
     },
 };
 
@@ -108,7 +108,7 @@ pub fn event_trait_defs(
         events,
         |e| &e.path,
         &CODEGEN_IDENTS.add_event,
-        EngineTraits::AddEvent,
+        &ENGINE_TRAITS.add_event,
     )
 }
 
@@ -142,7 +142,7 @@ pub fn event_trait_impls(
         add_event,
         ..
     } = &*CODEGEN_IDENTS;
-    let add_event_trait = crates.get_syn_path(cr_idx, EngineTraits::AddEvent);
+    let add_event_trait = crates.get_syn_path(cr_idx, &ENGINE_TRAITS.add_event);
 
     match_ok!(Zip3Msgs, types, crate_paths, add_event_trait, {
         quote!(

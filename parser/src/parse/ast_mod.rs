@@ -10,7 +10,7 @@ use syn::visit::Visit;
 use crate::{
     parse::attributes::{get_attributes_if_active, Attribute, EcsAttribute},
     resolve::util::MsgsResult,
-    resolve::{EnginePaths, ExpandEnum, GetPaths, ItemPath, MacroPaths},
+    resolve::{CratePath, ExpandEnum, ItemPath, ENGINE_PATHS, MACRO_PATHS},
     util::{add_path_item, end, parse_syn_path},
 };
 
@@ -58,14 +58,14 @@ pub enum HardcodedSymbol {
 }
 
 impl HardcodedSymbol {
-    pub fn get_path(&self) -> &dyn GetPaths {
+    pub fn get_path(&self) -> &CratePath {
         match self {
-            HardcodedSymbol::ComponentMacro => &MacroPaths::Component,
-            HardcodedSymbol::GlobalMacro => &MacroPaths::Global,
-            HardcodedSymbol::EventMacro => &MacroPaths::Event,
-            HardcodedSymbol::SystemMacro => &MacroPaths::System,
-            HardcodedSymbol::ComponentsMacro => &MacroPaths::Components,
-            HardcodedSymbol::Entities => &EnginePaths::Entities,
+            HardcodedSymbol::ComponentMacro => &MACRO_PATHS.component,
+            HardcodedSymbol::GlobalMacro => &MACRO_PATHS.global,
+            HardcodedSymbol::EventMacro => &MACRO_PATHS.event,
+            HardcodedSymbol::SystemMacro => &MACRO_PATHS.system,
+            HardcodedSymbol::ComponentsMacro => &MACRO_PATHS.components,
+            HardcodedSymbol::Entities => &ENGINE_PATHS.entities,
         }
     }
 }

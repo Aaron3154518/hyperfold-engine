@@ -14,6 +14,5 @@ pub use items_crate::{ItemComponent, ItemEvent, ItemGlobal, ItemSystem, Items, I
 pub use labels::{ComponentSetLabels, LabelsExpression, MustBe};
 pub use path::{resolve_path, ItemPath};
 pub use paths::{
-    Crate, EngineGlobals, EnginePaths, EngineTraits, ExpandEnum, GetPaths, MacroPaths,
-    NamespaceTraits,
+    Crate, CratePath, ExpandEnum, ENGINE_GLOBALS, ENGINE_PATHS, ENGINE_TRAITS, MACRO_PATHS, TRAITS,
 };

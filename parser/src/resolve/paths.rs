@@ -1,11 +1,11 @@
-use proc_macro2::TokenStream;
-use quote::{format_ident, quote};
-
 use crate::{
     codegen2::{util::vec_to_path, Crates},
     resolve::constants::NAMESPACE,
     util::end,
 };
+use once_cell::sync::Lazy;
+use proc_macro2::TokenStream;
+use quote::{format_ident, quote};
 
 use shared::util::{Call, JoinMap, PushInto};
 
@@ -27,231 +27,179 @@ pub enum Crate {
     Macros,
 }
 
-pub trait GetPaths {
-    fn get_crate(&self) -> Crate;
+pub struct CratePath {
+    pub cr: Crate,
+    pub path: Vec<&'static str>,
+    pub ident: &'static str,
+}
 
-    fn get_ident(&self) -> &str;
+impl CratePath {
+    pub fn get_ident(&self) -> String {
+        self.ident.to_string()
+    }
 
-    fn get_path(&self) -> Vec<&str>;
-
-    fn full_path(&self) -> Vec<String> {
-        [vec!["crate"], self.get_path().push_into(self.get_ident())]
-            .concat()
-            .map_vec(|s| s.to_string())
+    pub fn full_path(&self) -> Vec<String> {
+        [
+            vec!["crate".to_string()],
+            self.path
+                .map_vec(|s| s.to_string())
+                .push_into(self.ident.to_string()),
+        ]
+        .concat()
     }
 }
 
-// Constants for defining paths
-pub const ECS: &str = "ecs";
+macro_rules! paths {
+    (@str_var { $var: ident }) => { $var };
+
+    (@str_var $str: ident) => { stringify!($str) };
+
+    (@const $const: ident, $ty: ident) => {
+        pub static $const: Lazy<$ty> = Lazy::new(|| $ty::new());
+    };
+
+    ($const: ident = $ty: ident {
+        $($var: ident => <$cr: ident $(::$path: tt)*> :: $ident: tt),* $(,)?
+    }) => {
+        pub struct $ty {
+            $(pub $var: CratePath),*
+        }
+
+        impl $ty {
+            pub fn new() -> Self {
+                Self {
+                    $($var: CratePath {
+                        cr: Crate::$cr,
+                        path: vec![$(paths!(@str_var $path)),*],
+                        ident: paths!(@str_var $ident),
+                    }),*
+                }
+            }
+
+            pub fn paths(&self) -> Vec<&CratePath> {
+                vec![$(&self.$var),*]
+            }
+        }
+
+        pub static $const: Lazy<$ty> = Lazy::new(|| $ty::new());
+    };
+
+    ($const: ident = $ty: ident {
+        $($cr: ident $(::$path: tt)* {
+            $($var: ident => $ident: tt),* $(,)?
+        }),* $(,)?
+    }) => {
+        pub struct $ty {
+            $($(pub $var: CratePath),*),*
+        }
+
+        impl $ty {
+            pub fn new() -> Self {
+                let mut s = Self {
+                    $($($var: CratePath {
+                        cr: Crate::$cr,
+                        path: vec![],
+                        ident: paths!(@str_var $ident),
+                    }),*),*
+                };
+                $([$(s.$var.path),*] = std::array::from_fn(|_| vec![$(paths!(@str_var $path)),*]);)*
+                s
+            }
+
+            pub fn paths(&self) -> Vec<&CratePath> {
+                vec![$($(&self.$var),*),*]
+            }
+        }
+
+        pub static $const: Lazy<$ty> = Lazy::new(|| $ty::new());
+    };
+}
 
 // Paths to marker macros
-#[shared::macros::expand_enum]
-pub enum MacroPaths {
-    Component,
-    Global,
-    Event,
-    System,
-    Components,
-}
-
-impl GetPaths for MacroPaths {
-    fn get_crate(&self) -> Crate {
-        match self {
-            MacroPaths::Component | MacroPaths::Global | MacroPaths::Event | MacroPaths::System => {
-                Crate::Macros
-            }
-            MacroPaths::Components => Crate::Engine,
-        }
-    }
-
-    fn get_ident(&self) -> &str {
-        match self {
-            MacroPaths::Component => "component",
-            MacroPaths::Global => "global",
-            MacroPaths::Event => "event",
-            MacroPaths::System => "system",
-            MacroPaths::Components => "components",
-        }
-    }
-
-    fn get_path(&self) -> Vec<&str> {
-        match self {
-            MacroPaths::Component | MacroPaths::Global | MacroPaths::Event | MacroPaths::System => {
-                Vec::new()
-            }
-            MacroPaths::Components => Vec::new(),
-        }
-    }
-}
+paths!(MACRO_PATHS = MacroPaths {
+    Macros {
+        component => component,
+        global => global,
+        event => event,
+        system => system,
+    },
+    Engine { components => components }
+});
 
 // Paths to base trait definitions use in codegen
-#[shared::macros::expand_enum]
-pub enum EngineTraits {
-    AddComponent,
-    AddEvent,
+paths!(ENGINE_TRAITS = EngineTraits {
+    Engine::ecs::components {
+        add_component => AddComponent,
+        add_event => AddEvent,
+    },
+    Main::{NAMESPACE} {
+        main_add_component => AddComponent,
+        main_add_event => AddEvent,
+    }
+});
+
+pub struct TraitPath<'a> {
+    pub main_trait: &'a CratePath,
+    pub global_trait: &'a CratePath,
 }
 
-impl GetPaths for EngineTraits {
-    fn get_crate(&self) -> Crate {
-        Crate::Engine
-    }
+pub const TRAITS: Lazy<[TraitPath; 2]> = Lazy::new(|| {
+    [
+        TraitPath {
+            main_trait: &ENGINE_TRAITS.main_add_component,
+            global_trait: &ENGINE_TRAITS.add_component,
+        },
+        TraitPath {
+            main_trait: &ENGINE_TRAITS.main_add_event,
+            global_trait: &ENGINE_TRAITS.add_event,
+        },
+    ]
+});
 
-    fn get_ident(&self) -> &str {
-        match self {
-            EngineTraits::AddComponent => "AddComponent",
-            EngineTraits::AddEvent => "AddEvent",
-        }
+// Paths to engine globals needed by codegen
+paths!(ENGINE_GLOBALS = EngineGlobals {
+    Main::{NAMESPACE} {
+        c_foo => CFoo,
+        e_foo => EFoo,
+    },
+    Engine::ecs::entities { entity_trash => EntityTrash },
+    Engine::utils::event { event => Event },
+    Engine::framework::render_system {
+        renderer => Renderer,
+        camera => Camera,
+        screen => Screen,
     }
-
-    fn get_path(&self) -> Vec<&str> {
-        match self {
-            EngineTraits::AddComponent => vec![ECS, "components"],
-            EngineTraits::AddEvent => vec![ECS, "events"],
-        }
-    }
-}
-
-// Paths to globals needed by codegen
-#[shared::macros::expand_enum]
-pub enum EngineGlobals {
-    CFoo,
-    EFoo,
-    EntityTrash,
-    Event,
-    Renderer,
-    Camera,
-    Screen,
-}
-
-impl GetPaths for EngineGlobals {
-    fn get_crate(&self) -> Crate {
-        match self {
-            EngineGlobals::CFoo | EngineGlobals::EFoo => Crate::Main,
-            _ => Crate::Engine,
-        }
-    }
-
-    fn get_ident(&self) -> &str {
-        match self {
-            EngineGlobals::CFoo => "CFoo",
-            EngineGlobals::EFoo => "EFoo",
-            EngineGlobals::EntityTrash => "EntityTrash",
-            EngineGlobals::Event => "Event",
-            EngineGlobals::Renderer => "Renderer",
-            EngineGlobals::Camera => "Camera",
-            EngineGlobals::Screen => "Screen",
-        }
-    }
-
-    fn get_path(&self) -> Vec<&str> {
-        match self {
-            EngineGlobals::CFoo | EngineGlobals::EFoo => vec![NAMESPACE],
-            EngineGlobals::EntityTrash => vec![ECS, "entities"],
-            EngineGlobals::Renderer | EngineGlobals::Screen | EngineGlobals::Camera => {
-                vec!["framework", "render_system"]
-            }
-            EngineGlobals::Event => vec!["utils", "event"],
-        }
-    }
-}
+});
 
 // Paths to engine items needed by parsing
-#[shared::macros::expand_enum]
-pub enum EnginePaths {
+paths!(ENGINE_PATHS = EnginePaths {
     // Components
-    Singleton,
+    Engine::ecs::components { singleton => Singleton, },
     // Functions
-    Filter,
-    Intersect,
+    Engine::intersect {
+        filter => Filter,
+        intersect => Intersect
+    },
     // Events
-    CoreUpdate,
-    CoreEvents,
-    CorePreRender,
-    CoreRender,
+    Engine::ecs::events::core {
+        core_update => Update,
+        core_events => Events,
+        core_pre_render => PreRender,
+        core_render => Render
+    },
     // Entities
-    Entity,
-    EntitySet,
-    EntityMap,
+    Engine::ecs::entities {
+        entity => Entity,
+        entity_set => EntitySet,
+        entity_map => EntityMap
+    },
     // Systems
-    Entities,
+    Engine::ecs::systems {
+        entities => Entities,
+    },
     // Use statements
-    SDL2,
-    SDL2Image,
-}
-
-impl GetPaths for EnginePaths {
-    fn get_crate(&self) -> Crate {
-        Crate::Engine
-    }
-
-    fn get_ident(&self) -> &str {
-        match self {
-            EnginePaths::Singleton => "Singleton",
-            EnginePaths::Filter => "filter",
-            EnginePaths::Intersect => "intersect",
-            EnginePaths::CoreUpdate => "Update",
-            EnginePaths::CoreEvents => "Events",
-            EnginePaths::CorePreRender => "PreRender",
-            EnginePaths::CoreRender => "Render",
-            EnginePaths::Entity => "Entity",
-            EnginePaths::EntitySet => "EntitySet",
-            EnginePaths::EntityMap => "EntityMap",
-            EnginePaths::Entities => "Entities",
-            EnginePaths::SDL2 => "sdl2",
-            EnginePaths::SDL2Image => "sdl2_image",
-        }
-    }
-
-    fn get_path(&self) -> Vec<&str> {
-        match self {
-            EnginePaths::Singleton => vec![ECS, "components"],
-            EnginePaths::Filter | EnginePaths::Intersect => {
-                vec!["intersect"]
-            }
-            EnginePaths::CoreUpdate
-            | EnginePaths::CoreEvents
-            | EnginePaths::CorePreRender
-            | EnginePaths::CoreRender => {
-                vec![ECS, "events", "core"]
-            }
-            EnginePaths::Entity | EnginePaths::EntitySet | EnginePaths::EntityMap => {
-                vec![ECS, "entities"]
-            }
-            EnginePaths::Entities => vec![ECS, "systems"],
-            EnginePaths::SDL2 | EnginePaths::SDL2Image => vec![],
-        }
-    }
-}
-
-// Paths to traits that appear in generated namespace
-#[shared::macros::expand_enum]
-pub enum NamespaceTraits {
-    AddComponent,
-    AddEvent,
-}
-
-impl NamespaceTraits {
-    pub fn get_global(&self) -> EngineGlobals {
-        match self {
-            NamespaceTraits::AddComponent => EngineGlobals::CFoo,
-            NamespaceTraits::AddEvent => EngineGlobals::EFoo,
-        }
-    }
-}
-
-impl GetPaths for NamespaceTraits {
-    fn get_crate(&self) -> Crate {
-        Crate::Main
-    }
-
-    fn get_ident(&self) -> &str {
-        match self {
-            NamespaceTraits::AddComponent => EngineTraits::AddComponent.get_ident(),
-            NamespaceTraits::AddEvent => EngineTraits::AddEvent.get_ident(),
-        }
-    }
-
-    fn get_path(&self) -> Vec<&str> {
-        vec![NAMESPACE]
-    }
-}
+    Engine {
+        sdl2 => sdl2,
+        sdl2_image => sdl2_image
+    },
+});
