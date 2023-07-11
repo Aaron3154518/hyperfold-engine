@@ -1,6 +1,7 @@
 use crate::{
     codegen2::{util::vec_to_path, Crates},
-    resolve::constants::NAMESPACE,
+    match_ok,
+    resolve::{constants::NAMESPACE, util::Zip7Msgs},
     util::end,
 };
 use once_cell::sync::Lazy;
@@ -49,38 +50,24 @@ impl CratePath {
     }
 }
 
+impl std::fmt::Display for CratePath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{:#?}{}::{}",
+            self.cr,
+            self.path.map_vec(|s| format!("::{s}")).join(""),
+            self.ident
+        )
+    }
+}
+
 macro_rules! paths {
     (@str_var { $var: ident }) => { $var };
 
     (@str_var $str: ident) => { stringify!($str) };
 
     (@const $const: ident, $ty: ident) => {
-        pub static $const: Lazy<$ty> = Lazy::new(|| $ty::new());
-    };
-
-    ($const: ident = $ty: ident {
-        $($var: ident => <$cr: ident $(::$path: tt)*> :: $ident: tt),* $(,)?
-    }) => {
-        pub struct $ty {
-            $(pub $var: CratePath),*
-        }
-
-        impl $ty {
-            pub fn new() -> Self {
-                Self {
-                    $($var: CratePath {
-                        cr: Crate::$cr,
-                        path: vec![$(paths!(@str_var $path)),*],
-                        ident: paths!(@str_var $ident),
-                    }),*
-                }
-            }
-
-            pub fn paths(&self) -> Vec<&CratePath> {
-                vec![$(&self.$var),*]
-            }
-        }
-
         pub static $const: Lazy<$ty> = Lazy::new(|| $ty::new());
     };
 
@@ -140,24 +127,51 @@ paths!(ENGINE_TRAITS = EngineTraits {
 
 pub struct TraitPath<'a> {
     pub main_trait: &'a CratePath,
-    pub global_trait: &'a CratePath,
+    pub global: &'a CratePath,
 }
 
 pub const TRAITS: Lazy<[TraitPath; 2]> = Lazy::new(|| {
     [
         TraitPath {
             main_trait: &ENGINE_TRAITS.main_add_component,
-            global_trait: &ENGINE_TRAITS.add_component,
+            global: &ENGINE_GLOBALS.c_foo,
         },
         TraitPath {
             main_trait: &ENGINE_TRAITS.main_add_event,
-            global_trait: &ENGINE_TRAITS.add_event,
+            global: &ENGINE_GLOBALS.e_foo,
         },
     ]
 });
 
 // Paths to engine globals needed by codegen
-paths!(ENGINE_GLOBALS = EngineGlobals {
+macro_rules! engine_globals {
+    ($const: ident = $ty: ident {
+        $($cr: ident $(::$path: tt)* {
+            $($var: ident => $ident: tt),* $(,)?
+        }),* $(,)?
+    }, $ty_res: ident, $zip_tr: ident) => {
+        paths!($const = $ty {
+            $($cr $(::$path)* {
+                $($var => $ident),*
+            }),*
+        });
+
+        pub struct $ty_res {
+            $($(pub $var: syn::Path),*),*
+        }
+
+        impl $ty {
+            pub fn get_paths(&self, crates: &Crates, cr_idx: usize) -> MsgsResult<$ty_res> {
+                $($(let $var = crates.get_syn_path(cr_idx, &self.$var);)*)*
+                match_ok!($zip_tr $($(,$var)*)*, {
+                    $ty_res { $($($var),*),* }
+                })
+            }
+        }
+    };
+}
+
+engine_globals!(ENGINE_GLOBALS = EngineGlobals {
     Main::{NAMESPACE} {
         c_foo => CFoo,
         e_foo => EFoo,
@@ -169,7 +183,7 @@ paths!(ENGINE_GLOBALS = EngineGlobals {
         camera => Camera,
         screen => Screen,
     }
-});
+}, EngineGlobalPaths, Zip7Msgs);
 
 // Paths to engine items needed by parsing
 paths!(ENGINE_PATHS = EnginePaths {

@@ -355,7 +355,7 @@ impl ItemsCrate {
         // Insert trait symbols
         for tr in &*TRAITS {
             let path = tr.main_trait.full_path();
-            let gl_path = tr.global_trait.full_path();
+            let gl_path = tr.global.full_path();
             // Reference global in entry crate
             items.globals.push(ItemGlobal {
                 path: ItemPath {
@@ -367,22 +367,20 @@ impl ItemsCrate {
             for cr in crates.iter_except_mut([macro_cr_idx]) {
                 let idx = items.globals.len() - 1;
                 // Add globals to entry crates
+                let g_sym = GlobalSymbol {
+                    idx,
+                    args: GlobalMacroArgs::from(&Vec::new()),
+                };
                 if cr.idx == 0 {
                     cr.add_symbol(Symbol {
-                        kind: SymbolType::Global(GlobalSymbol {
-                            idx,
-                            args: GlobalMacroArgs::from(&Vec::new()),
-                        }),
+                        kind: SymbolType::Global(g_sym),
                         path: gl_path.to_vec(),
                         public: true,
                     })
                 }
                 // Add traits to all crates
                 cr.add_symbol(Symbol {
-                    kind: SymbolType::Trait(GlobalSymbol {
-                        idx,
-                        args: GlobalMacroArgs::from(&Vec::new()),
-                    }),
+                    kind: SymbolType::Trait(g_sym),
                     path: path.to_vec(),
                     public: true,
                 })

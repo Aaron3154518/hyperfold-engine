@@ -8,7 +8,7 @@ use crate::{
     match_ok,
     resolve::{
         util::{CombineMsgs, MsgsResult, Zip2Msgs, Zip4Msgs, Zip5Msgs, Zip7Msgs},
-        Crate, Items, ENGINE_PATHS, ENGINE_TRAITS,
+        Crate, EngineGlobalPaths, Items, ENGINE_GLOBALS, ENGINE_PATHS, ENGINE_TRAITS,
     },
 };
 
@@ -80,7 +80,6 @@ fn init_events_fn(cr_idx: usize, items: &Items, crates: &Crates) -> MsgsResult<T
 
 // fn global_vars() -> MsgsResult<GlobalVars> {}
 
-// TODO: harcoded paths: events, sdl funcs (path to engine)
 pub fn manager_impl(cr_idx: usize, items: &Items, crates: &Crates) -> MsgsResult<TokenStream> {
     let CodegenIdents {
         manager,
@@ -101,19 +100,31 @@ pub fn manager_impl(cr_idx: usize, items: &Items, crates: &Crates) -> MsgsResult
     let init_events = init_events_fn(cr_idx, items, crates);
     let path_to_engine = crates.get_named_crate_syn_path(cr_idx, Crate::Engine);
     let component_set_fns = component_sets(cr_idx, &items.component_sets, crates);
+    // TODO: convert paths to g vars
+    let global_paths = ENGINE_GLOBALS.get_paths(crates, cr_idx);
 
     match_ok!(
-        Zip4Msgs,
+        Zip5Msgs,
         result,
         init_events,
         path_to_engine,
         component_set_fns,
+        global_paths,
         {
             let SystemsCodegenResult {
                 init_systems,
                 systems,
                 system_events,
             } = result;
+            let EngineGlobalPaths {
+                c_foo: g_c_foo,
+                e_foo: g_e_foo,
+                entity_trash: g_entity_trash,
+                event: g_event,
+                renderer: g_renderer,
+                camera: g_camera,
+                screen: g_screen,
+            } = global_paths;
             quote!(
                 impl #manager {
                     pub fn new() -> Self {
@@ -151,7 +162,7 @@ pub fn manager_impl(cr_idx: usize, items: &Items, crates: &Crates) -> MsgsResult
                         let mut dt;
                         let mut tsum: u64 = 0;
                         let mut tcnt: u64 = 0;
-                        while !self.#globals_var.g1_5.quit {
+                        while !self.#globals_var.#g_event.quit {
                             dt = unsafe { #path_to_engine::sdl2::SDL_GetTicks() } - t;
                             t += dt;
                             self.tick(dt);
@@ -167,9 +178,9 @@ pub fn manager_impl(cr_idx: usize, items: &Items, crates: &Crates) -> MsgsResult
 
                     fn tick(&mut self, ts: u32) {
                         self.#globals_var
-                            .g1_5
-                            .update(ts, &self.#globals_var.g1_4.0, &self.#globals_var.g1_3.0);
-                        self.#globals_var.g1_1.clear();
+                            .#g_event
+                            .update(ts, &self.#globals_var.#g_camera.0, &self.#globals_var.#g_screen.0);
+                        self.#globals_var.#g_renderer.clear();
                         self.add_events(self.init_events(ts));
                         while !self.#stack_var.is_empty() {
                             if let Some((e, i, n)) = self
@@ -188,26 +199,26 @@ pub fn manager_impl(cr_idx: usize, items: &Items, crates: &Crates) -> MsgsResult
                                 if i + 1 >= n {
                                     self.pop();
                                 }
-                                self.#globals_var.g0_1 = #events::new();
+                                self.#globals_var.#g_e_foo = #events::new();
                                 if let Some(s) = self.#services_var[e as usize].get(i) {
                                     (s)(&mut self.#comps_var, &mut self.#globals_var, &mut self.#events_var);
                                 }
                                 if i + 1 >= n {
                                     self.#events_var.pop(e);
                                 }
-                                let #events_var = std::mem::replace(&mut self.#globals_var.g0_1, #events::new());
+                                let #events_var = std::mem::replace(&mut self.#globals_var.#g_e_foo, #events::new());
                                 self.add_events(#events_var);
                             } else {
                                 self.pop();
                             }
                         }
-                        self.#globals_var.g1_1.present();
+                        self.#globals_var.#g_renderer.present();
                         self.post_tick();
                     }
 
                     fn post_tick(&mut self) {
-                        self.#comps_var.remove(&mut self.#globals_var.g1_0);
-                        self.#comps_var.append(&mut self.#globals_var.g0_0);
+                        self.#comps_var.remove(&mut self.#globals_var.#g_entity_trash);
+                        self.#comps_var.append(&mut self.#globals_var.#g_c_foo);
                     }
 
                     #init_events
