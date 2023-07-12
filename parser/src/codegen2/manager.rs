@@ -76,10 +76,6 @@ fn init_events_fn(cr_idx: usize, items: &Items, crates: &Crates) -> MsgsResult<T
     )
 }
 
-// struct GlobalVars {}
-
-// fn global_vars() -> MsgsResult<GlobalVars> {}
-
 pub fn manager_impl(cr_idx: usize, items: &Items, crates: &Crates) -> MsgsResult<TokenStream> {
     let CodegenIdents {
         manager,
@@ -100,8 +96,7 @@ pub fn manager_impl(cr_idx: usize, items: &Items, crates: &Crates) -> MsgsResult
     let init_events = init_events_fn(cr_idx, items, crates);
     let path_to_engine = crates.get_named_crate_syn_path(cr_idx, Crate::Engine);
     let component_set_fns = component_sets(cr_idx, &items.component_sets, crates);
-    // TODO: convert paths to g vars
-    let global_paths = ENGINE_GLOBALS.get_paths(crates, cr_idx);
+    let global_paths = ENGINE_GLOBALS.get_global_vars(crates, cr_idx);
 
     match_ok!(
         Zip5Msgs,

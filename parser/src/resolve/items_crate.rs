@@ -555,12 +555,10 @@ fn write_codegen<'a>(
         )| {
             // TODO: no newlines
             if cr_idx == main_cr_idx {
-                // format!(
-                //     "{globals}\n{components}\n{add_component}\n{component_traits}\
-                //     \n{events_enum}\n{events}\n{add_event}\n{event_traits}\n{}\n{maanger_def}",
-                //     func_calls.join_map(|t| t.to_string(), "\n")
-                // )
-                format!("{manager_def}\n{manager_impl}")
+                format!(
+                    "{globals}\n{components}\n{add_component}\n{component_traits}\
+                    \n{events_enum}\n{events}\n{add_event}\n{event_traits}\n{manager_def}\n{manager_impl}",
+                )
             } else {
                 format!("{add_component}\n{add_event}")
             }

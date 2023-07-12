@@ -1,16 +1,25 @@
-use crate::{
-    codegen2::{util::vec_to_path, Crates},
-    match_ok,
-    resolve::{constants::NAMESPACE, util::Zip7Msgs},
-    util::end,
-};
 use once_cell::sync::Lazy;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
 use shared::util::{Call, JoinMap, PushInto};
 
-use super::{path::ItemPath, util::MsgsResult};
+use crate::{
+    codegen2::{util::vec_to_path, Crates},
+    match_ok,
+    parse::{DiscardSymbol, GlobalSymbol, MatchSymbol},
+    resolve::{
+        constants::{global_var, NAMESPACE},
+        util::Zip7Msgs,
+    },
+    util::end,
+};
+
+use super::{
+    path::{ItemPath, ResolveResultTrait},
+    resolve_path_from_crate,
+    util::MsgsResult,
+};
 
 pub trait ExpandEnum<const N: usize>
 where
@@ -157,12 +166,27 @@ macro_rules! engine_globals {
         });
 
         pub struct $ty_res {
-            $($(pub $var: syn::Path),*),*
+            $($(pub $var: syn::Ident),*),*
         }
 
         impl $ty {
-            pub fn get_paths(&self, crates: &Crates, cr_idx: usize) -> MsgsResult<$ty_res> {
-                $($(let $var = crates.get_syn_path(cr_idx, &self.$var);)*)*
+            pub fn get_global_vars(&self, crates: &Crates, cr_idx: usize) -> MsgsResult<$ty_res> {
+                let cr = match crates.get(cr_idx) {
+                    Some(cr) => cr,
+                    None => return Err(vec![format!("Invalid crate index: {cr_idx}")]),
+                };
+                let get_global = |cr_path| {
+                    crates
+                        .get_path(cr_idx, cr_path)
+                        .and_then(|path| {
+                            resolve_path_from_crate(path, cr, crates.get_crates())
+                                .expect_symbol()
+                                .expect_global()
+                                .discard_symbol()
+                        })
+                        .map(|g_sym| global_var(g_sym.idx))
+                };
+                $($(let $var = get_global(&self.$var);)*)*
                 match_ok!($zip_tr $($(,$var)*)*, {
                     $ty_res { $($($var),*),* }
                 })

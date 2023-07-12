@@ -29,7 +29,7 @@ pub type ResolveResult<'a> = Result<&'a Symbol, ItemPath>;
 // Err means:
 // 1) Not from a valid crate
 // 2) resolve_mod() returns Err
-fn resolve_path_from_crate<'a>(
+pub fn resolve_path_from_crate<'a>(
     mut path: Vec<String>,
     cr: &'a AstCrate,
     crates: &'a Vec<AstCrate>,
