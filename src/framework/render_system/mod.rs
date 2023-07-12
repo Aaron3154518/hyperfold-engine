@@ -8,7 +8,7 @@ use font::{Font, FontData};
 pub use render_data::RenderComponent;
 
 use crate::{
-    ecs::{components::Container, entities::Entity, events},
+    ecs::{entities::Entity, events},
     sdl2,
     utils::rect::{Align, Dimensions, Rect},
 };
@@ -103,7 +103,7 @@ struct Elevation(pub u8);
 #[macros::system]
 fn render(
     _e: &events::core::Render,
-    mut comps: Container<(&Entity, &Elevation, &mut RenderComponent)>,
+    mut comps: Vec<(&Entity, &Elevation, &mut RenderComponent)>,
     r: &Renderer,
     am: &mut AssetManager,
 ) {

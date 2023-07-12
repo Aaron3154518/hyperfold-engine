@@ -38,26 +38,21 @@ fn codegen<'a>(
     }: CodegenArgs<'a>,
 ) -> TokenStream {
     let mut vars = Vec::new();
-    let [mut news, mut adds, mut appends, mut removes] = array::from_fn(|_| Vec::new());
-    for (i, c) in components.iter().enumerate() {
+    let [mut tys, mut news, mut adds, mut appends, mut removes] = array::from_fn(|_| Vec::new());
+    for (i, (c, ty)) in components.iter().zip(types).enumerate() {
         let var = component_var(i);
         if c.args.is_singleton {
-            news.push(quote!(None));
-            adds.push(quote!(self.#var = Some(#singleton::new(e, t))));
+            tys.push(quote!(#singleton<#ty>));
+            news.push(quote!(#singleton::None));
+            adds.push(quote!(self.#var = #singleton::new(e, t)));
             appends.push(quote!(
-                if cm.#var.is_some() {
-                    if self.#var.is_some() {
-                        panic!("Cannot set Singleton component more than once")
-                    }
-                    self.#var = cm.#var.take();
+                if !self.#var.set(&mut cm.#var) {
+                    panic!("Cannot set Singleton component more than once")
                 }
             ));
-            removes.push(quote!(
-                if self.#var.as_ref().is_some_and(|s| s.contains_key(&eid)) {
-                    self.#var = None;
-                }
-            ));
+            removes.push(quote!(self.#var.remove(&eid);));
         } else {
+            tys.push(quote!(#entity_map<#ty>));
             news.push(quote!(#entity_map::new()));
             adds.push(quote!(self.#var.insert(e, t);));
             appends.push(quote!(self.#var.extend(cm.#var.drain());));
@@ -69,7 +64,7 @@ fn codegen<'a>(
     quote!(
         pub struct #struct_name {
             eids: #entity_set,
-            #(#vars: #types),*
+            #(#vars: #tys),*
         }
 
         impl #struct_name {
@@ -191,7 +186,7 @@ pub fn component_trait_impls(
             for (i, c) in components.iter().enumerate() {
                 let var = component_var(i);
                 adds.push(if c.args.is_singleton {
-                    quote!(self.#var = Some(#singleton::new(e, t)))
+                    quote!(self.#var = #singleton::new(e, t))
                 } else {
                     quote!(self.#var.insert(e, t);)
                 });

@@ -261,7 +261,7 @@ impl ItemSystem {
                     }
                 }
 
-                match is_vec || cs.first_singleton().is_some() {
+                match is_vec || cs.has_singleton() {
                     true => Ok(cs),
                     // Must have a required singleton in the labels
                     false => {

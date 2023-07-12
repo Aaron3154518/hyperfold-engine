@@ -35,14 +35,18 @@ where
         (cr_idx == path.cr_idx).then(|| vec_to_path(path.path.to_vec()))
     });
     // Event traits for dependency crates
+    let macro_cr_idx = crates.get_crate_index(Crate::Macros);
     let dep_traits = crates
         .get(cr_idx)
         .ok_or(vec![format!("Invalid crate index: {cr_idx}")])
         .map(|cr| {
-            cr.deps.iter().map_vec_into(|(idx, alias)| {
-                let alias = format_ident!("{alias}");
-                quote!(#alias::#namespace::#trait_ident)
-            })
+            cr.deps
+                .iter()
+                .filter(|(idx, _)| idx != &&macro_cr_idx)
+                .map_vec_into(|(idx, alias)| {
+                    let alias = format_ident!("{alias}");
+                    quote!(#alias::#namespace::#trait_ident)
+                })
         });
 
     match_ok!(Zip2Msgs, trait_source, dep_traits, {

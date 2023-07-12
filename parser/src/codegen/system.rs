@@ -121,43 +121,7 @@ impl System {
         let path = vec_to_path(system.path.path[1..].to_vec());
         sys.name = quote!(#cr_path::#path);
         sys.is_init = system.attr_args.is_init;
-        sys.args = system.args.map_vec(|arg| {
-            // arg.validate(crates, &mut validate)
-            //     .map(|arg| match arg {
-            //         FnArgResult::Global {
-            //             idx: (cr_i, i),
-            //             is_mut,
-            //         } => {
-            //             sys.g_args.push((cr_i, i));
-            //             let var = format_ident!("{}", global_var(cr_i, i));
-            //             let mut_tok = if is_mut { quote!(mut) } else { quote!() };
-            //             quote!(&#mut_tok #gfoo.#var)
-            //         }
-            //         FnArgResult::Event((cr_i, i)) => {
-            //             sys.event = Some((cr_i, i));
-            //             quote!(#e_ident)
-            //         }
-            //         FnArgResult::ComponentSet {
-            //             idx: (cr_i, i),
-            //             is_vec,
-            //         } => {
-            //             if is_vec {
-            //                 sys.cs_vec_args.push((cr_i, i));
-            //             } else {
-            //                 sys.cs_arg = Some((cr_i, i));
-            //             }
-            //             let var = format_ident!("{}", component_set_var(cr_i, i));
-            //             quote!(#var)
-            //         }
-            //     })
-            //     .unwrap_or_else(|| {
-            //         validate
-            //             .errs
-            //             .push(format!("Argument: \"{}\" is not a known type", arg));
-            //         quote!()
-            //     })
-            quote!()
-        });
+        sys.args = system.args.map_vec(|arg| quote!());
 
         validate.validate(&system.attr_args, crates);
         if !validate.errs.is_empty() {

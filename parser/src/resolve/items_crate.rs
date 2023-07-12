@@ -1,3 +1,4 @@
+use quote::quote;
 use std::{collections::VecDeque, env::temp_dir, fs, path::PathBuf};
 
 use crate::{
@@ -9,7 +10,7 @@ use crate::{
     },
     resolve::{
         constants::{INDEX, INDEX_SEP, NAMESPACE},
-        paths::TRAITS,
+        paths::{NAMESPACE_USE_STMTS, TRAITS},
         util::{CombineMsgs, Zip2Msgs, Zip4Msgs, Zip5Msgs, Zip6Msgs, Zip7Msgs, Zip8Msgs, Zip9Msgs},
     },
     resolve::{
@@ -360,7 +361,7 @@ impl ItemsCrate {
             items.globals.push(ItemGlobal {
                 path: ItemPath {
                     cr_idx: 0,
-                    path: path.to_vec(),
+                    path: gl_path.to_vec(),
                 },
                 args: GlobalMacroArgs::from(&Vec::new()),
             });
@@ -480,9 +481,20 @@ impl ItemsCrate {
         let manager_def = codegen::manager_def();
         let manager_impl = codegen::manager_impl(main_cr_idx, &items, crates);
 
+        // Generate use statements for namespace
+        let use_stmts = crates
+            .iter_except([macro_cr_idx])
+            .map_vec_into(|cr| {
+                NAMESPACE_USE_STMTS
+                    .map_vec(|path| crates.get_syn_path(cr.idx, path))
+                    .combine_msgs()
+            })
+            .combine_msgs()
+            .map(|use_stmts| use_stmts.map_vec_into(|stmts| quote!(#(pub use #stmts;)*)));
+
         // Write codegen to file
         match_ok!(
-            Zip7Msgs,
+            Zip8Msgs,
             globals,
             components,
             component_traits,
@@ -490,6 +502,7 @@ impl ItemsCrate {
             event_traits,
             trait_defs,
             manager_impl,
+            use_stmts,
             {
                 write_codegen(CodegenArgs {
                     crates,
@@ -502,6 +515,7 @@ impl ItemsCrate {
                     trait_defs,
                     manager_def,
                     manager_impl,
+                    use_stmts,
                 })
             },
             err,
@@ -528,6 +542,7 @@ struct CodegenArgs<'a> {
     trait_defs: Vec<Traits>,
     manager_def: TokenStream,
     manager_impl: TokenStream,
+    use_stmts: Vec<TokenStream>,
 }
 
 fn write_codegen<'a>(
@@ -542,28 +557,53 @@ fn write_codegen<'a>(
         trait_defs,
         manager_def,
         manager_impl,
+        use_stmts,
     }: CodegenArgs<'a>,
 ) {
     let main_cr_idx = crates.get_crate_index(Crate::Main);
-    let mut code = trait_defs.enumerate_map_vec(
-        |(
-            cr_idx,
-            Traits {
-                add_event,
-                add_component,
+    let mut code = trait_defs
+        .into_iter()
+        .zip(use_stmts)
+        .enumerate()
+        .map_vec_into(
+            |(
+                cr_idx,
+                (
+                    Traits {
+                        add_event,
+                        add_component,
+                    },
+                    use_stmts,
+                ),
+            )| {
+                // TODO: no newlines
+                if cr_idx == main_cr_idx {
+                    format!(
+                        "pub mod {NAMESPACE} {{\
+                            {use_stmts}\
+                            {globals}\
+                            {components}\
+                            {add_component}\
+                            {component_traits}\
+                            {events_enum}\
+                            {events}\
+                            {add_event}\
+                            {event_traits}\
+                            {manager_def}\
+                            {manager_impl}\
+                        }}"
+                    )
+                } else {
+                    format!(
+                        "pub mod {NAMESPACE} {{\
+                            {use_stmts}\
+                            {add_component}\
+                            {add_event}\
+                        }}"
+                    )
+                }
             },
-        )| {
-            // TODO: no newlines
-            if cr_idx == main_cr_idx {
-                format!(
-                    "{globals}\n{components}\n{add_component}\n{component_traits}\
-                    \n{events_enum}\n{events}\n{add_event}\n{event_traits}\n{manager_def}\n{manager_impl}",
-                )
-            } else {
-                format!("{add_component}\n{add_event}")
-            }
-        },
-    );
+        );
 
     let out = PathBuf::from(std::env::var("OUT_DIR").expect("No out directory specified"));
 

@@ -131,7 +131,7 @@ pub fn manager_impl(cr_idx: usize, items: &Items, crates: &Crates) -> MsgsResult
                             #services_var: std::array::from_fn(|_| Vec::new())
                         };
                         s.init();
-                        self.add_systems();
+                        s.add_systems();
                         s
                     }
 

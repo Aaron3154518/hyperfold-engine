@@ -126,6 +126,8 @@ paths!(MACRO_PATHS = MacroPaths {
 paths!(ENGINE_TRAITS = EngineTraits {
     Engine::ecs::components {
         add_component => AddComponent,
+    },
+    Engine::ecs::events {
         add_event => AddEvent,
     },
     Main::{NAMESPACE} {
@@ -215,8 +217,8 @@ paths!(ENGINE_PATHS = EnginePaths {
     Engine::ecs::components { singleton => Singleton, },
     // Functions
     Engine::intersect {
-        filter => Filter,
-        intersect => Intersect
+        filter => filter,
+        intersect => intersect
     },
     // Events
     Engine::ecs::events::core {
@@ -241,3 +243,6 @@ paths!(ENGINE_PATHS = EnginePaths {
         sdl2_image => sdl2_image
     },
 });
+
+// Use statements for the namespace
+pub const NAMESPACE_USE_STMTS: Lazy<[&CratePath; 1]> = Lazy::new(|| [&ENGINE_PATHS.entity]);

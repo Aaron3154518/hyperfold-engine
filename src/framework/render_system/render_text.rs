@@ -1,7 +1,7 @@
 use shared::util::{Call, SplitAround};
 
 use crate::{
-    ecs::{components::Container, entities::Entity, events::core::PreRender},
+    ecs::{entities::Entity, events::core::PreRender},
     framework::physics::Position,
     sdl2,
     utils::{
@@ -132,7 +132,7 @@ impl Drawable for RenderText {
 #[macros::system]
 fn update_render_text(
     _ev: &PreRender,
-    mut rcs: Container<(&Entity, &Position, &mut RenderComponent)>,
+    mut rcs: Vec<(&Entity, &Position, &mut RenderComponent)>,
     r: &super::Renderer,
     am: &mut AssetManager,
     screen: &Screen,

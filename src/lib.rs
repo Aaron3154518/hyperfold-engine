@@ -20,10 +20,9 @@ pub mod utils;
 game_crate!();
 
 pub mod test {
-    use crate::{
-        _engine::Entity,
-        // components,
-        ecs::{components::Globals, entities::NewEntity, events::Event},
+    use crate::ecs::{
+        entities::{Entity, NewEntity},
+        events::Event,
     };
 
     // Labels tests
@@ -53,18 +52,13 @@ pub mod test {
     // );
 
     pub struct QuxComponents<'a> {
-        pub eid: &'a crate::_engine::Entity,
+        pub eid: &'a Entity,
         pub t: &'a TFoo,
         pub greet: &'a String,
         pub happy: &'a mut bool,
     }
     impl<'a> QuxComponents<'a> {
-        pub fn new(
-            eid: &'a crate::_engine::Entity,
-            t: &'a TFoo,
-            greet: &'a String,
-            happy: &'a mut bool,
-        ) -> Self {
+        pub fn new(eid: &'a Entity, t: &'a TFoo, greet: &'a String, happy: &'a mut bool) -> Self {
             Self {
                 eid,
                 t,
@@ -86,7 +80,7 @@ pub mod test {
     fn qux(
         ev: Event<u32>,
         components: Vec<QuxComponents>,
-        (cnt, timer, tr): Globals<(&mut u8, &u8, &dyn T)>,
+        (cnt, timer, tr): (&mut u8, &u8, &dyn T),
     ) {
         for c in components {
             *cnt += 1;

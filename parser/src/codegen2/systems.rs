@@ -22,12 +22,12 @@ use super::{
 };
 
 fn codegen_init_system(mut global_args: Vec<GlobalFnArg>, func_name: syn::Path) -> TokenStream {
-    let CodegenIdents { globals, .. } = &*CODEGEN_IDENTS;
+    let CodegenIdents { globals_var, .. } = &*CODEGEN_IDENTS;
     global_args.sort_by_key(|g| g.arg_idx);
     let func_args = global_args.map_vec(|g| {
         let mut_tok = if g.is_mut { quote!(mut) } else { quote!() };
         let var = global_var(g.idx);
-        quote!(&#mut_tok self.#globals.#var)
+        quote!(&#mut_tok self.#globals_var.#var)
     });
     quote!(#func_name(#(#func_args),*))
 }
