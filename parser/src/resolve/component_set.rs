@@ -710,7 +710,7 @@ impl ComponentSet {
     }
 
     // Generates inline code to construct values from keys
-    pub fn quote_build(&self, v: syn::Ident, ty: &syn::Path, intersect: &syn::Path) -> TokenStream {
+    fn quote_build(&self, v: syn::Ident, ty: &syn::Path, intersect: &syn::Path) -> TokenStream {
         // Remove duplicate arguments
         let mut args = self.args.to_vec();
         args.sort_by_key(|item| item.comp.idx);
@@ -779,6 +779,27 @@ impl ComponentSet {
         }
     }
 
+    fn quote_copy(other: syn::Ident, ty: &syn::Path, vars: Vec<syn::Ident>) -> TokenStream {
+        let eid = &CODEGEN_IDENTS.eid_var;
+        let c = quote!(
+            #ty {
+                #eid: #other.#eid,
+                #(#vars: #other.#vars),*
+            }
+        );
+        eprintln!("{c}");
+        c
+    }
+
+    fn quote_copy_vec(other: syn::Ident, ty: &syn::Path, vars: Vec<syn::Ident>) -> TokenStream {
+        let v = format_ident!("v");
+        let copy = Self::quote_copy(v.clone(), ty, vars);
+        let c = quote!(#other.iter().map(|#v| #copy).collect());
+        eprintln!("{c}");
+        c
+    }
+
+    // Param 1: Vec<(cs function arg, cs, cs type)>
     // Returns (code to build cs's, Vec<expression to pass each cs into a function>, Vec<singleton cs vars>)
     pub fn quote_args(
         component_sets: &Vec<(ComponentSetFnArg, &Self, syn::Path)>,
@@ -814,7 +835,7 @@ impl ComponentSet {
                 #(let #var = Self::#get_keys_fn(#comps_var, &#comps_var.#eids_var);)*
                 #(#build)*
             ),
-            component_sets.map_vec(|(arg, ..)| {
+            component_sets.map_vec(|(arg, cs, ty)| {
                 let var = component_set_var(arg.idx);
                 match arg.is_vec {
                     true => {
@@ -825,11 +846,32 @@ impl ComponentSet {
                             .find(|(arg2, ..)| arg.idx == arg2.idx)
                         {
                             // If we aren't the last instance, pass a clone
-                            Some((arg2, ..)) if arg2.arg_idx != arg.arg_idx => quote!(#var.clone()),
+                            Some((arg2, ..)) if arg2.arg_idx != arg.arg_idx => {
+                                Self::quote_copy_vec(
+                                    var,
+                                    ty,
+                                    cs.args.map_vec(|arg| format_ident!("{}", arg.var)),
+                                )
+                            }
                             _ => var.quote(),
                         }
                     }
-                    false => var.quote(),
+                    false => {
+                        // Get last instance of the component set arg
+                        match component_sets
+                            .iter()
+                            .rev()
+                            .find(|(arg2, ..)| arg.idx == arg2.idx)
+                        {
+                            // If we aren't the last instance, pass a clone
+                            Some((arg2, ..)) if arg2.arg_idx != arg.arg_idx => Self::quote_copy(
+                                var,
+                                ty,
+                                cs.args.map_vec(|arg| format_ident!("{}", arg.var)),
+                            ),
+                            _ => var.quote(),
+                        }
+                    }
                 }
             }),
             c_sets.filter_map_vec(|(arg, cs, _)| match cs.has_singleton() {
