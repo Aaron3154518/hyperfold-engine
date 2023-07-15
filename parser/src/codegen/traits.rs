@@ -1,6 +1,6 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use shared::util::{JoinMap, JoinMapInto};
+use shared::traits::{CollectVec, CollectVecInto};
 
 use crate::{
     codegen::util::vec_to_path,

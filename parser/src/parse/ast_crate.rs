@@ -8,7 +8,7 @@ use std::{
     path::PathBuf,
 };
 
-use shared::util::{Call, Catch, JoinMap, JoinMapInto, PushInto};
+use shared::traits::{Call, Catch, CollectVec, CollectVecInto, GetSlice, PushInto};
 
 use super::{
     ast_file::DirType,
@@ -19,7 +19,6 @@ use crate::{
     codegen::Crates,
     resolve::constants::NAMESPACE,
     resolve::{Crate, ExpandEnum, ItemPath},
-    util::end,
 };
 
 // TODO: hardcoded
@@ -257,13 +256,13 @@ impl AstCrate {
     }
 
     pub fn add_symbol(&mut self, sym: Symbol) {
-        self.get_mod_from_path(&sym.path[..end(&sym.path, 1)])
+        self.get_mod_from_path(sym.path.slice_to(-1))
             .symbols
             .push(sym);
     }
 
     pub fn add_mod<'a>(&'a mut self, path: Vec<String>) -> &'a mut AstMod {
-        let m = self.get_mod_from_path(&path[..end(&path, 1)]);
+        let m = self.get_mod_from_path(path.slice_to(-1));
         m.mods.push(AstMod::new(
             m.dir.to_owned(),
             path.to_vec(),

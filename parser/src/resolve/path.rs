@@ -7,7 +7,7 @@ use crate::{
     resolve::util::MsgResult,
     util::use_path_from_syn,
 };
-use shared::util::Catch;
+use shared::traits::Catch;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct ItemPath {

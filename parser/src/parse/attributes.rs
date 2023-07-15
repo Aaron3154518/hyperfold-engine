@@ -1,8 +1,8 @@
 use parse_cfg::Cfg;
 use quote::ToTokens;
 
-use crate::util::use_path_from_vec;
-use shared::util::NoneOr;
+use crate::utils::syn::use_path_from_vec;
+use shared::traits::NoneOr;
 
 #[derive(Clone, Debug)]
 pub struct AstAttribute {

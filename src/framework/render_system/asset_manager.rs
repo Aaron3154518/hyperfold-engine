@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use shared::util::NoneOr;
+use shared::traits::NoneOr;
 use uuid::Uuid;
 
 use crate::utils::util::UuidTrait;

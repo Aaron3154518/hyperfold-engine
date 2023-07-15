@@ -7,7 +7,7 @@ use std::{
 use quote::ToTokens;
 use shared::{
     parse_args::SystemMacroArgs,
-    util::{Call, Catch, JoinMap, JoinMapInto, PushInto, ThenOk},
+    util::{Call, Catch, CollectVec, CollectVecInto, PushInto, ThenOk},
 };
 use syn::parse::Lookahead1;
 

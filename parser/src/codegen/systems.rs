@@ -1,22 +1,23 @@
 use proc_macro2::TokenStream;
 use quote::quote;
-use shared::util::{JoinMap, JoinMapInto};
+use shared::{
+    match_ok,
+    msg_result::{CombineMsgs, MsgResult, Zip4Msgs},
+    traits::{CollectVec, CollectVecInto},
+};
 
 use crate::{
-    codegen::{
-        util::{vec_to_path, Quote},
-        Crates,
-    },
-    match_ok,
+    codegen::Crates,
     resolve::{
+        component_set::{BuildSetsArg, BuildSetsResult, ComponentSet},
         constants::{component_set_keys_fn, component_set_var, event_variant, global_var},
-        util::{
-            CombineMsgs, FlattenMsgs, MsgResult, MsgTrait, Zip2Msgs, Zip3Msgs, Zip4Msgs, Zip6Msgs,
-        },
-        ComponentSet, ComponentSetFnArg, EventFnArg, FnArgType, FnArgs, GlobalFnArg, ItemSystem,
-        Items, ENGINE_PATHS, ENGINE_TRAITS,
+        ComponentSetFnArg, EventFnArg, FnArgType, FnArgs, GlobalFnArg, ItemSystem, Items,
+        ENGINE_PATHS, ENGINE_TRAITS,
     },
-    utils::{CodegenIdents, CODEGEN_IDENTS},
+    utils::{
+        constants::{CodegenIdents, CODEGEN_IDENTS},
+        syn::Quote,
+    },
 };
 
 fn codegen_init_system(mut global_args: Vec<GlobalFnArg>, func_name: syn::Path) -> TokenStream {
@@ -36,7 +37,7 @@ pub struct CodegenSystemArgs<'a> {
     intersect: &'a syn::Path,
     event: EventFnArg,
     globals: Vec<GlobalFnArg>,
-    component_sets: Vec<(ComponentSetFnArg, &'a ComponentSet, syn::Path)>,
+    component_sets: Vec<BuildSetsArg<'a>>,
 }
 
 fn codegen_system(
@@ -71,18 +72,22 @@ fn codegen_system(
             quote!(&#mut_tok #globals_var.#var)
         };
     }
-    let (build_cs, cs_args, cs_singletons) = ComponentSet::quote_args(&component_sets, intersect);
-    for ((arg, ..), tok) in component_sets.iter().zip(cs_args) {
-        func_args[arg.arg_idx] = tok;
+    let BuildSetsResult {
+        build_sets_code,
+        func_args: cs_func_args,
+        singletons,
+    } = ComponentSet::codegen_build_sets(&component_sets, intersect);
+    for (cs, tok) in component_sets.iter().zip(cs_func_args) {
+        func_args[cs.fn_arg.arg_idx] = tok;
     }
 
     let func = quote!(#func_name(#(#func_args),*));
 
     // Singleton options
-    let func = match cs_singletons.is_empty() {
+    let func = match singletons.is_empty() {
         true => quote!(#func),
         false => quote!(
-            if let (#(Some(#cs_singletons),)*) = (#(#cs_singletons,)*) {
+            if let (#(Some(#singletons),)*) = (#(#singletons,)*) {
                 #func
             }
         ),
@@ -91,7 +96,7 @@ fn codegen_system(
     quote!(
         |#comps_var: &mut #components, #globals_var: &mut #globals, #events_var: &mut #events| {
             if let Some(#e_var) = #event_trait::get_event(#events_var) {
-                #build_cs
+                #build_sets_code
                 #func
             }
         }
@@ -127,15 +132,15 @@ fn codegen_systems(
             component_sets,
         } => {
             let component_sets = component_sets
-                .map_vec_into(|arg| {
+                .map_vec_into(|fn_arg| {
                     items
                         .component_sets
-                        .get(arg.idx)
-                        .ok_or(vec![format!("Invalid component set index: {}", arg.idx)])
+                        .get(fn_arg.idx)
+                        .ok_or(vec![format!("Invalid component set index: {}", fn_arg.idx)])
                         .and_then(|cs| {
                             crates
                                 .get_item_syn_path(cr_idx, &cs.path)
-                                .map(|p| (arg, cs, p))
+                                .map(|ty| BuildSetsArg { cs, fn_arg, ty })
                         })
                 })
                 .combine_msgs();

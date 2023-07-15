@@ -2,7 +2,7 @@ use once_cell::sync::Lazy;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
-use shared::util::{Call, JoinMap, PushInto};
+use shared::traits::{Call, CollectVec, PushInto};
 
 use crate::{
     codegen::{util::vec_to_path, Crates},

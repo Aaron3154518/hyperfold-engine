@@ -1,4 +1,4 @@
-use shared::util::{Call, FindFrom};
+use shared::traits::{Call, FindFrom};
 
 use crate::{
     sdl2,

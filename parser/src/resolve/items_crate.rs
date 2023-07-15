@@ -22,8 +22,9 @@ use crate::{
 };
 use proc_macro2::{token_stream::IntoIter, TokenStream, TokenTree};
 use quote::ToTokens;
-use shared::util::{
-    Call, Catch, FindFrom, Get, HandleErr, Increment, JoinMap, JoinMapInto, PushInto, SplitAround,
+use shared::traits::{
+    Call, Catch, CollectVec, CollectVecInto, FindFrom, Get, HandleErr, Increment, PushInto,
+    SplitAround,
 };
 
 use shared::parse_args::{ComponentMacroArgs, GlobalMacroArgs, SystemMacroArgs};

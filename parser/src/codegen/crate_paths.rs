@@ -1,4 +1,4 @@
-use shared::util::{AndThen, Get2D, JoinMap, JoinMapInto, NoneOr};
+use shared::traits::{AndThen, CollectVec, CollectVecInto, Get2D, NoneOr};
 
 use crate::parse::AstCrate;
 use crate::resolve::constants::NAMESPACE;

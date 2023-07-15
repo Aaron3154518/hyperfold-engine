@@ -1,5 +1,5 @@
 use proc_macro2::TokenStream;
-use shared::util::JoinMap;
+use shared::traits::CollectVec;
 
 use crate::parse::{AstCrate, AstMod};
 

@@ -1,7 +1,7 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 
-use shared::util::JoinMapInto;
+use shared::traits::CollectVecInto;
 
 use crate::{
     codegen::{component_sets, systems, systems::SystemsCodegenResult, Crates},

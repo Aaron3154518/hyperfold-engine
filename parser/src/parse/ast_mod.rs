@@ -2,16 +2,16 @@ use std::{fs, path::PathBuf};
 
 use proc_macro2::TokenStream;
 use shared::{
-    parse_args::{ComponentMacroArgs, GlobalMacroArgs},
-    util::{Catch, PushInto},
+    msg_result::MsgResult,
+    parsing::{ComponentMacroArgs, GlobalMacroArgs},
+    traits::{Catch, PushInto},
 };
 use syn::visit::Visit;
 
 use crate::{
     parse::attributes::{get_attributes_if_active, Attribute, EcsAttribute},
-    resolve::util::MsgResult,
     resolve::{CratePath, ExpandEnum, ItemPath, ENGINE_PATHS, MACRO_PATHS},
-    util::{add_use_item, end, use_path_from_syn},
+    utils::syn::{add_use_item, use_path_from_syn},
 };
 
 use super::attributes::AstAttribute;

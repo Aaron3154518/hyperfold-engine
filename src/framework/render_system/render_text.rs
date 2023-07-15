@@ -1,4 +1,4 @@
-use shared::util::{Call, SplitAround};
+use shared::traits::{Call, SplitAround};
 
 use crate::{
     ecs::{entities::Entity, events::core::PreRender},

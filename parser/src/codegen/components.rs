@@ -2,7 +2,7 @@ use std::array;
 
 use proc_macro2::TokenStream;
 use quote::quote;
-use shared::util::{AndThen, JoinMap, JoinMapInto, ThenOk};
+use shared::traits::{AndThen, CollectVec, CollectVecInto, ThenOk};
 
 use crate::{
     codegen::{traits::trait_defs, util::vec_to_path, Crates},

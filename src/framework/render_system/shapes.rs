@@ -1,7 +1,7 @@
 use std::f32::consts::{PI, TAU};
 
 use num_traits::Pow;
-use shared::util::Call;
+use shared::traits::Call;
 
 use crate::{
     sdl2,

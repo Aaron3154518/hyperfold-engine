@@ -5,6 +5,11 @@
 #![feature(lazy_cell)]
 #![allow(unused)]
 
+mod codegen;
+mod parse;
+mod resolve;
+mod utils;
+
 use std::{
     collections::HashMap,
     fs::{self, File},
@@ -18,14 +23,8 @@ use regex::Regex;
 use resolve::{
     resolve_path, ComponentSetLabels, ItemsCrate, LabelItem, LabelOp, LabelsExpression, MustBe,
 };
-use shared::{hash_map, parse_args::ComponentMacroArgs, util::JoinMapInto};
-use util::{end, format_code};
-
-mod codegen;
-mod parse;
-mod resolve;
-mod util;
-mod utils;
+use shared::{macros::hash_map, parsing::ComponentMacroArgs, traits::CollectVecInto};
+use utils::syn::format_code;
 
 // Process:
 // 1) Parse AST, get mod/crate structure, use statements, and important syntax items

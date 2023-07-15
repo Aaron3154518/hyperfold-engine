@@ -2,15 +2,12 @@ use std::{collections::HashMap, hash::Hash};
 
 use shared::{
     hash_map,
-    util::{Call, Discard, JoinMap, JoinMapInto, MapNone, PushInto},
+    msg_result::MsgResult,
+    traits::{Call, CollectVec, CollectVecInto, Discard, MapNone, PushInto},
 };
 
+use super::{parse::LabelOp, resolve::LabelItem};
 use crate::parse::ComponentSymbol;
-
-use super::{
-    component_set::{LabelItem, LabelOp},
-    util::MsgResult,
-};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum MustBe {
