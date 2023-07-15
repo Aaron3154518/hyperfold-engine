@@ -9,12 +9,9 @@ use shared::{
 use crate::{
     codegen::Crates,
     component_set::{BuildSetsArg, BuildSetsResult, ComponentSet},
-    resolve::{
-        constants::{event_variant, global_var},
-        Items, ENGINE_PATHS, ENGINE_TRAITS,
-    },
+    resolve::{Items, ENGINE_PATHS, ENGINE_TRAITS},
     utils::{
-        constants::{CodegenIdents, CODEGEN_IDENTS},
+        idents::{event_variant, global_var, CodegenIdents, CODEGEN_IDENTS},
         syn::Quote,
     },
 };

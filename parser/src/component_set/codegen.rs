@@ -9,15 +9,14 @@ use shared::{
 use crate::{
     codegen::Crates,
     parse::ComponentSymbol,
-    resolve::{
-        constants::{component_set_keys_fn, component_set_var, component_var},
-        ENGINE_PATHS,
-    },
+    resolve::ENGINE_PATHS,
+    system::ComponentSetFnArg,
     utils::{
-        constants::{CodegenIdents, CODEGEN_IDENTS},
-        functions::get_fn_name,
-        syn::Quote,
-    }, system::ComponentSetFnArg,
+        idents::{
+            component_set_keys_fn, component_set_var, component_var, CodegenIdents, CODEGEN_IDENTS,
+        },
+        syn::{get_fn_name, Quote},
+    },
 };
 
 use super::{

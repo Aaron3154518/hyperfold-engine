@@ -1,9 +1,8 @@
-pub mod functions;
-mod idents;
+pub mod idents;
 pub mod syn;
 
 pub mod constants {
-    pub use super::idents::{CodegenIdents, CODEGEN_IDENTS};
+    pub const NAMESPACE: &str = "_engine";
 }
 
 // Crate index, item index
