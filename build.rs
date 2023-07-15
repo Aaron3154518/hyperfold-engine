@@ -136,11 +136,5 @@ pub fn main() {
     //     })
     //     .collect::<Vec<_>>();
 
-    match parser::parse(PathBuf::from("../")) {
-        Ok(_) => (),
-        Err(errs) => {
-            eprintln!("{}", errs.join("\n"));
-            // panic!("Build failed!");
-        }
-    }
+    parser::parse(PathBuf::from("../"))
 }

@@ -6,7 +6,7 @@ use quote::{format_ident, quote};
 use shared::{
     constants::{INDEX, INDEX_SEP},
     match_ok,
-    msg_result::{CombineMsgs, MsgResult, MsgTrait, Zip2Msgs, Zip8Msgs},
+    msg_result::{CombineMsgs, MsgResult, MsgTrait, Zip2Msgs, Zip8Msgs, Zip9Msgs},
     traits::{Catch, CollectVec, CollectVecInto, ThenOk},
 };
 
@@ -21,9 +21,7 @@ use crate::{
 
 use super::Crates;
 
-pub fn codegen(crates: &Crates, items: &Items) -> MsgResult<()> {
-    let mut errs = Vec::new();
-
+pub fn codegen(crates: &Crates, items: &Items, mut errs: Vec<String>) {
     let main_cr_idx = crates.get_crate_index(Crate::Main);
     let macro_cr_idx = crates.get_crate_index(Crate::Macros);
 
@@ -76,8 +74,17 @@ pub fn codegen(crates: &Crates, items: &Items) -> MsgResult<()> {
         .map(|use_stmts| use_stmts.map_vec_into(|stmts| quote!(#(pub use #stmts;)*)));
 
     // Write codegen to file
-    match_ok!(
-        Zip8Msgs,
+    let namespace = format_ident!("{NAMESPACE}");
+    let allows = quote!(
+        #[allow(unused_imports)]
+        #[allow(unused_variables)]
+        #[allow(unused_parens)]
+        #[allow(dead_code)]
+    );
+    let errors = MsgResult::new((), errs);
+    let code = match_ok!(
+        Zip9Msgs,
+        errors,
         globals,
         components,
         component_traits,
@@ -87,122 +94,91 @@ pub fn codegen(crates: &Crates, items: &Items) -> MsgResult<()> {
         manager_impl,
         use_stmts,
         {
-            write_codegen(CodegenArgs {
-                crates,
-                globals,
-                components,
-                component_traits,
-                events_enum,
-                events,
-                event_traits,
-                trait_defs,
-                manager_def,
-                manager_impl,
-                use_stmts,
-            })
-        },
-        err,
-        { errs.extend(err) }
-    );
-
-    MsgResult::new((), errs)
-}
-
-struct CodegenArgs<'a> {
-    crates: &'a Crates,
-    globals: TokenStream,
-    components: TokenStream,
-    component_traits: TokenStream,
-    events_enum: TokenStream,
-    events: TokenStream,
-    event_traits: TokenStream,
-    trait_defs: Vec<Traits>,
-    manager_def: TokenStream,
-    manager_impl: TokenStream,
-    use_stmts: Vec<TokenStream>,
-}
-
-fn write_codegen<'a>(
-    CodegenArgs {
-        crates,
-        globals,
-        components,
-        component_traits,
-        events_enum,
-        events,
-        event_traits,
-        trait_defs,
-        manager_def,
-        manager_impl,
-        use_stmts,
-    }: CodegenArgs<'a>,
-) {
-    let namespace = format_ident!("{NAMESPACE}");
-    let allows = quote!(
-        #[allow(unused_imports)]
-        #[allow(unused_variables)]
-        #[allow(unused_parens)]
-        #[allow(dead_code)]
-    );
-    let main_cr_idx = crates.get_crate_index(Crate::Main);
-    let mut code = trait_defs
-        .into_iter()
-        .zip(use_stmts)
-        .enumerate()
-        .map_vec_into(
-            |(
-                cr_idx,
-                (
-                    Traits {
-                        add_event,
-                        add_component,
+            trait_defs
+                .into_iter()
+                .zip(use_stmts)
+                .enumerate()
+                .map_vec_into(
+                    |(
+                        cr_idx,
+                        (
+                            Traits {
+                                add_event,
+                                add_component,
+                            },
+                            use_stmts,
+                        ),
+                    )| {
+                        if cr_idx == main_cr_idx {
+                            quote!(
+                                #allows
+                                pub mod #namespace {
+                                    #use_stmts
+                                    #globals
+                                    #components
+                                    #add_component
+                                    #component_traits
+                                    #events_enum
+                                    #events
+                                    #add_event
+                                    #event_traits
+                                    #manager_def
+                                    #manager_impl
+                                }
+                            )
+                        } else {
+                            quote!(
+                                #allows
+                                pub mod #namespace {
+                                    #use_stmts
+                                    #add_component
+                                    #add_event
+                                }
+                            )
+                        }
                     },
-                    use_stmts,
-                ),
-            )| {
-                if cr_idx == main_cr_idx {
-                    quote!(
-                        #allows
-                        pub mod #namespace {
-                            #use_stmts
-                            #globals
-                            #components
-                            #add_component
-                            #component_traits
-                            #events_enum
-                            #events
-                            #add_event
-                            #event_traits
-                            #manager_def
-                            #manager_impl
-                        }
-                    )
-                } else {
-                    quote!(
-                        #allows
-                        pub mod #namespace {
-                            #use_stmts
-                            #add_component
-                            #add_event
-                        }
-                    )
-                }
-            },
-        );
+                )
+        }
+    );
 
+    let engine_cr_idx = crates.get_crate_index(Crate::Engine);
+
+    match code {
+        Ok(code) => write_codegen(crates, code.map_vec_into(|c| c.to_string())),
+        Err(errs) => {
+            let errs = errs.join("\n");
+            let err_msg = "Engine build failed, go to the file below for more information";
+            write_codegen(
+                crates,
+                crates
+                    .iter_except([crates.get_crate_index(Crate::Macros)])
+                    .map_vec_into(|cr| match cr.idx {
+                        i if i == engine_cr_idx => {
+                            format!(
+                                "compile_error!(\"{err_msg}\");\nconst _: &str = \"\n{errs}\n\";"
+                            )
+                        }
+                        _ => String::new(),
+                    }),
+            )
+        }
+    }
+}
+
+fn write_codegen(crates: &Crates, code: Vec<String>) {
     let out = PathBuf::from(std::env::var("OUT_DIR").expect("No out directory specified"));
 
     // Create index file
     fs::write(
         temp_dir().join(INDEX),
         crates
-            .iter()
+            .iter_except([crates.get_crate_index(Crate::Macros)])
             .zip(code)
             .enumerate()
             .map_vec_into(|(i, (cr, code))| {
                 // Write to file
                 let file = out.join(format!("{}.rs", i));
-                fs::write(file.to_owned(), code.to_string())
+                fs::write(file.to_owned(), code)
                     .catch(format!("Could not write to: {}", file.display()));
                 format!(
                     "{}{}{}",

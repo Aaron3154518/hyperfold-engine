@@ -41,12 +41,10 @@ use crate::parse::resolve_path;
 // 4) Parse component sets; Validate labels; insert symbols
 // 5) Parse systems; Validate arguments; insert symbols
 // 6) Codegen
-pub fn parse(entry: PathBuf) -> MsgResult<()> {
+pub fn parse(entry: PathBuf) {
     let mut crates = AstCrate::parse(entry);
 
     let (items, errs) = Items::resolve(&mut crates);
 
-    let result = codegen::codegen(&crates, &items);
-
-    MsgResult::new((), errs).zip(result).map(|_| ())
+    codegen::codegen(&crates, &items, errs);
 }

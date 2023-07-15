@@ -180,9 +180,13 @@ impl ItemSystem {
                     component_sets,
                 })
         }
-        .map_err(|mut errs| {
-            errs.insert(0, format!("\nIn system: '{}':", self.path.path.join("::")));
-            errs
+        .map_err(|errs| {
+            [
+                vec![format!("In system: '{}' {{", self.path.path.join("::"))],
+                errs,
+            ]
+            .concat()
+            .push_into("}".to_string())
         })
     }
 

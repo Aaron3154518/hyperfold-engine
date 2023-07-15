@@ -60,14 +60,15 @@ impl FnArg {
             })
             .combine_msgs()
             .map_err(|mut errs| {
-                errs.insert(
-                    0,
-                    format!(
-                        "In system: '{}':",
+                [
+                    vec![format!(
+                        "In system: '{}' {{",
                         m.path.to_vec().push_into(sig.ident.to_string()).join("::")
-                    ),
-                );
-                errs
+                    )],
+                    errs,
+                ]
+                .concat()
+                .push_into("}".to_string())
             })
     }
 
