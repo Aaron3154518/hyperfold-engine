@@ -11,13 +11,13 @@ use crate::{
     parse::ComponentSymbol,
     resolve::{
         constants::{component_set_keys_fn, component_set_var, component_var},
-        ComponentSetFnArg, ENGINE_PATHS,
+        ENGINE_PATHS,
     },
     utils::{
         constants::{CodegenIdents, CODEGEN_IDENTS},
         functions::get_fn_name,
         syn::Quote,
-    },
+    }, system::ComponentSetFnArg,
 };
 
 use super::{

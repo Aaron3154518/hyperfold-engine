@@ -2,23 +2,24 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use shared::{
     match_ok,
-    msg_result::{CombineMsgs, MsgResult, Zip4Msgs},
+    msg_result::{MsgResult, Zip4Msgs},
     traits::{CollectVec, CollectVecInto},
 };
 
 use crate::{
     codegen::Crates,
+    component_set::{BuildSetsArg, BuildSetsResult, ComponentSet},
     resolve::{
-        component_set::{BuildSetsArg, BuildSetsResult, ComponentSet},
-        constants::{component_set_keys_fn, component_set_var, event_variant, global_var},
-        ComponentSetFnArg, EventFnArg, FnArgType, FnArgs, GlobalFnArg, ItemSystem, Items,
-        ENGINE_PATHS, ENGINE_TRAITS,
+        constants::{event_variant, global_var},
+        Items, ENGINE_PATHS, ENGINE_TRAITS,
     },
     utils::{
         constants::{CodegenIdents, CODEGEN_IDENTS},
         syn::Quote,
     },
 };
+
+use super::resolve::{EventFnArg, FnArgs, GlobalFnArg};
 
 fn codegen_init_system(mut global_args: Vec<GlobalFnArg>, func_name: syn::Path) -> TokenStream {
     let CodegenIdents { globals_var, .. } = &*CODEGEN_IDENTS;

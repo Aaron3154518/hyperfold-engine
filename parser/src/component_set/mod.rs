@@ -4,6 +4,7 @@ mod parse;
 mod resolve;
 
 pub use codegen::{BuildSetsArg, BuildSetsResult};
+pub use labels::ComponentSetLabels;
 pub use resolve::ComponentSet;
 
 #[macro_export]

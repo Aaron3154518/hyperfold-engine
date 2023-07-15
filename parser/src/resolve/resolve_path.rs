@@ -4,10 +4,9 @@ use crate::{
     parse::{
         AstCrate, ModInfo, {AstMod, Symbol},
     },
-    resolve::util::MsgResult,
-    util::use_path_from_syn,
+    utils::syn::use_path_from_syn,
 };
-use shared::traits::Catch;
+use shared::{msg_result::MsgResult, traits::Catch};
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct ItemPath {

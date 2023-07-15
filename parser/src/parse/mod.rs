@@ -5,7 +5,8 @@ mod attributes;
 
 pub use ast_crate::AstCrate;
 pub use ast_mod::{
-    AstMod, AstUse, ComponentSymbol, DiscardSymbol, GlobalSymbol, HardcodedSymbol, MatchSymbol,
-    Symbol, SymbolType,
+    AstEnum, AstFunction, AstItem, AstMod, AstUse, ComponentSymbol, DiscardSymbol, GlobalSymbol,
+    HardcodedSymbol, MatchSymbol, Symbol, SymbolType,
 };
+pub use attributes::AstAttribute;
 pub type ModInfo<'a> = (&'a AstMod, &'a AstCrate, &'a Vec<AstCrate>);

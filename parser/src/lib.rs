@@ -6,8 +6,10 @@
 #![allow(unused)]
 
 mod codegen;
+mod component_set;
 mod parse;
 mod resolve;
+mod system;
 mod utils;
 
 use std::{

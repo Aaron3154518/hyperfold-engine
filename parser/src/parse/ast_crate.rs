@@ -183,61 +183,6 @@ impl AstCrate {
             .collect()
     }
 
-    // Adds AstMod for the namespace module generated in codegen
-    // fn add_namespace_mod(&mut self) {
-    //     if self.idx == 0 {
-    //         self.gen_entry_namespace_mod();
-    //     } else {
-    //         self.gen_dependency_namespace_mod();
-    //     }
-    // }
-
-    // fn gen_entry_namespace_mod(&mut self) -> &mut AstMod {
-    //     let mut m = self.gen_dependency_namespace_mod();
-    //     // Foo structs
-    //     for tr in NamespaceTraits::VARIANTS.iter() {
-    //         let gl = tr.get_global();
-    //         let sym = AstSymbol {
-    //             kind: AstSymbolType::Hardcoded,
-    //             ident: gl.as_ident().to_string(),
-    //             path: gl.full_path(),
-    //             public: true,
-    //         };
-    //         m.symbols.push(sym.to_owned());
-    //     }
-    //     m
-    // }
-
-    // fn gen_dependency_namespace_mod(&mut self) -> &mut AstMod {
-    //     let mut m = self.add_mod(self.main.path.to_vec().push_into(NAMESPACE.to_string()));
-    //     // Traits
-    //     // for tr in NamespaceTraits::VARIANTS {
-    //     //     m.symbols.push(AstSymbol {
-    //     //         kind: AstSym,
-    //     //         path: (),
-    //     //         public: (),
-    //     //     })
-    //     // }
-    //     // m.symbols = NamespaceTraits::VARIANTS.iter().map_vec(|tr| AstSymbol {
-    //     //     kind: AstSymbolType::Hardcoded,
-    //     //     ident: tr.as_ident().to_string(),
-    //     //     path: tr.full_path(),
-    //     //     public: true,
-    //     // });
-    //     // Use dependency
-    //     // m.uses = self
-    //     //     .deps
-    //     //     .iter()
-    //     //     .map(|(_, alias)| AstSymbol {
-    //     //         kind: AstSymbolType::Hardcoded,
-    //     //         ident: alias.to_string(),
-    //     //         path: vec!["crate", &alias].map_vec(|s| s.to_string()),
-    //     //         public: true,
-    //     //     })
-    //     //     .collect();
-    //     m
-    // }
-
     // Insert things into crates
     fn get_mod_from_path<'a>(&'a mut self, path: &[String]) -> &'a mut AstMod {
         let mut path_it = path.iter();

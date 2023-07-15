@@ -16,7 +16,7 @@ use crate::{
 };
 
 use super::{
-    path::{ItemPath, ResolveResultTrait},
+    resolve_path::{ItemPath, ResolveResultTrait},
     resolve_path_from_crate,
     util::MsgResult,
 };

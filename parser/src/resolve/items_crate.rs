@@ -3,7 +3,6 @@ use std::{collections::VecDeque, env::temp_dir, fs, path::PathBuf};
 
 use crate::{
     codegen::{self as codegen, Crates, Traits},
-    match_ok,
     parse::{
         AstCrate, AstMod, AstUse, ComponentSymbol, DiscardSymbol, GlobalSymbol, HardcodedSymbol,
         MatchSymbol, Symbol, SymbolType,
@@ -15,16 +14,21 @@ use crate::{
     },
     resolve::{
         function_arg::{FnArg, FnArgType},
-        path::resolve_path,
         paths::{Crate, EnginePaths},
+        resolve_path::resolve_path,
     },
+    system::ItemSystem,
     util::end,
 };
 use proc_macro2::{token_stream::IntoIter, TokenStream, TokenTree};
 use quote::ToTokens;
-use shared::traits::{
-    Call, Catch, CollectVec, CollectVecInto, FindFrom, Get, HandleErr, Increment, PushInto,
-    SplitAround,
+use shared::{
+    match_ok,
+    msg_result::{CombineMsgs, Zip2Msgs},
+    traits::{
+        Call, Catch, CollectVec, CollectVecInto, FindFrom, Get, HandleErr, Increment, PushInto,
+        SplitAround,
+    },
 };
 
 use shared::parse_args::{ComponentMacroArgs, GlobalMacroArgs, SystemMacroArgs};
@@ -35,8 +39,8 @@ use syn::{
 use super::{
     component_set::ComponentSet,
     parse_macro_call::{parse_macro_calls, update_macro_calls, ParseMacroCall},
-    path::{ItemPath, ResolveResultTrait},
     paths::ExpandEnum,
+    resolve_path::{ItemPath, ResolveResultTrait},
 };
 
 #[derive(Debug)]
@@ -60,13 +64,6 @@ pub struct ItemTrait {
 #[derive(Debug)]
 pub struct ItemEvent {
     pub path: ItemPath,
-}
-
-#[derive(Debug)]
-pub struct ItemSystem {
-    pub path: ItemPath,
-    pub args: Vec<FnArg>,
-    pub attr_args: SystemMacroArgs,
 }
 
 #[derive(Debug)]
@@ -308,18 +305,15 @@ impl ItemsCrate {
                                 call.data.args.clone(),
                                 (m, cr, crates.get_crates()),
                             )
-                            .handle_err(|es| {
-                                errs.push(String::new());
-                                errs.extend(es);
-                            })
+                            .handle_err(|es| errs.push_item(String::new()).extend(es))
                             .map(|cs| {
-                                let path = cs.path.path.to_vec();
-                                items.component_sets.push(cs);
-                                Symbol {
-                                    kind: SymbolType::ComponentSet(items.component_sets.len() - 1),
-                                    path,
+                                let sym = Symbol {
+                                    kind: SymbolType::ComponentSet(items.component_sets.len()),
+                                    path: cs.path.path.to_vec(),
                                     public: true,
-                                }
+                                };
+                                items.component_sets.push(cs);
+                                sym
                             })
                         })
                 })
@@ -399,34 +393,17 @@ impl ItemsCrate {
                             .expect_hardcoded(HardcodedSymbol::SystemMacro)
                             .ok()
                             .and_then(|sym| {
-                                let path =
-                                    m.path.to_vec().push_into(fun.data.sig.ident.to_string());
-                                let attr_args = SystemMacroArgs::from(&attr.args);
-                                FnArg::parse(
-                                    &attr_args,
-                                    &items,
-                                    &fun.data.sig,
-                                    (m, cr, crates.get_crates()),
-                                )
-                                .handle_err(|es| {
-                                    errs.push(String::new());
-                                    errs.extend(es);
-                                })
-                                .map(|args| {
-                                    items.systems.push(ItemSystem {
-                                        path: ItemPath {
-                                            cr_idx: cr.idx,
-                                            path: path.to_vec(),
-                                        },
-                                        args,
-                                        attr_args,
-                                    });
-                                    Symbol {
-                                        kind: SymbolType::System(items.systems.len() - 1),
-                                        path,
-                                        public: true,
-                                    }
-                                })
+                                ItemSystem::parse(fun, attr, &items, (m, cr, crates.get_crates()))
+                                    .handle_err(|es| errs.push_item(String::new()).extend(es))
+                                    .map(|sys| {
+                                        let sym = Symbol {
+                                            kind: SymbolType::System(items.systems.len()),
+                                            path: sys.path.path.to_vec(),
+                                            public: true,
+                                        };
+                                        items.systems.push(sys);
+                                        sym
+                                    })
                             })
                     })
                 })

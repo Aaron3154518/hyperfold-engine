@@ -3,7 +3,7 @@ use shared::traits::CollectVec;
 
 use crate::parse::{AstCrate, AstMod};
 
-use super::path::{resolve_path, ItemPath};
+use super::resolve_path::{resolve_path, ItemPath};
 
 pub trait ParseMacroCall
 where
