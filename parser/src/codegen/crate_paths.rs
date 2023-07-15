@@ -1,11 +1,16 @@
-use shared::traits::{AndThen, CollectVec, CollectVecInto, Get2D, NoneOr};
+use shared::{
+    msg_result::MsgResult,
+    traits::{AndThen, CollectVec, CollectVecInto, ExpandEnum, Get2D, NoneOr},
+};
 
-use crate::parse::AstCrate;
-use crate::resolve::constants::NAMESPACE;
-use crate::resolve::util::MsgResult;
-use crate::resolve::{Crate, CratePath, ExpandEnum, ItemPath};
-
-use super::util::vec_to_path;
+use crate::{
+    parse::{AstCrate, ItemPath},
+    utils::{
+        constants::NAMESPACE,
+        paths::{Crate, CratePath},
+        syn::vec_to_path,
+    },
+};
 
 #[derive(Debug)]
 pub struct Crates {

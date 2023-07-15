@@ -3,8 +3,9 @@ use crate::traits::ThenOk;
 // Type for propogating errors
 pub type MsgResult<T> = Result<T, Vec<String>>;
 
-// Traits for both msg types
 pub trait MsgTrait<T> {
+    fn new(t: T, errs: Vec<String>) -> MsgResult<T>;
+
     fn get_ref<'a>(&'a self) -> MsgResult<&'a T>;
 
     // Add rhs errors, don't overwrite data
@@ -15,6 +16,10 @@ pub trait MsgTrait<T> {
 }
 
 impl<T> MsgTrait<T> for MsgResult<T> {
+    fn new(t: T, errs: Vec<String>) -> MsgResult<T> {
+        errs.is_empty().ok(t, errs)
+    }
+
     fn get_ref<'a>(&'a self) -> MsgResult<&'a T> {
         match self {
             Ok(t) => Ok(t),

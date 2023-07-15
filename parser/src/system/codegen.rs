@@ -2,7 +2,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use shared::{
     match_ok,
-    msg_result::{CombineMsgs, MsgResult, Zip4Msgs},
+    msg_result::{CombineMsgs, MsgResult, MsgTrait, Zip4Msgs},
     traits::{CollectVec, CollectVecInto},
 };
 
@@ -30,7 +30,7 @@ fn codegen_init_system(mut global_args: Vec<GlobalFnArg>, func_name: syn::Path) 
     quote!(#func_name(#(#func_args),*))
 }
 
-pub struct CodegenSystemArgs<'a> {
+pub struct CodegenArgs<'a> {
     func_name: syn::Path,
     event_trait: &'a syn::Path,
     intersect: &'a syn::Path,
@@ -40,14 +40,14 @@ pub struct CodegenSystemArgs<'a> {
 }
 
 fn codegen_system(
-    CodegenSystemArgs {
+    CodegenArgs {
         func_name,
         event_trait,
         intersect,
         event: event_arg,
         globals: global_args,
         component_sets,
-    }: CodegenSystemArgs,
+    }: CodegenArgs,
 ) -> TokenStream {
     let CodegenIdents {
         globals,
@@ -102,70 +102,18 @@ fn codegen_system(
     )
 }
 
-struct CodegenArgs<'a> {
-    cr_idx: usize,
-    crates: &'a Crates,
-    items: &'a Items,
-    args: FnArgs,
-    func_name: syn::Path,
-    event_trait: &'a syn::Path,
-    intersect: &'a syn::Path,
-}
-
-fn codegen_systems(
-    CodegenArgs {
-        cr_idx,
-        crates,
-        items,
-        args,
-        func_name,
-        event_trait,
-        intersect,
-    }: CodegenArgs,
-) -> MsgResult<TokenStream> {
-    match args {
-        FnArgs::Init { globals } => Ok(codegen_init_system(globals, func_name)),
-        FnArgs::System {
-            event,
-            globals,
-            component_sets,
-        } => {
-            let component_sets = component_sets
-                .map_vec_into(|fn_arg| {
-                    items
-                        .component_sets
-                        .get(fn_arg.idx)
-                        .ok_or(vec![format!("Invalid component set index: {}", fn_arg.idx)])
-                        .and_then(|cs| {
-                            crates
-                                .get_item_syn_path(cr_idx, &cs.path)
-                                .map(|ty| BuildSetsArg { cs, fn_arg, ty })
-                        })
-                })
-                .combine_msgs();
-
-            component_sets.map(|component_sets| {
-                codegen_system(CodegenSystemArgs {
-                    func_name,
-                    event_trait,
-                    intersect,
-                    event,
-                    globals,
-                    component_sets,
-                })
-            })
-        }
-    }
-}
-
 pub struct SystemsCodegenResult {
     pub init_systems: Vec<TokenStream>,
     pub systems: Vec<TokenStream>,
     pub system_events: Vec<syn::Ident>,
 }
 
-// TODO: handle erros
-pub fn systems(cr_idx: usize, items: &Items, crates: &Crates) -> MsgResult<SystemsCodegenResult> {
+// TODO: handle errors
+pub fn codegen_systems(
+    cr_idx: usize,
+    items: &Items,
+    crates: &Crates,
+) -> MsgResult<SystemsCodegenResult> {
     let event_trait = crates.get_syn_path(cr_idx, &ENGINE_TRAITS.add_event);
     let intersect = crates.get_syn_path(cr_idx, &ENGINE_PATHS.intersect);
 
@@ -190,15 +138,15 @@ pub fn systems(cr_idx: usize, items: &Items, crates: &Crates) -> MsgResult<Syste
                     component_sets,
                 } => {
                     let component_sets = component_sets
-                        .map_vec_into(|arg| {
+                        .map_vec_into(|fn_arg| {
                             items
                                 .component_sets
-                                .get(arg.idx)
-                                .ok_or(vec![format!("Invalid component set index: {}", arg.idx)])
+                                .get(fn_arg.idx)
+                                .ok_or(vec![format!("Invalid component set index: {}", fn_arg.idx)])
                                 .and_then(|cs| {
                                     crates
                                         .get_item_syn_path(cr_idx, &cs.path)
-                                        .map(|p| (arg, cs, p))
+                                        .map(|ty| BuildSetsArg { cs, fn_arg, ty })
                                 })
                         })
                         .combine_msgs();
@@ -206,7 +154,7 @@ pub fn systems(cr_idx: usize, items: &Items, crates: &Crates) -> MsgResult<Syste
                     system_events.push(event_variant(event.idx));
 
                     systems.push(component_sets.map(|component_sets| {
-                        codegen_system(CodegenSystemArgs {
+                        codegen_system(CodegenArgs {
                             func_name,
                             event_trait,
                             intersect,

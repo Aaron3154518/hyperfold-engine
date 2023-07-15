@@ -1,3 +1,3 @@
-mod items_crate;
+mod items;
 
-pub use items_crate::{ItemComponent, ItemEvent, ItemGlobal, Items, ItemsCrate};
+pub use items::{ItemComponent, ItemEvent, ItemGlobal, Items};

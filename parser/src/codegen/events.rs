@@ -1,17 +1,21 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use shared::traits::{CollectVec, CollectVecInto};
+use shared::{
+    match_ok,
+    msg_result::{CombineMsgs, MsgResult, Zip3Msgs},
+    traits::{CollectVec, CollectVecInto},
+};
 
 use crate::{
-    codegen::{traits::trait_defs, util::vec_to_path, Crates},
-    match_ok,
-    resolve::{
-        constants::{event_var, event_variant},
-        util::{CombineMsgs, MsgResult, Zip2Msgs, Zip3Msgs, Zip5Msgs},
-        Crate, ItemEvent, ENGINE_TRAITS,
+    resolve::ItemEvent,
+    utils::{
+        idents::{event_var, event_variant, CodegenIdents, CODEGEN_IDENTS},
+        paths::{Crate, ENGINE_TRAITS},
+        syn::vec_to_path,
     },
-    utils::{CodegenIdents, CODEGEN_IDENTS},
 };
+
+use super::{traits::trait_defs, Crates};
 
 pub fn events_enum(events: &Vec<ItemEvent>) -> TokenStream {
     let CodegenIdents {

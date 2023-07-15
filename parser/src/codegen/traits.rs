@@ -1,15 +1,18 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use shared::traits::{CollectVec, CollectVecInto};
+use shared::{
+    match_ok,
+    msg_result::{MsgResult, Zip2Msgs},
+    traits::{CollectVec, CollectVecInto},
+};
 
 use crate::{
-    codegen::util::vec_to_path,
-    match_ok,
-    resolve::{
-        util::{MsgResult, Zip2Msgs},
-        Crate, CratePath, ItemPath,
+    parse::ItemPath,
+    utils::{
+        idents::{CodegenIdents, CODEGEN_IDENTS},
+        paths::{Crate, CratePath},
+        syn::vec_to_path,
     },
-    utils::{CodegenIdents, CODEGEN_IDENTS},
 };
 
 use super::Crates;

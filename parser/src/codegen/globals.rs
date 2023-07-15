@@ -1,17 +1,20 @@
 use proc_macro2::TokenStream;
 use quote::quote;
-use shared::traits::{CollectVec, CollectVecInto};
+use shared::{
+    match_ok,
+    msg_result::{CombineMsgs, MsgResult},
+    traits::{CollectVec, CollectVecInto},
+};
 
 use crate::{
-    codegen::{util::vec_to_path, Crates},
-    match_ok,
-    resolve::{
-        constants::global_var,
-        util::{CombineMsgs, MsgResult},
-        ItemGlobal,
+    resolve::ItemGlobal,
+    utils::{
+        idents::{global_var, CODEGEN_IDENTS},
+        syn::vec_to_path,
     },
-    utils::{CodegenIdents, CODEGEN_IDENTS},
 };
+
+use super::Crates;
 
 struct CodegenArgs<'a> {
     struct_name: &'a syn::Ident,

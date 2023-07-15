@@ -9,7 +9,7 @@ use quote::quote;
 use shared::{
     constants::{INDEX, INDEX_SEP},
     parsing::{ComponentMacroArgs, GlobalMacroArgs},
-    util::Catch,
+    traits::Catch,
 };
 use syn::{parse_macro_input, parse_quote};
 

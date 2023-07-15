@@ -1,17 +1,23 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 
-use shared::traits::CollectVecInto;
+use shared::{
+    match_ok,
+    msg_result::{MsgResult, Zip5Msgs},
+    traits::CollectVecInto,
+};
 
 use crate::{
-    codegen::{component_sets, systems, systems::SystemsCodegenResult, Crates},
-    match_ok,
-    resolve::{
-        util::{CombineMsgs, MsgResult, Zip2Msgs, Zip4Msgs, Zip5Msgs, Zip7Msgs},
-        Crate, EngineGlobalPaths, Items, ENGINE_GLOBALS, ENGINE_PATHS, ENGINE_TRAITS,
+    component_set::ComponentSet,
+    resolve::Items,
+    system::{codegen_systems, SystemsCodegenResult},
+    utils::{
+        idents::{CodegenIdents, CODEGEN_IDENTS},
+        paths::{Crate, EngineGlobalPaths, ENGINE_GLOBALS, ENGINE_PATHS, ENGINE_TRAITS},
     },
-    utils::{CodegenIdents, CODEGEN_IDENTS},
 };
+
+use super::Crates;
 
 pub fn manager_def() -> TokenStream {
     let CodegenIdents {
@@ -91,10 +97,11 @@ pub fn manager_impl(cr_idx: usize, items: &Items, crates: &Crates) -> MsgResult<
         ..
     } = &*CODEGEN_IDENTS;
 
-    let result = systems(cr_idx, items, crates);
+    let result = codegen_systems(cr_idx, items, crates);
     let init_events = init_events_fn(cr_idx, items, crates);
     let path_to_engine = crates.get_named_crate_syn_path(cr_idx, Crate::Engine);
-    let component_set_fns = component_sets(cr_idx, &items.component_sets, crates);
+    let component_set_fns =
+        ComponentSet::codegen_get_keys_fns(cr_idx, &items.component_sets, crates);
     let global_paths = ENGINE_GLOBALS.get_global_vars(crates, cr_idx);
 
     match_ok!(

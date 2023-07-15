@@ -1,7 +1,5 @@
 use bindgen::callbacks::{DeriveInfo, ParseCallbacks};
-use std::{env, panic, path::PathBuf};
-
-use parser::{parse::AstCrate, resolve::ItemsCrate};
+use std::{env, path::PathBuf};
 
 #[derive(Default, Debug)]
 struct MyCallbacks;
@@ -138,19 +136,11 @@ pub fn main() {
     //     })
     //     .collect::<Vec<_>>();
 
-    if let Err(e) = panic::catch_unwind(|| {
-        // TODO: hardcoded
-        let mut crates = AstCrate::parse(PathBuf::from("../"));
-
-        // eprintln!("{crates:#?}");
-
-        let mut items = ItemsCrate::parse(&mut crates);
-
-        // eprintln!("{items:#?}");
-
-        // ast_codegen::codegen(&paths, &mut items);
-    }) {
-        // TODO: cleanup
-        eprintln!("{e:#?}");
+    match parser::parse(PathBuf::from("../")) {
+        Ok(_) => (),
+        Err(errs) => {
+            eprintln!("{}", errs.join("\n"));
+            // panic!("Build failed!");
+        }
     }
 }

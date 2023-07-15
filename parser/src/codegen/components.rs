@@ -1,19 +1,23 @@
-use std::array;
-
 use proc_macro2::TokenStream;
 use quote::quote;
-use shared::traits::{AndThen, CollectVec, CollectVecInto, ThenOk};
+use std::array;
+
+use shared::{
+    match_ok,
+    msg_result::{CombineMsgs, MsgResult, Zip5Msgs},
+    traits::{AndThen, CollectVec, CollectVecInto, ThenOk},
+};
 
 use crate::{
-    codegen::{traits::trait_defs, util::vec_to_path, Crates},
-    match_ok,
-    resolve::{
-        constants::component_var,
-        util::{CombineMsgs, MsgResult, Zip2Msgs, Zip5Msgs},
-        Crate, ItemComponent, ENGINE_GLOBALS, ENGINE_PATHS, ENGINE_TRAITS,
+    resolve::ItemComponent,
+    utils::{
+        idents::{component_var, CodegenIdents, CODEGEN_IDENTS},
+        paths::{Crate, ENGINE_GLOBALS, ENGINE_PATHS, ENGINE_TRAITS},
+        syn::vec_to_path,
     },
-    utils::{CodegenIdents, CODEGEN_IDENTS},
 };
+
+use super::{traits::trait_defs, Crates};
 
 struct CodegenArgs<'a> {
     struct_name: &'a syn::Ident,

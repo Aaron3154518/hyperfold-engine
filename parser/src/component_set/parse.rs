@@ -211,10 +211,10 @@ impl std::fmt::Display for AstLabelItem {
 
 #[derive(Debug)]
 pub struct AstComponentSetItem {
-    var: String,
-    ty: ItemPath,
-    ref_cnt: usize,
-    is_mut: bool,
+    pub var: String,
+    pub ty: ItemPath,
+    pub ref_cnt: usize,
+    pub is_mut: bool,
 }
 
 impl AstComponentSetItem {
@@ -267,9 +267,9 @@ impl syn::parse::Parse for AstComponentSetItem {
 
 #[derive(Debug)]
 pub struct AstComponentSet {
-    ident: String,
-    args: Vec<AstComponentSetItem>,
-    labels: Option<AstLabelItem>,
+    pub ident: String,
+    pub args: Vec<AstComponentSetItem>,
+    pub labels: Option<AstLabelItem>,
 }
 
 impl syn::parse::Parse for AstComponentSet {

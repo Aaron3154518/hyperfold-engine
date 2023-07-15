@@ -13,7 +13,7 @@ mod system;
 mod utils;
 
 use regex::Regex;
-use resolve::ItemsCrate;
+use resolve::Items;
 use std::{
     collections::HashMap,
     fs::{self, File},
@@ -24,7 +24,12 @@ use std::{
 
 use component_set::ComponentSetLabels;
 use parse::{AstCrate, ComponentSymbol};
-use shared::{macros::hash_map, parsing::ComponentMacroArgs, traits::CollectVecInto};
+use shared::{
+    macros::hash_map,
+    msg_result::{MsgResult, MsgTrait, Zip2Msgs},
+    parsing::ComponentMacroArgs,
+    traits::CollectVecInto,
+};
 use utils::syn::format_code;
 
 use crate::parse::resolve_path;
@@ -36,53 +41,12 @@ use crate::parse::resolve_path;
 // 4) Parse component sets; Validate labels; insert symbols
 // 5) Parse systems; Validate arguments; insert symbols
 // 6) Codegen
+pub fn parse(entry: PathBuf) -> MsgResult<()> {
+    let mut crates = AstCrate::parse(entry);
 
-fn test_resolves(crates: &Vec<AstCrate>) {
-    let test = |v: Vec<&str>| {
-        println!(
-            "{}\n{:#?}",
-            v.join("::"),
-            resolve_path(
-                v.iter().map(|s| s.to_string()).collect(),
-                (&crates[0].main, &crates[0], &crates)
-            )
-        )
-    };
+    let (items, errs) = Items::resolve(&mut crates);
 
-    println!("\nOk:\n");
-    for v in [
-        vec!["crate", "T1"],
-        vec!["crate", "a1", "A"],
-        vec!["crate", "a2", "a5", "HEY"],
-        vec!["crate", "a22", "a5", "HEY"],
-        vec!["crate", "a22", "a2", "a5", "HEY"],
-        vec!["crate", "a2", "a3", "A", "A1"],
-        vec!["crate", "a2", "a3", "A", "A2"],
-        vec!["crate", "a2", "a3", "B", "A2"],
-        vec!["crate", "a2", "a3", "A3", "A1"],
-        vec!["crate", "a2", "a2", "A3", "A1"],
-        vec!["crate", "c", "e", "DC"],
-    ] {
-        test(v)
-    }
+    let result = codegen::codegen(&crates, &items);
 
-    println!("\nErr:\n");
-    for v in [
-        vec!["engine", "component"],
-        vec!["crate", "component"],
-        vec!["crate", "a2", "a3", "mac", "global"],
-    ] {
-        test(v)
-    }
-}
-
-fn test() {
-    // TODO: hardcoded
-    let mut crates = AstCrate::parse(PathBuf::from("../"));
-
-    // eprintln!("{crates:#?}");
-
-    let mut items = ItemsCrate::parse(&mut crates);
-
-    // eprintln!("{items:#?}");
+    MsgResult::new((), errs).zip(result).map(|_| ())
 }
