@@ -1,7 +1,7 @@
 use std::{env::temp_dir, fs, path::PathBuf};
 
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{format_ident, quote};
 
 use shared::{
     constants::{INDEX, INDEX_SEP},
@@ -137,6 +137,13 @@ fn write_codegen<'a>(
         use_stmts,
     }: CodegenArgs<'a>,
 ) {
+    let namespace = format_ident!("{NAMESPACE}");
+    let allows = quote!(
+        #[allow(unused_imports)]
+        #[allow(unused_variables)]
+        #[allow(unused_parens)]
+        #[allow(dead_code)]
+    );
     let main_cr_idx = crates.get_crate_index(Crate::Main);
     let mut code = trait_defs
         .into_iter()
@@ -153,30 +160,31 @@ fn write_codegen<'a>(
                     use_stmts,
                 ),
             )| {
-                // TODO: no newlines
                 if cr_idx == main_cr_idx {
-                    format!(
-                        "pub mod {NAMESPACE} {{\
-                            {use_stmts}\
-                            {globals}\
-                            {components}\
-                            {add_component}\
-                            {component_traits}\
-                            {events_enum}\
-                            {events}\
-                            {add_event}\
-                            {event_traits}\
-                            {manager_def}\
-                            {manager_impl}\
-                        }}"
+                    quote!(
+                        #allows
+                        pub mod #namespace {
+                            #use_stmts
+                            #globals
+                            #components
+                            #add_component
+                            #component_traits
+                            #events_enum
+                            #events
+                            #add_event
+                            #event_traits
+                            #manager_def
+                            #manager_impl
+                        }
                     )
                 } else {
-                    format!(
-                        "pub mod {NAMESPACE} {{\
-                            {use_stmts}\
-                            {add_component}\
-                            {add_event}\
-                        }}"
+                    quote!(
+                        #allows
+                        pub mod #namespace {
+                            #use_stmts
+                            #add_component
+                            #add_event
+                        }
                     )
                 }
             },
@@ -194,7 +202,7 @@ fn write_codegen<'a>(
             .map_vec_into(|(i, (cr, code))| {
                 // Write to file
                 let file = out.join(format!("{}.rs", i));
-                fs::write(file.to_owned(), code)
+                fs::write(file.to_owned(), code.to_string())
                     .catch(format!("Could not write to: {}", file.display()));
                 format!(
                     "{}{}{}",
