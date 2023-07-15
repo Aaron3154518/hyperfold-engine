@@ -1,4 +1,5 @@
-use quote::ToTokens;
+use proc_macro2::TokenStream;
+use quote::{quote, ToTokens};
 
 // To type
 pub fn type_to_type(ty: &syn::Type, r: bool, m: bool) -> syn::Type {
@@ -33,4 +34,15 @@ pub fn arr_to_path<const N: usize>(path: [&str; N]) -> syn::Path {
 
 pub fn string_to_path(path: String) -> syn::Path {
     syn::parse_str(&path).expect(format!("Could not parse path: {}", path).as_str())
+}
+
+// Convert ident to TokenStream
+pub trait Quote {
+    fn quote(&self) -> TokenStream;
+}
+
+impl Quote for syn::Ident {
+    fn quote(&self) -> TokenStream {
+        quote!(#self)
+    }
 }

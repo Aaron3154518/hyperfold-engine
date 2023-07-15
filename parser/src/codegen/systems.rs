@@ -3,7 +3,11 @@ use quote::quote;
 use shared::util::{JoinMap, JoinMapInto};
 
 use crate::{
-    codegen2::CODEGEN_IDENTS,
+    codegen::{
+        util::{vec_to_path, Quote},
+        Crates,
+    },
+    constants::{CodegenIdents, CODEGEN_IDENTS},
     match_ok,
     resolve::{
         constants::{component_set_keys_fn, component_set_var, event_variant, global_var},
@@ -13,12 +17,6 @@ use crate::{
         ComponentSet, ComponentSetFnArg, EventFnArg, FnArgType, FnArgs, GlobalFnArg, ItemSystem,
         Items, ENGINE_PATHS, ENGINE_TRAITS,
     },
-};
-
-use super::{
-    idents::CodegenIdents,
-    util::{vec_to_path, Quote},
-    Crates,
 };
 
 fn codegen_init_system(mut global_args: Vec<GlobalFnArg>, func_name: syn::Path) -> TokenStream {

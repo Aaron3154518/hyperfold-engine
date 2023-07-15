@@ -16,7 +16,7 @@ use super::{
     HardcodedSymbol, Symbol,
 };
 use crate::{
-    codegen2::Crates,
+    codegen::Crates,
     resolve::constants::NAMESPACE,
     resolve::{Crate, ExpandEnum, ItemPath},
     util::end,

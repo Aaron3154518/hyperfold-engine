@@ -4,11 +4,11 @@ use std::{
     path::PathBuf,
 };
 
-use parser::resolve::constants::{INDEX, INDEX_SEP};
 use proc_macro::TokenStream;
 use quote::quote;
 use shared::{
-    parse_args::{ComponentMacroArgs, GlobalMacroArgs},
+    constants::{INDEX, INDEX_SEP},
+    parsing::{ComponentMacroArgs, GlobalMacroArgs},
     util::Catch,
 };
 use syn::{parse_macro_input, parse_quote};

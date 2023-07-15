@@ -3,7 +3,8 @@ use quote::quote;
 use shared::util::{JoinMap, JoinMapInto};
 
 use crate::{
-    codegen2::{idents::CodegenIdents, util::vec_to_path, CODEGEN_IDENTS},
+    codegen::{util::vec_to_path, Crates},
+    constants::{CodegenIdents, CODEGEN_IDENTS},
     match_ok,
     resolve::{
         constants::global_var,
@@ -11,8 +12,6 @@ use crate::{
         ItemGlobal,
     },
 };
-
-use super::Crates;
 
 struct CodegenArgs<'a> {
     struct_name: &'a syn::Ident,

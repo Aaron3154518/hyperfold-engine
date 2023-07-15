@@ -5,7 +5,8 @@ use quote::quote;
 use shared::util::{AndThen, JoinMap, JoinMapInto, ThenOk};
 
 use crate::{
-    codegen2::{idents::CodegenIdents, CODEGEN_IDENTS},
+    codegen::{traits::trait_defs, util::vec_to_path, Crates},
+    constants::{CodegenIdents, CODEGEN_IDENTS},
     match_ok,
     resolve::{
         constants::component_var,
@@ -13,8 +14,6 @@ use crate::{
         Crate, ItemComponent, ENGINE_GLOBALS, ENGINE_PATHS, ENGINE_TRAITS,
     },
 };
-
-use super::{traits::trait_defs, util::vec_to_path, Crates};
 
 struct CodegenArgs<'a> {
     struct_name: &'a syn::Ident,

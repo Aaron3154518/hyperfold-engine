@@ -21,12 +21,11 @@ use resolve::{
 use shared::{hash_map, parse_args::ComponentMacroArgs, util::JoinMapInto};
 use util::{end, format_code};
 
-// pub mod codegen;
-pub mod codegen2;
-pub mod parse;
-pub mod resolve;
-pub mod util;
-// pub mod validate;
+mod codegen;
+mod constants;
+mod parse;
+mod resolve;
+mod util;
 
 // Process:
 // 1) Parse AST, get mod/crate structure, use statements, and important syntax items

@@ -4,15 +4,14 @@ use quote::quote;
 use shared::util::JoinMapInto;
 
 use crate::{
-    codegen2::{systems, CodegenIdents, CODEGEN_IDENTS},
+    codegen::{component_sets, systems, systems::SystemsCodegenResult, Crates},
+    constants::{CodegenIdents, CODEGEN_IDENTS},
     match_ok,
     resolve::{
         util::{CombineMsgs, MsgsResult, Zip2Msgs, Zip4Msgs, Zip5Msgs, Zip7Msgs},
         Crate, EngineGlobalPaths, Items, ENGINE_GLOBALS, ENGINE_PATHS, ENGINE_TRAITS,
     },
 };
-
-use super::{component_sets, systems::SystemsCodegenResult, Crates};
 
 pub fn manager_def() -> TokenStream {
     let CodegenIdents {

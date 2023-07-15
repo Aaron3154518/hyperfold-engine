@@ -6,24 +6,22 @@ use shared::util::{Call, Catch, FindFrom, Get, JoinMap, JoinMapInto, MapNone, No
 use syn::{spanned::Spanned, Error, Token};
 
 use crate::{
-    codegen2::{util::Quote, CodegenIdents, CODEGEN_IDENTS},
+    codegen::util::Quote,
+    constants::{CodegenIdents, CODEGEN_IDENTS},
     parse::{
         AstCrate, ComponentSymbol, DiscardSymbol, MatchSymbol, ModInfo, SymbolType,
         {AstMod, Symbol},
     },
-    resolve::util::{get_mut, CombineMsgs, MsgsResult},
-    resolve::{path::resolve_path, util::get_fn_name},
-};
-
-use super::{
-    constants::{component_set_keys_fn, component_set_var, component_var},
-    function_arg::ComponentSetFnArg,
-    items_crate::ItemComponent,
-    labels::{ComponentSetLabels, LabelsExpression, SymbolMap},
-    parse_macro_call::ParseMacroCall,
-    path::{ItemPath, ResolveResultTrait},
-    util::Zip2Msgs,
-    Items, MustBe,
+    resolve::{
+        constants::{component_set_keys_fn, component_set_var, component_var},
+        function_arg::ComponentSetFnArg,
+        items_crate::ItemComponent,
+        labels::{ComponentSetLabels, LabelsExpression, SymbolMap},
+        parse_macro_call::ParseMacroCall,
+        path::{resolve_path, ItemPath, ResolveResultTrait},
+        util::{get_fn_name, get_mut, CombineMsgs, MsgsResult, Zip2Msgs},
+        Items, MustBe,
+    },
 };
 
 macro_rules! err {

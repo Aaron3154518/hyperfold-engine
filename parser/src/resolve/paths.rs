@@ -5,7 +5,7 @@ use quote::{format_ident, quote};
 use shared::util::{Call, JoinMap, PushInto};
 
 use crate::{
-    codegen2::{util::vec_to_path, Crates},
+    codegen::{util::vec_to_path, Crates},
     match_ok,
     parse::{DiscardSymbol, GlobalSymbol, MatchSymbol},
     resolve::{

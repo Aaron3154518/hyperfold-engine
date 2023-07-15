@@ -2,7 +2,7 @@ use quote::quote;
 use std::{collections::VecDeque, env::temp_dir, fs, path::PathBuf};
 
 use crate::{
-    codegen2::{self as codegen, Crates, Traits},
+    codegen::{self as codegen, Crates, Traits},
     match_ok,
     parse::{
         AstCrate, AstMod, AstUse, ComponentSymbol, DiscardSymbol, GlobalSymbol, HardcodedSymbol,

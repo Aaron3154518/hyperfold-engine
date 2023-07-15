@@ -7,8 +7,8 @@ use crate::{
     resolve::{ExpandEnum, ENGINE_GLOBALS, ENGINE_TRAITS},
 };
 
-macro_rules! codegen_idents {
-    ($ty: ident { $($var: ident => $val: expr),*$(,)? }) => {
+macro_rules! idents {
+    ($const: ident = $ty: ident { $($var: ident => $val: expr),*$(,)? }) => {
         pub struct $ty {
             $(pub $var: syn::Ident),*
         }
@@ -20,10 +20,15 @@ macro_rules! codegen_idents {
                 }
             }
         }
+
+        unsafe impl Sync for $ty {}
+        unsafe impl Send for $ty {}
+
+        pub static $const: Lazy<$ty> = Lazy::new(|| $ty::new());
     };
 }
 
-codegen_idents!(CodegenIdents {
+idents!(CODEGEN_IDENTS = CodegenIdents {
     namespace => NAMESPACE,
     manager => "SFoo",
     globals => "GFoo",
@@ -43,8 +48,3 @@ codegen_idents!(CodegenIdents {
     globals_var => "gfoo",
     events_var => "efoo",
 });
-
-unsafe impl Sync for CodegenIdents {}
-unsafe impl Send for CodegenIdents {}
-
-pub static CODEGEN_IDENTS: Lazy<CodegenIdents> = Lazy::new(|| CodegenIdents::new());

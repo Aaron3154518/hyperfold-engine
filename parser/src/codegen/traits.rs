@@ -3,7 +3,8 @@ use quote::{format_ident, quote};
 use shared::util::{JoinMap, JoinMapInto};
 
 use crate::{
-    codegen2::{idents::CodegenIdents, util::vec_to_path, CODEGEN_IDENTS},
+    codegen::util::vec_to_path,
+    constants::{CodegenIdents, CODEGEN_IDENTS},
     match_ok,
     resolve::{
         util::{MsgsResult, Zip2Msgs},

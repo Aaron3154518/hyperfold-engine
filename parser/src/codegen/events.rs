@@ -3,7 +3,8 @@ use quote::{format_ident, quote};
 use shared::util::{JoinMap, JoinMapInto};
 
 use crate::{
-    codegen2::idents::CodegenIdents,
+    codegen::{traits::trait_defs, util::vec_to_path, Crates},
+    constants::{CodegenIdents, CODEGEN_IDENTS},
     match_ok,
     resolve::{
         constants::{event_var, event_variant},
@@ -11,8 +12,6 @@ use crate::{
         Crate, ItemEvent, ENGINE_TRAITS,
     },
 };
-
-use super::{traits::trait_defs, util::vec_to_path, Crates, CODEGEN_IDENTS};
 
 pub fn events_enum(events: &Vec<ItemEvent>) -> TokenStream {
     let CodegenIdents {

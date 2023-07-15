@@ -1,7 +1,16 @@
 #![feature(pattern)]
 
+pub mod constants;
 pub mod file;
-pub mod parse_args;
-pub mod util;
-pub mod util_macros;
-pub use shared_macros as macros;
+mod macro_args;
+pub mod traits;
+mod util_macros;
+
+pub mod parsing {
+    pub use crate::macro_args::{ComponentMacroArgs, GlobalMacroArgs, SystemMacroArgs};
+}
+
+pub mod macros {
+    pub use crate::{hash_map, let_mut_vecs};
+    pub use shared_macros::expand_enum;
+}

@@ -3,3 +3,4 @@ sdl
 test.*
 *.dll
 .vscode
+build.txt
