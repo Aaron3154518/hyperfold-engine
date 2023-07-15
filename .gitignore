@@ -1,6 +1,5 @@
 target
 sdl
-test.*
 *.dll
 .vscode
 build.txt

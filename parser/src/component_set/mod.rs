@@ -2,6 +2,7 @@ mod codegen;
 mod labels;
 mod parse;
 mod resolve;
+pub mod test;
 
 pub use codegen::{BuildSetsArg, BuildSetsResult};
 pub use labels::ComponentSetLabels;
