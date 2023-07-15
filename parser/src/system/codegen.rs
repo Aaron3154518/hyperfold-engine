@@ -2,16 +2,17 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use shared::{
     match_ok,
-    msg_result::{MsgResult, Zip4Msgs},
+    msg_result::{CombineMsgs, MsgResult, Zip4Msgs},
     traits::{CollectVec, CollectVecInto},
 };
 
 use crate::{
     codegen::Crates,
     component_set::{BuildSetsArg, BuildSetsResult, ComponentSet},
-    resolve::{Items, ENGINE_PATHS, ENGINE_TRAITS},
+    resolve::Items,
     utils::{
         idents::{event_variant, global_var, CodegenIdents, CODEGEN_IDENTS},
+        paths::{ENGINE_PATHS, ENGINE_TRAITS},
         syn::Quote,
     },
 };

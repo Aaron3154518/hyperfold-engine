@@ -12,6 +12,6 @@ pub mod parsing {
 }
 
 pub mod macros {
-    pub use crate::{hash_map, let_mut_vecs};
+    pub use crate::{hash_map, let_mut_vecs, traits::ExpandEnum};
     pub use shared_macros::expand_enum;
 }

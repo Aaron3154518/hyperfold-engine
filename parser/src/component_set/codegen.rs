@@ -9,12 +9,12 @@ use shared::{
 use crate::{
     codegen::Crates,
     parse::ComponentSymbol,
-    resolve::ENGINE_PATHS,
     system::ComponentSetFnArg,
     utils::{
         idents::{
             component_set_keys_fn, component_set_var, component_var, CodegenIdents, CODEGEN_IDENTS,
         },
+        paths::ENGINE_PATHS,
         syn::{get_fn_name, Quote},
     },
 };

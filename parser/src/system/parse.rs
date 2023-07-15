@@ -7,9 +7,10 @@ use shared::{
 
 use crate::{
     parse::{
-        AstAttribute, AstFunction, AstItem, DiscardSymbol, HardcodedSymbol, MatchSymbol, ModInfo,
+        resolve_syn_path, AstAttribute, AstFunction, AstItem, DiscardSymbol, HardcodedSymbol,
+        ItemPath, MatchSymbol, ModInfo, ResolveResultTrait,
     },
-    resolve::{resolve_syn_path, ItemPath, Items, ResolveResultTrait},
+    resolve::Items,
 };
 
 #[derive(Clone, Debug)]

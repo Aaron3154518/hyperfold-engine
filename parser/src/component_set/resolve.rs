@@ -10,9 +10,11 @@ use super::{
 };
 use crate::{
     err,
-    parse::{ComponentSymbol, DiscardSymbol, MatchSymbol, ModInfo},
+    parse::{
+        resolve_path, ComponentSymbol, DiscardSymbol, ItemPath, MatchSymbol, ModInfo,
+        ResolveResultTrait,
+    },
     parse_expect,
-    resolve::{resolve_path, ItemPath, ResolveResultTrait},
 };
 use shared::{
     msg_result::{CombineMsgs, MsgResult, Zip2Msgs},

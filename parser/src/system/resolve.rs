@@ -3,12 +3,13 @@ use std::collections::{HashMap, HashSet};
 use shared::{
     constants::TAB,
     msg_result::{CombineMsgs, MsgResult, MsgTrait},
-    traits::{CollectVec, CollectVecInto, ThenOk},
+    traits::{CollectVec, CollectVecInto, PushInto, ThenOk},
 };
 
 use crate::{
     component_set::{ComponentSet, ComponentSetLabels},
-    resolve::{ItemEvent, ItemGlobal, Items, ENGINE_PATHS},
+    resolve::{ItemEvent, ItemGlobal, Items},
+    utils::paths::ENGINE_PATHS,
 };
 
 use super::{

@@ -1,46 +1,36 @@
-use quote::quote;
-use std::{collections::VecDeque, env::temp_dir, fs, path::PathBuf};
-
-use crate::{
-    codegen::{self as codegen, Crates, Traits},
-    parse::{
-        AstCrate, AstMod, AstUse, ComponentSymbol, DiscardSymbol, GlobalSymbol, HardcodedSymbol,
-        MatchSymbol, Symbol, SymbolType,
-    },
-    resolve::{
-        constants::{INDEX, INDEX_SEP, NAMESPACE},
-        paths::{NAMESPACE_USE_STMTS, TRAITS},
-        util::{CombineMsgs, Zip2Msgs, Zip4Msgs, Zip5Msgs, Zip6Msgs, Zip7Msgs, Zip8Msgs, Zip9Msgs},
-    },
-    resolve::{
-        function_arg::{FnArg, FnArgType},
-        paths::{Crate, EnginePaths},
-        resolve_path::resolve_path,
-    },
-    system::ItemSystem,
-    util::end,
-};
 use proc_macro2::{token_stream::IntoIter, TokenStream, TokenTree};
+use quote::quote;
 use quote::ToTokens;
-use shared::{
-    match_ok,
-    msg_result::{CombineMsgs, Zip2Msgs},
-    traits::{
-        Call, Catch, CollectVec, CollectVecInto, FindFrom, Get, HandleErr, Increment, PushInto,
-        SplitAround,
-    },
-};
-
-use shared::parse_args::{ComponentMacroArgs, GlobalMacroArgs, SystemMacroArgs};
+use shared::msg_result::Zip8Msgs;
+use std::{collections::VecDeque, env::temp_dir, fs, path::PathBuf};
 use syn::{
     parenthesized, parse_macro_input, spanned::Spanned, token::Trait, Error, PatType, Token,
 };
 
-use super::{
+use crate::{
+    codegen::{self as codegen, Crates, Traits},
     component_set::ComponentSet,
-    parse_macro_call::{parse_macro_calls, update_macro_calls, ParseMacroCall},
-    paths::ExpandEnum,
-    resolve_path::{ItemPath, ResolveResultTrait},
+    parse::{
+        resolve_path, AstCrate, AstMod, AstUse, ComponentSymbol, DiscardSymbol, GlobalSymbol,
+        HardcodedSymbol, ItemPath, MatchSymbol, ResolveResultTrait, Symbol, SymbolType,
+    },
+    system::ItemSystem,
+    utils::{
+        constants::NAMESPACE,
+        paths::{Crate, EnginePaths, NAMESPACE_USE_STMTS, TRAITS},
+    },
+};
+
+use shared::{
+    constants::{INDEX, INDEX_SEP},
+    macros::ExpandEnum,
+    match_ok,
+    msg_result::{CombineMsgs, Zip2Msgs},
+    parsing::{ComponentMacroArgs, GlobalMacroArgs, SystemMacroArgs},
+    traits::{
+        Call, Catch, CollectVec, CollectVecInto, FindFrom, GetResult, HandleErr, Increment,
+        PushInto, SplitAround,
+    },
 };
 
 #[derive(Debug)]

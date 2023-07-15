@@ -2,7 +2,7 @@ use once_cell::sync::Lazy;
 
 use quote::format_ident;
 
-use crate::resolve::{ExpandEnum, ENGINE_GLOBALS, ENGINE_TRAITS};
+use super::paths::{ENGINE_GLOBALS, ENGINE_TRAITS};
 
 use super::constants::NAMESPACE;
 

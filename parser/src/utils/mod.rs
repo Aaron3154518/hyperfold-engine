@@ -1,4 +1,5 @@
 pub mod idents;
+pub mod paths;
 pub mod syn;
 
 pub mod constants {

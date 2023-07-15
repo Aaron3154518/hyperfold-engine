@@ -1,20 +1,26 @@
 use std::{fs, path::PathBuf};
 
 use proc_macro2::TokenStream;
-use shared::{
-    msg_result::MsgResult,
-    parsing::{ComponentMacroArgs, GlobalMacroArgs},
-    traits::{Catch, PushInto},
-};
+
 use syn::visit::Visit;
 
 use crate::{
     parse::attributes::{get_attributes_if_active, Attribute, EcsAttribute},
-    resolve::{CratePath, ExpandEnum, ItemPath, ENGINE_PATHS, MACRO_PATHS},
-    utils::syn::{add_use_item, use_path_from_syn},
+    parse::ItemPath,
+    utils::{
+        paths::{CratePath, ENGINE_PATHS, MACRO_PATHS},
+        syn::{add_use_item, use_path_from_syn},
+    },
 };
 
 use super::attributes::AstAttribute;
+
+use shared::{
+    macros::{expand_enum, ExpandEnum},
+    msg_result::MsgResult,
+    parsing::{ComponentMacroArgs, GlobalMacroArgs},
+    traits::{Catch, PushInto},
+};
 
 #[derive(Debug)]
 pub struct AstStruct {
@@ -45,7 +51,7 @@ pub struct AstItem<Data> {
 
 // Symbol with path - Edit this to add new engine items
 #[derive(Eq, PartialEq)]
-#[shared::macros::expand_enum]
+#[expand_enum]
 pub enum HardcodedSymbol {
     // Macros crate
     ComponentMacro,

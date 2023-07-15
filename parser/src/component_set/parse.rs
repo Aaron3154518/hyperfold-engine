@@ -2,7 +2,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{spanned::Spanned, Error, Token};
 
-use crate::{err, parse_expect, resolve::ItemPath};
+use crate::{err, parse::ItemPath, parse_expect};
 
 use shared::traits::CollectVec;
 

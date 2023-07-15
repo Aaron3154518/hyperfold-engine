@@ -2,35 +2,24 @@ use once_cell::sync::Lazy;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
-use shared::traits::{Call, CollectVec, PushInto};
+use shared::{
+    macros::{expand_enum, ExpandEnum},
+    match_ok,
+    msg_result::{MsgResult, Zip7Msgs},
+    traits::{Call, CollectVec, PushInto},
+};
 
 use crate::{
-    codegen::{util::vec_to_path, Crates},
-    match_ok,
-    parse::{DiscardSymbol, GlobalSymbol, MatchSymbol},
-    resolve::{
-        constants::{global_var, NAMESPACE},
-        util::Zip7Msgs,
+    codegen::Crates,
+    parse::{
+        resolve_path_from_crate, DiscardSymbol, GlobalSymbol, ItemPath, MatchSymbol,
+        ResolveResultTrait,
     },
-    util::end,
+    utils::{constants::NAMESPACE, idents::global_var, syn::vec_to_path},
 };
-
-use super::{
-    resolve_path::{ItemPath, ResolveResultTrait},
-    resolve_path_from_crate,
-    util::MsgResult,
-};
-
-pub trait ExpandEnum<const N: usize>
-where
-    Self: Sized,
-{
-    const LEN: usize = N;
-    const VARIANTS: [Self; N];
-}
 
 // All named crate indices
-#[shared::macros::expand_enum]
+#[expand_enum]
 pub enum Crate {
     Main,
     Engine,
