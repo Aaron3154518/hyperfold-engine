@@ -1,7 +1,7 @@
 use parse_cfg::Cfg;
 use quote::ToTokens;
 
-use crate::util::parse_vec_path;
+use crate::util::use_path_from_vec;
 use shared::util::NoneOr;
 
 #[derive(Clone, Debug)]
@@ -75,7 +75,7 @@ pub fn get_attributes(attrs: &Vec<syn::Attribute>, path: &Vec<String>) -> Vec<At
         .iter()
         .map(|a| {
             parse_attr_args(
-                Attribute::from(parse_vec_path(
+                Attribute::from(use_path_from_vec(
                     path,
                     &a.path()
                         .segments

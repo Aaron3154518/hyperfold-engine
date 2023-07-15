@@ -4,8 +4,8 @@ use crate::{
     parse::{
         AstCrate, ModInfo, {AstMod, Symbol},
     },
-    resolve::util::MsgsResult,
-    util::parse_syn_path,
+    resolve::util::MsgResult,
+    util::use_path_from_syn,
 };
 use shared::util::Catch;
 
@@ -199,15 +199,15 @@ pub fn resolve_syn_path<'a>(
     path: &syn::Path,
     (m, cr, crates): ModInfo<'a>,
 ) -> ResolveResult<'a> {
-    resolve_path(parse_syn_path(&m.path, path), (m, cr, crates))
+    resolve_path(use_path_from_syn(&m.path, path), (m, cr, crates))
 }
 
 pub trait ResolveResultTrait<'a> {
-    fn expect_symbol(self) -> MsgsResult<&'a Symbol>;
+    fn expect_symbol(self) -> MsgResult<&'a Symbol>;
 }
 
 impl<'a> ResolveResultTrait<'a> for ResolveResult<'a> {
-    fn expect_symbol(self) -> MsgsResult<&'a Symbol> {
+    fn expect_symbol(self) -> MsgResult<&'a Symbol> {
         match self {
             Ok(sym) => Ok(sym),
             Err(e) => Err(vec![format!(

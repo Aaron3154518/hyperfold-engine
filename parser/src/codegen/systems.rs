@@ -7,16 +7,16 @@ use crate::{
         util::{vec_to_path, Quote},
         Crates,
     },
-    constants::{CodegenIdents, CODEGEN_IDENTS},
     match_ok,
     resolve::{
         constants::{component_set_keys_fn, component_set_var, event_variant, global_var},
         util::{
-            CombineMsgs, FlattenMsgs, MsgTrait, MsgsResult, Zip2Msgs, Zip3Msgs, Zip4Msgs, Zip6Msgs,
+            CombineMsgs, FlattenMsgs, MsgResult, MsgTrait, Zip2Msgs, Zip3Msgs, Zip4Msgs, Zip6Msgs,
         },
         ComponentSet, ComponentSetFnArg, EventFnArg, FnArgType, FnArgs, GlobalFnArg, ItemSystem,
         Items, ENGINE_PATHS, ENGINE_TRAITS,
     },
+    utils::{CodegenIdents, CODEGEN_IDENTS},
 };
 
 fn codegen_init_system(mut global_args: Vec<GlobalFnArg>, func_name: syn::Path) -> TokenStream {
@@ -118,7 +118,7 @@ fn codegen_systems(
         event_trait,
         intersect,
     }: CodegenArgs,
-) -> MsgsResult<TokenStream> {
+) -> MsgResult<TokenStream> {
     match args {
         FnArgs::Init { globals } => Ok(codegen_init_system(globals, func_name)),
         FnArgs::System {
@@ -161,7 +161,7 @@ pub struct SystemsCodegenResult {
 }
 
 // TODO: handle erros
-pub fn systems(cr_idx: usize, items: &Items, crates: &Crates) -> MsgsResult<SystemsCodegenResult> {
+pub fn systems(cr_idx: usize, items: &Items, crates: &Crates) -> MsgResult<SystemsCodegenResult> {
     let event_trait = crates.get_syn_path(cr_idx, &ENGINE_TRAITS.add_event);
     let intersect = crates.get_syn_path(cr_idx, &ENGINE_PATHS.intersect);
 

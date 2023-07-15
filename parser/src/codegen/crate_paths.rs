@@ -2,7 +2,7 @@ use shared::util::{AndThen, Get2D, JoinMap, JoinMapInto, NoneOr};
 
 use crate::parse::AstCrate;
 use crate::resolve::constants::NAMESPACE;
-use crate::resolve::util::MsgsResult;
+use crate::resolve::util::MsgResult;
 use crate::resolve::{Crate, CratePath, ExpandEnum, ItemPath};
 
 use super::util::vec_to_path;
@@ -83,7 +83,7 @@ impl Crates {
         self.paths.get(start_idx, end_idx).and_then(|v| v.clone())
     }
 
-    pub fn get_crate_syn_path(&self, start_idx: usize, end_idx: usize) -> MsgsResult<syn::Path> {
+    pub fn get_crate_syn_path(&self, start_idx: usize, end_idx: usize) -> MsgResult<syn::Path> {
         self.get_crate_path(start_idx, end_idx)
             .map(|v| vec_to_path(v))
             .ok_or(vec![format!("No path from {start_idx} to {end_idx}")])
@@ -93,13 +93,13 @@ impl Crates {
         self.get_crate_path(start_idx, self.get_crate_index(cr))
     }
 
-    pub fn get_named_crate_syn_path(&self, start_idx: usize, cr: Crate) -> MsgsResult<syn::Path> {
+    pub fn get_named_crate_syn_path(&self, start_idx: usize, cr: Crate) -> MsgResult<syn::Path> {
         self.get_named_crate_path(start_idx, cr)
             .map(|v| vec_to_path(v))
             .ok_or(vec![format!("No path from {start_idx} to {cr:#?} crate")])
     }
 
-    pub fn get_item_path(&self, start_idx: usize, path: &ItemPath) -> MsgsResult<Vec<String>> {
+    pub fn get_item_path(&self, start_idx: usize, path: &ItemPath) -> MsgResult<Vec<String>> {
         let i = if path.path.starts_with(&["crate".to_string()]) {
             1
         } else {
@@ -114,7 +114,7 @@ impl Crates {
         )
     }
 
-    pub fn get_path(&self, start_idx: usize, item: &CratePath) -> MsgsResult<Vec<String>> {
+    pub fn get_path(&self, start_idx: usize, item: &CratePath) -> MsgResult<Vec<String>> {
         self.get_item_path(
             start_idx,
             &ItemPath {
@@ -124,11 +124,11 @@ impl Crates {
         )
     }
 
-    pub fn get_item_syn_path(&self, start_idx: usize, path: &ItemPath) -> MsgsResult<syn::Path> {
+    pub fn get_item_syn_path(&self, start_idx: usize, path: &ItemPath) -> MsgResult<syn::Path> {
         self.get_item_path(start_idx, path).map(|v| vec_to_path(v))
     }
 
-    pub fn get_syn_path(&self, start_idx: usize, item: &CratePath) -> MsgsResult<syn::Path> {
+    pub fn get_syn_path(&self, start_idx: usize, item: &CratePath) -> MsgResult<syn::Path> {
         self.get_path(start_idx, item).map(|v| vec_to_path(v))
     }
 

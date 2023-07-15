@@ -3,6 +3,7 @@
 pub mod constants;
 pub mod file;
 mod macro_args;
+pub mod msg_result;
 pub mod traits;
 mod util_macros;
 

@@ -13,12 +13,12 @@ use syn::parse::Lookahead1;
 
 use crate::{
     parse::{AstCrate, AstMod, DiscardSymbol, HardcodedSymbol, MatchSymbol, ModInfo},
-    resolve::util::{ItemIndex, MsgsResult},
+    resolve::util::{ItemIndex, MsgResult},
     resolve::{
         path::{resolve_path, ItemPath},
         paths::EnginePaths,
     },
-    util::{parse_syn_path, TAB},
+    util::{use_path_from_syn, TAB},
 };
 
 use super::{
@@ -84,7 +84,7 @@ impl ComponentRefTracker {
         }
     }
 
-    pub fn validate(&self, comp_name: String) -> MsgsResult<()> {
+    pub fn validate(&self, comp_name: String) -> MsgResult<()> {
         let (mut_cnt, immut_cnt) = (self.mut_refs.len(), self.immut_refs.len());
 
         (mut_cnt > 1)
@@ -116,7 +116,7 @@ impl ComponentRefTracker {
 }
 
 impl ItemSystem {
-    pub fn validate(&self, items: &Items) -> MsgsResult<FnArgs> {
+    pub fn validate(&self, items: &Items) -> MsgResult<FnArgs> {
         let mut global_idxs = HashSet::new();
 
         if self.attr_args.is_init {
@@ -204,7 +204,7 @@ impl ItemSystem {
         i: usize,
         globals: &mut HashSet<usize>,
         items: &'a Items,
-    ) -> MsgsResult<&'a ItemGlobal> {
+    ) -> MsgResult<&'a ItemGlobal> {
         items
             .globals
             .get(i)
@@ -224,7 +224,7 @@ impl ItemSystem {
             )
     }
 
-    fn validate_event<'a>(arg: &FnArg, i: usize, items: &'a Items) -> MsgsResult<&'a ItemEvent> {
+    fn validate_event<'a>(arg: &FnArg, i: usize, items: &'a Items) -> MsgResult<&'a ItemEvent> {
         items
             .events
             .get(i)
@@ -239,7 +239,7 @@ impl ItemSystem {
         is_vec: bool,
         component_refs: &mut HashMap<usize, ComponentRefTracker>,
         items: &'a Items,
-    ) -> MsgsResult<&'a ComponentSet> {
+    ) -> MsgResult<&'a ComponentSet> {
         let entities = ENGINE_PATHS.entities.get_ident();
 
         items
@@ -290,7 +290,7 @@ impl ItemSystem {
     }
 
     // Validate conditions
-    fn validate_ref(arg: &FnArg, should_be_cnt: usize) -> MsgsResult<()> {
+    fn validate_ref(arg: &FnArg, should_be_cnt: usize) -> MsgResult<()> {
         (arg.ref_cnt == should_be_cnt).ok(
             (),
             vec![format!(
@@ -307,7 +307,7 @@ impl ItemSystem {
         )
     }
 
-    fn validate_mut(arg: &FnArg, should_be_mut: bool) -> MsgsResult<()> {
+    fn validate_mut(arg: &FnArg, should_be_mut: bool) -> MsgResult<()> {
         (arg.is_mut == should_be_mut).ok(
             (),
             vec![format!(
@@ -359,7 +359,7 @@ impl FnArg {
         items: &Items,
         sig: &syn::Signature,
         (m, cr, crates): ModInfo,
-    ) -> MsgsResult<Vec<Self>> {
+    ) -> MsgResult<Vec<Self>> {
         sig.inputs
             .iter()
             .map_vec_into(|arg| match arg {
@@ -381,7 +381,7 @@ impl FnArg {
             })
     }
 
-    fn parse_type(ty: &syn::Type, (m, cr, crates): ModInfo) -> MsgsResult<Self> {
+    fn parse_type(ty: &syn::Type, (m, cr, crates): ModInfo) -> MsgResult<Self> {
         let ty_str = ty.to_token_stream().to_string();
         match ty {
             syn::Type::Path(p) => {

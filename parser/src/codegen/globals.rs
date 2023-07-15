@@ -4,13 +4,13 @@ use shared::util::{JoinMap, JoinMapInto};
 
 use crate::{
     codegen::{util::vec_to_path, Crates},
-    constants::{CodegenIdents, CODEGEN_IDENTS},
     match_ok,
     resolve::{
         constants::global_var,
-        util::{CombineMsgs, MsgsResult},
+        util::{CombineMsgs, MsgResult},
         ItemGlobal,
     },
+    utils::{CodegenIdents, CODEGEN_IDENTS},
 };
 
 struct CodegenArgs<'a> {
@@ -45,7 +45,7 @@ pub fn globals(
     cr_idx: usize,
     globals: &Vec<ItemGlobal>,
     crates: &Crates,
-) -> MsgsResult<TokenStream> {
+) -> MsgResult<TokenStream> {
     let vars = (0..globals.len()).map_vec_into(|i| global_var(i));
     let types = globals
         .map_vec(|g| {

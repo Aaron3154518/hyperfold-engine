@@ -9,9 +9,9 @@ use syn::visit::Visit;
 
 use crate::{
     parse::attributes::{get_attributes_if_active, Attribute, EcsAttribute},
-    resolve::util::MsgsResult,
+    resolve::util::MsgResult,
     resolve::{CratePath, ExpandEnum, ItemPath, ENGINE_PATHS, MACRO_PATHS},
-    util::{add_path_item, end, parse_syn_path},
+    util::{add_use_item, end, use_path_from_syn},
 };
 
 use super::attributes::AstAttribute;
@@ -144,83 +144,83 @@ impl Symbol {
 }
 
 pub trait MatchSymbol<'a> {
-    fn expect_component(self) -> MsgsResult<(&'a Symbol, ComponentSymbol)>;
+    fn expect_component(self) -> MsgResult<(&'a Symbol, ComponentSymbol)>;
 
-    fn expect_global(self) -> MsgsResult<(&'a Symbol, GlobalSymbol)>;
+    fn expect_global(self) -> MsgResult<(&'a Symbol, GlobalSymbol)>;
 
-    fn expect_trait(self) -> MsgsResult<(&'a Symbol, GlobalSymbol)>;
+    fn expect_trait(self) -> MsgResult<(&'a Symbol, GlobalSymbol)>;
 
-    fn expect_global_or_trait(self) -> MsgsResult<(&'a Symbol, GlobalSymbol)>;
+    fn expect_global_or_trait(self) -> MsgResult<(&'a Symbol, GlobalSymbol)>;
 
-    fn expect_event(self) -> MsgsResult<(&'a Symbol, usize)>;
+    fn expect_event(self) -> MsgResult<(&'a Symbol, usize)>;
 
-    fn expect_system(self) -> MsgsResult<(&'a Symbol, usize)>;
+    fn expect_system(self) -> MsgResult<(&'a Symbol, usize)>;
 
-    fn expect_component_set(self) -> MsgsResult<(&'a Symbol, usize)>;
+    fn expect_component_set(self) -> MsgResult<(&'a Symbol, usize)>;
 
-    fn expect_any_hardcoded(self) -> MsgsResult<(&'a Symbol, HardcodedSymbol)>;
+    fn expect_any_hardcoded(self) -> MsgResult<(&'a Symbol, HardcodedSymbol)>;
 
-    fn expect_hardcoded(self, sym: HardcodedSymbol) -> MsgsResult<&'a Symbol>;
+    fn expect_hardcoded(self, sym: HardcodedSymbol) -> MsgResult<&'a Symbol>;
 }
 
-impl<'a> MatchSymbol<'a> for MsgsResult<&'a Symbol> {
-    fn expect_component(self) -> MsgsResult<(&'a Symbol, ComponentSymbol)> {
+impl<'a> MatchSymbol<'a> for MsgResult<&'a Symbol> {
+    fn expect_component(self) -> MsgResult<(&'a Symbol, ComponentSymbol)> {
         self.and_then(|arg| match arg.kind {
             SymbolType::Component(c_sym) => Ok((arg, c_sym)),
             _ => Err(vec![arg.panic_msg("Component")]),
         })
     }
 
-    fn expect_global(self) -> MsgsResult<(&'a Symbol, GlobalSymbol)> {
+    fn expect_global(self) -> MsgResult<(&'a Symbol, GlobalSymbol)> {
         self.and_then(|arg| match arg.kind {
             SymbolType::Global(g_sym) => Ok((arg, g_sym)),
             _ => Err(vec![arg.panic_msg("Global")]),
         })
     }
 
-    fn expect_trait(self) -> MsgsResult<(&'a Symbol, GlobalSymbol)> {
+    fn expect_trait(self) -> MsgResult<(&'a Symbol, GlobalSymbol)> {
         self.and_then(|arg| match arg.kind {
             SymbolType::Trait(g_sym) => Ok((arg, g_sym)),
             _ => Err(vec![arg.panic_msg("Trait")]),
         })
     }
 
-    fn expect_global_or_trait(self) -> MsgsResult<(&'a Symbol, GlobalSymbol)> {
+    fn expect_global_or_trait(self) -> MsgResult<(&'a Symbol, GlobalSymbol)> {
         self.and_then(|arg| match arg.kind {
             SymbolType::Global(g_sym) | SymbolType::Trait(g_sym) => Ok((arg, g_sym)),
             _ => Err(vec![arg.panic_msg("Trait or Global")]),
         })
     }
 
-    fn expect_event(self) -> MsgsResult<(&'a Symbol, usize)> {
+    fn expect_event(self) -> MsgResult<(&'a Symbol, usize)> {
         self.and_then(|arg| match arg.kind {
             SymbolType::Event(i) => Ok((arg, i)),
             _ => Err(vec![arg.panic_msg("Event")]),
         })
     }
 
-    fn expect_system(self) -> MsgsResult<(&'a Symbol, usize)> {
+    fn expect_system(self) -> MsgResult<(&'a Symbol, usize)> {
         self.and_then(|arg| match arg.kind {
             SymbolType::System(i) => Ok((arg, i)),
             _ => Err(vec![arg.panic_msg("System")]),
         })
     }
 
-    fn expect_component_set(self) -> MsgsResult<(&'a Symbol, usize)> {
+    fn expect_component_set(self) -> MsgResult<(&'a Symbol, usize)> {
         self.and_then(|arg| match arg.kind {
             SymbolType::ComponentSet(i) => Ok((arg, i)),
             _ => Err(vec![arg.panic_msg("Component Set")]),
         })
     }
 
-    fn expect_any_hardcoded(self) -> MsgsResult<(&'a Symbol, HardcodedSymbol)> {
+    fn expect_any_hardcoded(self) -> MsgResult<(&'a Symbol, HardcodedSymbol)> {
         self.and_then(|arg| match arg.kind {
             SymbolType::Hardcoded(sym) => Ok((arg, sym)),
             _ => Err(vec![arg.panic_msg("Hardcoded Path")]),
         })
     }
 
-    fn expect_hardcoded(self, sym: HardcodedSymbol) -> MsgsResult<&'a Symbol> {
+    fn expect_hardcoded(self, sym: HardcodedSymbol) -> MsgResult<&'a Symbol> {
         self.expect_any_hardcoded()
             .and_then(|(s, h_sym)| match h_sym == sym {
                 true => Ok(s),
@@ -231,11 +231,11 @@ impl<'a> MatchSymbol<'a> for MsgsResult<&'a Symbol> {
 
 // Helper function to just get the data from a resolved symbol
 pub trait DiscardSymbol<T> {
-    fn discard_symbol(self) -> MsgsResult<T>;
+    fn discard_symbol(self) -> MsgResult<T>;
 }
 
-impl<T> DiscardSymbol<T> for MsgsResult<(&Symbol, T)> {
-    fn discard_symbol(self) -> MsgsResult<T> {
+impl<T> DiscardSymbol<T> for MsgResult<(&Symbol, T)> {
+    fn discard_symbol(self) -> MsgResult<T> {
         self.map(|(_, t)| t)
     }
 }
@@ -429,7 +429,7 @@ impl AstMod {
             // Some is for macro_rules!
             if i.ident.is_none() {
                 self.items.macro_calls.push(AstItem {
-                    path: parse_syn_path(&self.path, &i.mac.path),
+                    path: use_path_from_syn(&self.path, &i.mac.path),
                     data: AstMacroCall { args: i.mac.tokens },
                 });
             }
@@ -475,7 +475,7 @@ impl AstMod {
         path: &mut Vec<String>,
         items: Vec<AstUse>,
     ) -> Vec<AstUse> {
-        add_path_item(&self.path, path, i.ident.to_string());
+        add_use_item(&self.path, path, i.ident.to_string());
         self.visit_use_tree(*i.tree, path, items)
     }
 
@@ -485,7 +485,7 @@ impl AstMod {
         path: &mut Vec<String>,
         mut items: Vec<AstUse>,
     ) -> Vec<AstUse> {
-        add_path_item(&self.path, path, i.ident.to_string());
+        add_use_item(&self.path, path, i.ident.to_string());
         items.push(AstUse {
             ident: path.last().expect("Empty use path with 'self'").to_string(),
             path: path.to_vec(),

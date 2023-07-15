@@ -6,13 +6,13 @@ use shared::util::{AndThen, JoinMap, JoinMapInto, ThenOk};
 
 use crate::{
     codegen::{traits::trait_defs, util::vec_to_path, Crates},
-    constants::{CodegenIdents, CODEGEN_IDENTS},
     match_ok,
     resolve::{
         constants::component_var,
-        util::{CombineMsgs, MsgsResult, Zip2Msgs, Zip5Msgs},
+        util::{CombineMsgs, MsgResult, Zip2Msgs, Zip5Msgs},
         Crate, ItemComponent, ENGINE_GLOBALS, ENGINE_PATHS, ENGINE_TRAITS,
     },
+    utils::{CodegenIdents, CODEGEN_IDENTS},
 };
 
 struct CodegenArgs<'a> {
@@ -93,7 +93,7 @@ pub fn components(
     cr_idx: usize,
     components: &Vec<ItemComponent>,
     crates: &Crates,
-) -> MsgsResult<TokenStream> {
+) -> MsgResult<TokenStream> {
     let vars = (0..components.len()).map_vec_into(|i| component_var(i));
     let types = components
         .map_vec(|c| {
@@ -133,7 +133,7 @@ pub fn component_trait_defs(
     cr_idx: usize,
     components: &Vec<ItemComponent>,
     crates: &Crates,
-) -> MsgsResult<TokenStream> {
+) -> MsgResult<TokenStream> {
     trait_defs(
         cr_idx,
         crates,
@@ -148,7 +148,7 @@ pub fn component_trait_impls(
     cr_idx: usize,
     components: &Vec<ItemComponent>,
     crates: &Crates,
-) -> MsgsResult<TokenStream> {
+) -> MsgResult<TokenStream> {
     let macro_cr_idx = crates.get_crate_index(Crate::Macros);
 
     let types = components

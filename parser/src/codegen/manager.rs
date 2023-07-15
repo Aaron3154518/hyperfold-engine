@@ -5,12 +5,12 @@ use shared::util::JoinMapInto;
 
 use crate::{
     codegen::{component_sets, systems, systems::SystemsCodegenResult, Crates},
-    constants::{CodegenIdents, CODEGEN_IDENTS},
     match_ok,
     resolve::{
-        util::{CombineMsgs, MsgsResult, Zip2Msgs, Zip4Msgs, Zip5Msgs, Zip7Msgs},
+        util::{CombineMsgs, MsgResult, Zip2Msgs, Zip4Msgs, Zip5Msgs, Zip7Msgs},
         Crate, EngineGlobalPaths, Items, ENGINE_GLOBALS, ENGINE_PATHS, ENGINE_TRAITS,
     },
+    utils::{CodegenIdents, CODEGEN_IDENTS},
 };
 
 pub fn manager_def() -> TokenStream {
@@ -41,7 +41,7 @@ pub fn manager_def() -> TokenStream {
 }
 
 // Function to set initial events on each tick
-fn init_events_fn(cr_idx: usize, items: &Items, crates: &Crates) -> MsgsResult<TokenStream> {
+fn init_events_fn(cr_idx: usize, items: &Items, crates: &Crates) -> MsgResult<TokenStream> {
     let CodegenIdents {
         events, events_var, ..
     } = &*CODEGEN_IDENTS;
@@ -75,7 +75,7 @@ fn init_events_fn(cr_idx: usize, items: &Items, crates: &Crates) -> MsgsResult<T
     )
 }
 
-pub fn manager_impl(cr_idx: usize, items: &Items, crates: &Crates) -> MsgsResult<TokenStream> {
+pub fn manager_impl(cr_idx: usize, items: &Items, crates: &Crates) -> MsgResult<TokenStream> {
     let CodegenIdents {
         manager,
         globals,

@@ -4,13 +4,13 @@ use shared::util::{JoinMap, JoinMapInto};
 
 use crate::{
     codegen::{traits::trait_defs, util::vec_to_path, Crates},
-    constants::{CodegenIdents, CODEGEN_IDENTS},
     match_ok,
     resolve::{
         constants::{event_var, event_variant},
-        util::{CombineMsgs, MsgsResult, Zip2Msgs, Zip3Msgs, Zip5Msgs},
+        util::{CombineMsgs, MsgResult, Zip2Msgs, Zip3Msgs, Zip5Msgs},
         Crate, ItemEvent, ENGINE_TRAITS,
     },
+    utils::{CodegenIdents, CODEGEN_IDENTS},
 };
 
 pub fn events_enum(events: &Vec<ItemEvent>) -> TokenStream {
@@ -32,7 +32,7 @@ pub fn events_enum(events: &Vec<ItemEvent>) -> TokenStream {
     )
 }
 
-pub fn events(cr_idx: usize, events: &Vec<ItemEvent>, crates: &Crates) -> MsgsResult<TokenStream> {
+pub fn events(cr_idx: usize, events: &Vec<ItemEvent>, crates: &Crates) -> MsgResult<TokenStream> {
     let CodegenIdents {
         events: events_type,
         event_enum,
@@ -100,7 +100,7 @@ pub fn event_trait_defs(
     cr_idx: usize,
     events: &Vec<ItemEvent>,
     crates: &Crates,
-) -> MsgsResult<TokenStream> {
+) -> MsgResult<TokenStream> {
     trait_defs(
         cr_idx,
         crates,
@@ -115,7 +115,7 @@ pub fn event_trait_impls(
     cr_idx: usize,
     events: &Vec<ItemEvent>,
     crates: &Crates,
-) -> MsgsResult<TokenStream> {
+) -> MsgResult<TokenStream> {
     let macro_cr_idx = crates.get_crate_index(Crate::Macros);
 
     let (vars, variants) = (0..events.len()).unzip_vec_into(|i| (event_var(i), event_variant(i)));

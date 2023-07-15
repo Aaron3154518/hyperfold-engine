@@ -4,12 +4,12 @@ use shared::util::{JoinMap, JoinMapInto};
 
 use crate::{
     codegen::util::vec_to_path,
-    constants::{CodegenIdents, CODEGEN_IDENTS},
     match_ok,
     resolve::{
-        util::{MsgsResult, Zip2Msgs},
+        util::{MsgResult, Zip2Msgs},
         Crate, CratePath, ItemPath,
     },
+    utils::{CodegenIdents, CODEGEN_IDENTS},
 };
 
 use super::Crates;
@@ -21,7 +21,7 @@ pub fn trait_defs<T, F>(
     get_item_path: F,
     trait_ident: &syn::Ident,
     trait_source: &CratePath,
-) -> MsgsResult<TokenStream>
+) -> MsgResult<TokenStream>
 where
     F: for<'a> Fn(&'a T) -> &'a ItemPath,
 {

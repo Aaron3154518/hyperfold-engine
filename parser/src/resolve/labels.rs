@@ -9,7 +9,7 @@ use crate::parse::ComponentSymbol;
 
 use super::{
     component_set::{LabelItem, LabelOp},
-    util::MsgsResult,
+    util::MsgResult,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]

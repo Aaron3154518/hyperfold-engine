@@ -1,48 +1,5 @@
-use std::{iter::Map, path::PathBuf};
-
 use regex::Regex;
-use shared::util::SplitCollect;
-
-pub const TAB: &str = "  ";
-
-#[inline]
-pub fn end<T>(v: &Vec<T>, off: usize) -> usize {
-    v.len().max(off) - off
-}
-
-// Manage use statements
-pub fn add_path_item(parent_path: &Vec<String>, path: &mut Vec<String>, item: String) {
-    match item.as_str() {
-        "super" => {
-            if path.is_empty() {
-                *path = parent_path[..end(&parent_path, 1)].to_vec();
-            } else {
-                path.pop();
-            }
-        }
-        "self" => {
-            if path.is_empty() {
-                *path = parent_path.to_vec();
-            }
-        }
-        _ => path.push(item),
-    }
-}
-
-pub fn parse_vec_path(parent_path: &Vec<String>, path: &Vec<String>) -> Vec<String> {
-    let mut res_path: Vec<String> = Vec::new();
-    for p in path {
-        add_path_item(parent_path, &mut res_path, p.to_string())
-    }
-    res_path
-}
-
-pub fn parse_syn_path(parent_path: &Vec<String>, path: &syn::Path) -> Vec<String> {
-    parse_vec_path(
-        parent_path,
-        &path.segments.iter().map(|s| s.ident.to_string()).collect(),
-    )
-}
+use shared::traits::SplitCollect;
 
 // Minimal code formatting for token streams
 pub fn format_code(s: String) -> String {
@@ -63,7 +20,7 @@ pub fn format_code(s: String) -> String {
     )
 }
 
-pub fn brackets(s: String) -> String {
+fn brackets(s: String) -> String {
     let mut l_is = s.match_indices("{");
     let mut r_is = s.match_indices("}");
     let mut l_i = l_is.next();

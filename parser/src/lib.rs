@@ -22,10 +22,10 @@ use shared::{hash_map, parse_args::ComponentMacroArgs, util::JoinMapInto};
 use util::{end, format_code};
 
 mod codegen;
-mod constants;
 mod parse;
 mod resolve;
 mod util;
+mod utils;
 
 // Process:
 // 1) Parse AST, get mod/crate structure, use statements, and important syntax items

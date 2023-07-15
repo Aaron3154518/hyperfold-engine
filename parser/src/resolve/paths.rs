@@ -18,7 +18,7 @@ use crate::{
 use super::{
     path::{ItemPath, ResolveResultTrait},
     resolve_path_from_crate,
-    util::MsgsResult,
+    util::MsgResult,
 };
 
 pub trait ExpandEnum<const N: usize>
@@ -172,7 +172,7 @@ macro_rules! engine_globals {
         }
 
         impl $ty {
-            pub fn get_global_vars(&self, crates: &Crates, cr_idx: usize) -> MsgsResult<$ty_res> {
+            pub fn get_global_vars(&self, crates: &Crates, cr_idx: usize) -> MsgResult<$ty_res> {
                 let cr = match crates.get(cr_idx) {
                     Some(cr) => cr,
                     None => return Err(vec![format!("Invalid crate index: {cr_idx}")]),

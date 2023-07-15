@@ -7,7 +7,6 @@ use syn::{spanned::Spanned, Error, Token};
 
 use crate::{
     codegen::util::Quote,
-    constants::{CodegenIdents, CODEGEN_IDENTS},
     parse::{
         AstCrate, ComponentSymbol, DiscardSymbol, MatchSymbol, ModInfo, SymbolType,
         {AstMod, Symbol},
@@ -19,9 +18,10 @@ use crate::{
         labels::{ComponentSetLabels, LabelsExpression, SymbolMap},
         parse_macro_call::ParseMacroCall,
         path::{resolve_path, ItemPath, ResolveResultTrait},
-        util::{get_fn_name, get_mut, CombineMsgs, MsgsResult, Zip2Msgs},
+        util::{get_fn_name, get_mut, CombineMsgs, MsgResult, Zip2Msgs},
         Items, MustBe,
     },
+    utils::{CodegenIdents, CODEGEN_IDENTS},
 };
 
 macro_rules! err {
@@ -394,7 +394,7 @@ pub enum LabelItem {
 }
 
 impl LabelItem {
-    fn resolve(item: AstLabelItem, (m, cr, crates): ModInfo) -> MsgsResult<Self> {
+    fn resolve(item: AstLabelItem, (m, cr, crates): ModInfo) -> MsgResult<Self> {
         match item {
             AstLabelItem::Item { not, ty } => resolve_path(ty, (m, cr, crates))
                 .expect_symbol()
@@ -464,7 +464,7 @@ impl ComponentSetItem {
             is_mut,
         }: AstComponentSetItem,
         (m, cr, crates): ModInfo,
-    ) -> MsgsResult<Self> {
+    ) -> MsgResult<Self> {
         resolve_path(ty.path.to_vec(), (m, cr, crates))
             .expect_symbol()
             .expect_component()
@@ -524,7 +524,7 @@ impl ComponentSet {
             .is_some_and(|comp| comp.args.is_singleton)
     }
 
-    pub fn parse(tokens: TokenStream, (m, cr, crates): ModInfo) -> MsgsResult<Self> {
+    pub fn parse(tokens: TokenStream, (m, cr, crates): ModInfo) -> MsgResult<Self> {
         syn::parse2(tokens)
             .map_err(|_| {
                 vec![format!(
@@ -542,7 +542,7 @@ impl ComponentSet {
             labels,
         }: AstComponentSet,
         (m, cr, crates): ModInfo,
-    ) -> MsgsResult<Self> {
+    ) -> MsgResult<Self> {
         args.into_iter()
             .map_vec_into(|arg| ComponentSetItem::resolve(arg, (m, cr, crates)))
             .combine_msgs()
