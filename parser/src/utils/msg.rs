@@ -1,5 +1,13 @@
 use std::ops::Range;
 
+use codespan_reporting::{
+    diagnostic::Diagnostic,
+    term::{
+        self,
+        termcolor::{ColorChoice, StandardStream},
+        Config,
+    },
+};
 use proc_macro2::Span;
 use shared::{
     msg_result,
@@ -9,7 +17,17 @@ use syn::spanned::Spanned;
 
 use crate::parse::AstMod;
 
-use super::syn::ToRange;
+use super::{syn::ToRange, SpanFiles};
+
+pub fn warn(msg: &str) {
+    let writer = StandardStream::stderr(ColorChoice::Always);
+    term::emit(
+        &mut writer.lock(),
+        &Config::default(),
+        &SpanFiles::new(),
+        &Diagnostic::warning().with_message(msg),
+    );
+}
 
 // Message with span but no file
 #[derive(Debug, Clone)]

@@ -12,7 +12,7 @@ use crate::{
     parse::{resolve_path, ComponentSymbol, DiscardSymbol, ItemPath, MatchSymbol, ModInfo},
     utils::{
         syn::{parse_tokens, ToRange},
-        Msg, MsgResult, ParseMsg, ToMsg,
+        warn, Msg, MsgResult, ParseMsg, ToMsg,
     },
 };
 use shared::{
@@ -163,9 +163,9 @@ impl ComponentSet {
                         .evaluate_labels(args.iter().map(|sym| (sym.comp, true)).collect())
                         .call_into(|labels| {
                             match labels {
-                                ComponentSetLabels::Constant(false) => eprintln!(
+                                ComponentSetLabels::Constant(false) => warn(&format!(
                                     "In Component set '{ident}': Label expression is never true"
-                                ),
+                                )),
                                 _ => (),
                             }
                             labels

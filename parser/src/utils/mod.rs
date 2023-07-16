@@ -16,5 +16,6 @@ pub type ItemIndex = (usize, usize);
 pub type SpanFiles = SimpleFiles<String, String>;
 
 pub use msg::{
-    CatchErr, CatchSpanErr, GetVec, InjectSpan, Msg, MsgResult, ParseMsg, ParseMsgResult, ToMsg,
+    warn, CatchErr, CatchSpanErr, GetVec, InjectSpan, Msg, MsgResult, ParseMsg, ParseMsgResult,
+    ToMsg,
 };
