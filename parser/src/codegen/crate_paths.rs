@@ -9,7 +9,7 @@ use crate::{
         constants::NAMESPACE,
         paths::{Crate, CratePath},
         syn::vec_to_path,
-        CatchErr, Msg, MsgResult,
+        CatchErr, GetVec, Msg, MsgResult,
     },
 };
 
@@ -21,14 +21,17 @@ pub struct Crates {
 }
 
 impl Crates {
-    pub fn new(crates: Vec<AstCrate>, crate_idxs: [usize; Crate::LEN]) -> Self {
+    pub fn new(crates: Vec<AstCrate>, crate_idxs: [usize; Crate::LEN]) -> MsgResult<Self> {
         let mut paths = crates.map_vec(|_| Vec::new());
-        paths[0] = (0..crates.len()).map_vec_into(|j| Self::find_path(&mut paths, 0, j, &crates));
-        Self {
+        // Start with main crate
+        *paths.try_get_mut(crate_idxs[Crate::Main as usize])? = (0..crates.len())
+            .map_vec_into(|j| Self::find_path(&mut paths, 0, j, &crates))
+            .combine_msgs()?;
+        Ok(Self {
             paths,
             crate_idxs,
             crates,
-        }
+        })
     }
 
     fn find_path(
@@ -36,27 +39,28 @@ impl Crates {
         start_idx: usize,
         end_idx: usize,
         crates: &Vec<AstCrate>,
-    ) -> Option<Vec<String>> {
+    ) -> MsgResult<Option<Vec<String>>> {
         // Base case
         if start_idx == end_idx {
-            return Some(vec!["crate".to_string()]);
+            return Ok(Some(vec!["crate".to_string()]));
         }
 
         let mut min_cr = None;
-        for (cr_idx, alias) in &crates[start_idx].deps {
+        for (cr_idx, alias) in &crates.try_get(start_idx)?.deps {
             // We are neighbors with the target
             if *cr_idx == end_idx {
-                return Some(vec![alias.to_string()]);
+                return Ok(Some(vec![alias.to_string()]));
             }
 
             // Fill paths from neighbor
-            if paths[*cr_idx].is_empty() {
-                paths[*cr_idx] =
-                    (0..crates.len()).map_vec_into(|j| Self::find_path(paths, *cr_idx, j, crates))
+            if paths.try_get(*cr_idx)?.is_empty() {
+                *paths.try_get_mut(*cr_idx)? = (0..crates.len())
+                    .map_vec_into(|j| Self::find_path(paths, *cr_idx, j, crates))
+                    .combine_msgs()?;
             }
 
             // Check if shortest path
-            if let Some(Some(path)) = paths.get(*cr_idx, end_idx) {
+            if let Some(Some(path)) = paths.get2d(*cr_idx, end_idx) {
                 let path = [[alias, NAMESPACE].map_vec(|s| s.to_string()), path.to_vec()].concat();
                 let len = path.iter().fold(0, |s, path| s + path.len());
                 if min_cr.is_none_or(|(curr_len, _)| &len < curr_len) {
@@ -65,7 +69,7 @@ impl Crates {
             }
         }
 
-        min_cr.map(|(_, path)| path)
+        Ok(min_cr.map(|(_, path)| path))
     }
 
     pub fn get_crate_paths<const N: usize>(
@@ -73,15 +77,12 @@ impl Crates {
         cr_idx: usize,
         block_crates: [usize; N],
     ) -> MsgResult<Vec<(usize, Vec<String>)>> {
-        (&self.paths as &[Vec<Option<Vec<String>>>])
-            .get(cr_idx)
-            .catch_err(&format!("Invalid crate index: {cr_idx}"))
-            .map(|v| {
-                v.enumerate_filter_map_vec(|(i, path)| {
-                    (!block_crates.contains(&i))
-                        .and_then(|| path.as_ref().map(|path| (i, path.to_vec())))
-                })
+        self.paths.try_get(cr_idx).map(|v| {
+            v.enumerate_filter_map_vec(|(i, path)| {
+                (!block_crates.contains(&i))
+                    .and_then(|| path.as_ref().map(|path| (i, path.to_vec())))
             })
+        })
     }
 
     pub fn get_crate_syn_paths<const N: usize>(
@@ -99,7 +100,7 @@ impl Crates {
 
     // Create crate paths
     pub fn get_crate_path(&self, start_idx: usize, end_idx: usize) -> Option<Vec<String>> {
-        self.paths.get(start_idx, end_idx).and_then(|v| v.clone())
+        self.paths.get2d(start_idx, end_idx).and_then(|v| v.clone())
     }
 
     pub fn get_crate_syn_path(&self, start_idx: usize, end_idx: usize) -> MsgResult<syn::Path> {
@@ -161,13 +162,12 @@ impl Crates {
         &self.crates
     }
 
-    pub fn get_crate<'a>(&'a self, cr: Crate) -> &'a AstCrate {
-        &self.crates[self.get_crate_index(cr)]
+    pub fn get_crate<'a>(&'a self, cr: Crate) -> MsgResult<&'a AstCrate> {
+        self.crates.try_get(self.get_crate_index(cr))
     }
 
-    pub fn get_crate_mut<'a>(&'a mut self, cr: Crate) -> &'a mut AstCrate {
-        let i = self.get_crate_index(cr);
-        &mut self.crates[i]
+    pub fn get_crate_mut<'a>(&'a mut self, cr: Crate) -> MsgResult<&'a mut AstCrate> {
+        self.crates.try_get_mut(self.get_crate_index(cr))
     }
 
     pub fn get_crate_index(&self, cr: Crate) -> usize {

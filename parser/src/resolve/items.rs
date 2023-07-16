@@ -9,6 +9,7 @@ use syn::{
     parenthesized, parse_macro_input, spanned::Spanned, token::Trait, Error, PatType, Token,
 };
 
+use crate::utils::CatchErr;
 use crate::{
     codegen::{self as codegen, Crates, Traits},
     component_set::ComponentSet,
@@ -88,7 +89,7 @@ impl Items {
 
         // Insert hardcoded symbols
         for sym in HardcodedSymbol::VARIANTS {
-            AstCrate::add_hardcoded_symbol(crates, sym)
+            AstCrate::add_hardcoded_symbol(crates, sym).record_err(&mut errs)
         }
 
         // Resolve components, globals, and events

@@ -18,7 +18,7 @@ use super::{
 use crate::{
     codegen::Crates,
     parse::ItemPath,
-    utils::{constants::NAMESPACE, paths::Crate, CatchErr, Msg, MsgResult, SpanFiles},
+    utils::{constants::NAMESPACE, paths::Crate, CatchErr, GetVec, Msg, MsgResult, SpanFiles},
 };
 
 // TODO: hardcoded
@@ -91,7 +91,7 @@ impl AstCrate {
         let mut crate_deps = Vec::new();
         let mut i = 0;
         while i < crates.len() {
-            let cr_dir = crates[i].dir.to_owned();
+            let cr_dir = crates.try_get(i)?.dir.to_owned();
             let (deps, new_deps) = Self::get_crate_dependencies(cr_dir.to_owned(), &crates)?;
             crate_deps.push(deps);
             for path in new_deps {
@@ -130,7 +130,7 @@ impl AstCrate {
         crate_idxs[Crate::Engine as usize] = engine_cr_idx;
         crate_idxs[Crate::Macros as usize] = macros_cr_idx;
 
-        Ok((Crates::new(crates, crate_idxs), span_files))
+        Ok((Crates::new(crates, crate_idxs)?, span_files))
     }
 
     fn get_crate_dependencies(
@@ -237,13 +237,14 @@ impl AstCrate {
             .catch_err(&format!("Mod not added: {path:#?}"))
     }
 
-    pub fn add_hardcoded_symbol(crates: &mut Crates, sym: HardcodedSymbol) {
+    pub fn add_hardcoded_symbol(crates: &mut Crates, sym: HardcodedSymbol) -> MsgResult<()> {
         let path = sym.get_path();
-        crates.get_crate_mut(path.cr).add_symbol(Symbol {
+        crates.get_crate_mut(path.cr)?.add_symbol(Symbol {
             kind: SymbolType::Hardcoded(sym),
             path: path.full_path(),
             public: true,
         });
+        Ok(())
     }
 
     pub fn iter_mods_mut(&self) -> MutIter {

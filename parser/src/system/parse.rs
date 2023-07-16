@@ -133,22 +133,23 @@ impl FnArg {
                         _ => None,
                     })
                     .collect::<Vec<_>>();
-                if traits.len() != 1 {
-                    Err(vec![Msg::for_mod(
-                        "Trait arguments may only have one trait type",
+                match traits.split_first() {
+                    Some((tr, tail)) if tail.is_empty() => {
+                        resolve_syn_path(&m.path, &tr.path, (m, cr, crates))
+                            .expect_trait_in_mod(m, ty)
+                            .discard_symbol()
+                            .map(|g_sym| Self {
+                                ty: FnArgType::Global(g_sym.idx),
+                                is_mut: false,
+                                ref_cnt: 0,
+                                span: ty.span(),
+                            })
+                    }
+                    _ => Err(vec![Msg::for_mod(
+                        "Trait arguments must have only one trait type",
                         m,
                         ty,
-                    )])
-                } else {
-                    resolve_syn_path(&m.path, &traits[0].path, (m, cr, crates))
-                        .expect_trait_in_mod(m, ty)
-                        .discard_symbol()
-                        .map(|g_sym| Self {
-                            ty: FnArgType::Global(g_sym.idx),
-                            is_mut: false,
-                            ref_cnt: 0,
-                            span: ty.span(),
-                        })
+                    )]),
                 }
             }
             _ => Err(vec![Msg::for_mod("Invalid argument type", m, ty)]),
