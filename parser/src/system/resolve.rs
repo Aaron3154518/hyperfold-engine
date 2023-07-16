@@ -72,22 +72,15 @@ impl ComponentRefTracker {
         }
     }
 
-    pub fn validate(&self, file: usize, span: &Span) -> MsgResult<()> {
+    pub fn validate(&self, sys: &ItemSystem) -> MsgResult<()> {
         let (mut_cnt, immut_cnt) = (self.mut_refs.len(), self.immut_refs.len());
 
         (mut_cnt > 1)
-            .err(
-                vec![Msg::for_file("Multiple mutable references", file, span)],
-                (),
+            .err(vec![sys.msg("Multiple mutable references")], ())
+            .and_msgs(
+                (mut_cnt > 0 && immut_cnt > 0)
+                    .err(vec![sys.msg("Mutable and immutable references")], ()),
             )
-            .and_msgs((mut_cnt > 0 && immut_cnt > 0).err(
-                vec![Msg::for_file(
-                    "Mutable and immutable references",
-                    file,
-                    span,
-                )],
-                (),
-            ))
         // TODO: add hint
         // .map_err(|mut errs| {
         //     if !self.mut_refs.is_empty() {
@@ -122,11 +115,9 @@ impl ItemSystem {
                             idx: *idx,
                             is_mut: arg.is_mut,
                         }),
-                    FnArgType::Event(_) | FnArgType::Entities { .. } => Err(vec![Msg::for_file(
-                        &format!("Init systems may not contain {}", arg.ty),
-                        self.file,
-                        &self.span,
-                    )]),
+                    FnArgType::Event(_) | FnArgType::Entities { .. } => Err(vec![
+                        self.msg(&format!("Init systems may not contain {}", arg.ty))
+                    ]),
                 })
                 .combine_msgs()
                 .map(|globals| FnArgs::Init { globals })
@@ -139,11 +130,7 @@ impl ItemSystem {
             self.args
                 .enumerate_map_vec(|(arg_idx, arg)| match &arg.ty {
                     FnArgType::Event(idx) => match event {
-                        Some(_) => Err(vec![Msg::for_file(
-                            "Event already specified",
-                            self.file,
-                            &arg.span,
-                        )]),
+                        Some(_) => Err(vec![self.new_msg("Event already specified", &arg.span)]),
                         None => self
                             .validate_event(arg, *idx, items)
                             .map(|_| event = Some(EventFnArg { arg_idx, idx: *idx })),
@@ -169,16 +156,12 @@ impl ItemSystem {
                 })
                 .combine_msgs()
                 // Require event
-                .then_msgs(event.ok_or(vec![Msg::for_file(
-                    "System must specify an event",
-                    self.file,
-                    &self.span,
-                )]))
+                .then_msgs(event.ok_or(vec![self.msg("System must specify an event")]))
                 // Check component reference mutability
                 .and_msgs(
                     component_refs
                         .into_iter()
-                        .map_vec_into(|(i, refs)| refs.validate(self.file, &self.span))
+                        .map_vec_into(|(i, refs)| refs.validate(self))
                         .combine_msgs(),
                 )
                 .map(|event| FnArgs::System {
@@ -208,10 +191,11 @@ impl ItemSystem {
                 }
             })
             .and_msgs(self.validate_ref(arg, 1))
-            .and_msgs(globals.insert(i).ok(
-                (),
-                vec![Msg::for_file("Duplicate global", self.file, &arg.span)],
-            ))
+            .and_msgs(
+                globals
+                    .insert(i)
+                    .ok((), vec![self.new_msg("Duplicate global", &arg.span)]),
+            )
     }
 
     fn validate_event<'a>(
@@ -261,7 +245,7 @@ impl ItemSystem {
                     true => Ok(cs),
                     // Must have a required singleton in the labels
                     false => {
-                        let err = Msg::for_file(&format!("Entity set must contain singletons or be wrapped with {entities}<>"), self.file, &arg.span);
+                        let err = self.new_msg(&format!("Entity set must contain singletons or be wrapped with {entities}<>"), &arg.span);
                         // TODO: add help
                         // if let Some(ComponentSetLabels::Expression(e)) = &cs.labels {
                         //     for (symbs, verb) in [(&e.false_symbols, "must"), (&e.unknown_symbols, "may")] {
@@ -288,7 +272,7 @@ impl ItemSystem {
     fn validate_ref(&self, arg: &FnArg, should_be_cnt: usize) -> MsgResult<()> {
         (arg.ref_cnt == should_be_cnt).ok(
             (),
-            vec![Msg::for_file(
+            vec![self.new_msg(
                 &format!(
                     "Type should be taken by {}: \"{}\"",
                     if should_be_cnt == 0 {
@@ -300,7 +284,6 @@ impl ItemSystem {
                     },
                     arg
                 ),
-                self.file,
                 &arg.span,
             )],
         )
@@ -309,7 +292,7 @@ impl ItemSystem {
     fn validate_mut(&self, arg: &FnArg, should_be_mut: bool) -> MsgResult<()> {
         (arg.is_mut == should_be_mut).ok(
             (),
-            vec![Msg::for_file(
+            vec![self.new_msg(
                 &format!(
                     "Type should be taken {}: \"{}\"",
                     if should_be_mut {
@@ -319,7 +302,6 @@ impl ItemSystem {
                     },
                     arg
                 ),
-                self.file,
                 &arg.span,
             )],
         )

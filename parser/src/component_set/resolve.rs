@@ -10,10 +10,7 @@ use super::{
 };
 use crate::{
     err,
-    parse::{
-        resolve_path, ComponentSymbol, DiscardSymbol, ItemPath, MatchSymbol, ModInfo,
-        ResolveResultTrait,
-    },
+    parse::{resolve_path, ComponentSymbol, DiscardSymbol, ItemPath, MatchSymbol, ModInfo},
     parse_expect,
     utils::{Msg, MsgResult},
 };
@@ -32,9 +29,8 @@ pub enum LabelItem {
 impl LabelItem {
     fn resolve(item: AstLabelItem, (m, cr, crates): ModInfo) -> MsgResult<Self> {
         match item {
-            AstLabelItem::Item { not, ty } => resolve_path(ty, (m, cr, crates))
-                .expect_symbol()
-                .expect_component()
+            AstLabelItem::Item { not, ty, span } => resolve_path(ty, (m, cr, crates))
+                .expect_component_in_mod(m, &span)
                 .discard_symbol()
                 .map(|comp| Self::Item { not, comp: comp }),
             AstLabelItem::Expression { op, items } => items
@@ -77,12 +73,12 @@ impl ComponentSetItem {
             ty,
             ref_cnt,
             is_mut,
+            span,
         }: AstComponentSetItem,
         (m, cr, crates): ModInfo,
     ) -> MsgResult<Self> {
         resolve_path(ty.path.to_vec(), (m, cr, crates))
-            .expect_symbol()
-            .expect_component()
+            .expect_component_in_mod(m, &span)
             .discard_symbol()
             .map(|comp| Self {
                 var,

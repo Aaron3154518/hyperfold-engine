@@ -8,18 +8,18 @@ use syn::{
     parenthesized, parse_macro_input, spanned::Spanned, token::Trait, Error, PatType, Token,
 };
 
-use crate::utils::Msg;
 use crate::{
     codegen::{self as codegen, Crates, Traits},
     component_set::ComponentSet,
     parse::{
         resolve_path, AstCrate, AstMod, AstUse, ComponentSymbol, DiscardSymbol, GlobalSymbol,
-        HardcodedSymbol, ItemPath, MatchSymbol, ResolveResultTrait, Symbol, SymbolType,
+        HardcodedSymbol, ItemPath, MatchSymbol, Symbol, SymbolType,
     },
     system::ItemSystem,
     utils::{
         constants::NAMESPACE,
         paths::{Crate, EnginePaths, NAMESPACE_USE_STMTS, TRAITS},
+        Msg,
     },
 };
 
@@ -104,7 +104,6 @@ impl Items {
                             .iter()
                             .find_map(|attr| {
                                 resolve_path(attr.path.to_vec(), (m, cr, crates.get_crates()))
-                                    .expect_symbol()
                                     .expect_any_hardcoded()
                                     .discard_symbol()
                                     .ok()
@@ -173,7 +172,6 @@ impl Items {
             cr.iter_mods().map_vec_into(|m| {
                 m.items.macro_calls.filter_map_vec(|call| {
                     resolve_path(call.path.to_vec(), (m, cr, crates.get_crates()))
-                        .expect_symbol()
                         .expect_hardcoded(HardcodedSymbol::ComponentsMacro)
                         .ok()
                         .and_then(|_| {
@@ -265,7 +263,6 @@ impl Items {
                 m.items.functions.iter().filter_map_vec_into(|fun| {
                     fun.data.attrs.iter().find_map(|attr| {
                         resolve_path(attr.path.to_vec(), (m, cr, crates.get_crates()))
-                            .expect_symbol()
                             .expect_hardcoded(HardcodedSymbol::SystemMacro)
                             .ok()
                             .and_then(|sym| {

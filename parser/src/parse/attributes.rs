@@ -1,5 +1,7 @@
 use parse_cfg::Cfg;
+use proc_macro2::Span;
 use quote::ToTokens;
+use syn::spanned::Spanned;
 
 use crate::utils::syn::use_path_from_vec;
 use shared::traits::NoneOr;
@@ -8,6 +10,7 @@ use shared::traits::NoneOr;
 pub struct AstAttribute {
     pub path: Vec<String>,
     pub args: Vec<String>,
+    pub span: Span,
 }
 
 // Parse attributes from engine components
@@ -38,12 +41,13 @@ pub enum Attribute {
 }
 
 impl Attribute {
-    fn from(attr: Vec<String>) -> Self {
+    fn from(attr: Vec<String>, span: Span) -> Self {
         match attr.join("::").as_str() {
             "cfg" => Self::Cfg(Cfg::Is(String::new())),
             s => Self::Ecs(AstAttribute {
                 path: attr,
                 args: Vec::new(),
+                span,
             }),
         }
     }
@@ -75,14 +79,17 @@ pub fn get_attributes(attrs: &Vec<syn::Attribute>, path: &Vec<String>) -> Vec<At
         .iter()
         .map(|a| {
             parse_attr_args(
-                Attribute::from(use_path_from_vec(
-                    path,
-                    &a.path()
-                        .segments
-                        .iter()
-                        .map(|s| s.ident.to_string())
-                        .collect(),
-                )),
+                Attribute::from(
+                    use_path_from_vec(
+                        path,
+                        &a.path()
+                            .segments
+                            .iter()
+                            .map(|s| s.ident.to_string())
+                            .collect(),
+                    ),
+                    a.span(),
+                ),
                 a,
             )
         })

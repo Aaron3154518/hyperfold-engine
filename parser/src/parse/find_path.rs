@@ -1,4 +1,4 @@
-use syn::Pat;
+use syn::{spanned::Spanned, Pat};
 
 use crate::{
     parse::{
@@ -7,6 +7,8 @@ use crate::{
     utils::{syn::use_path_from_syn, Msg, MsgResult},
 };
 use shared::traits::Catch;
+
+use super::symbol::MatchSymbolTrait;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct ItemPath {
@@ -203,16 +205,48 @@ pub fn resolve_syn_path<'a>(
 
 pub trait ResolveResultTrait<'a> {
     fn expect_symbol(self) -> MsgResult<&'a Symbol>;
+
+    fn expect_symbol_in_mod(
+        self,
+        m: &AstMod,
+        span: &(impl Spanned + ?Sized),
+    ) -> MsgResult<&'a Symbol>;
 }
 
 impl<'a> ResolveResultTrait<'a> for ResolveResult<'a> {
     fn expect_symbol(self) -> MsgResult<&'a Symbol> {
         match self {
             Ok(sym) => Ok(sym),
-            Err(e) => Err(vec![Msg::String(format!(
+            Err(p) => Err(vec![Msg::String(format!(
                 "Could not resolve path: {}",
-                e.path.join("::")
+                p.path.join("::")
             ))]),
         }
+    }
+
+    fn expect_symbol_in_mod(
+        self,
+        m: &AstMod,
+        span: &(impl Spanned + ?Sized),
+    ) -> MsgResult<&'a Symbol> {
+        match self {
+            Ok(sym) => Ok(sym),
+            Err(p) => Err(vec![Msg::for_mod("Could not resolve path", m, span)]),
+        }
+    }
+}
+
+impl<'a> MatchSymbolTrait<'a> for ResolveResult<'a> {
+    fn and_then_symbol<T>(self, f: impl FnOnce(&'a Symbol) -> MsgResult<T>) -> MsgResult<T> {
+        self.expect_symbol().and_then(f)
+    }
+
+    fn and_then_symbol_in_mod<T>(
+        self,
+        f: impl FnOnce(&'a Symbol) -> MsgResult<T>,
+        m: &AstMod,
+        span: &dyn Spanned,
+    ) -> MsgResult<T> {
+        self.expect_symbol_in_mod(m, span).and_then(f)
     }
 }

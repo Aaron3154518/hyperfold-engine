@@ -5,19 +5,19 @@ use std::{
 
 use proc_macro2::{Span, TokenStream};
 
-use syn::visit::Visit;
+use syn::{spanned::Spanned, visit::Visit};
 
 use crate::{
     parse::attributes::{get_attributes_if_active, Attribute, EcsAttribute},
     parse::ItemPath,
     utils::{
         paths::{CratePath, ENGINE_PATHS, MACRO_PATHS},
-        syn::{add_use_item, use_path_from_syn},
+        syn::{add_use_item, use_path_from_syn, ToRange},
         Msg, MsgResult, SpanFiles,
     },
 };
 
-use super::attributes::AstAttribute;
+use super::{attributes::AstAttribute, Symbol};
 
 use shared::{
     macros::{expand_enum, ExpandEnum},
@@ -44,191 +44,13 @@ pub struct AstFunction {
 #[derive(Debug)]
 pub struct AstMacroCall {
     pub args: TokenStream,
+    pub span: Span,
 }
 
 #[derive(Debug)]
 pub struct AstItem<Data> {
     pub data: Data,
     pub path: Vec<String>,
-}
-
-// Symbol with path - Edit this to add new engine items
-#[derive(Eq, PartialEq)]
-#[expand_enum]
-pub enum HardcodedSymbol {
-    // Macros crate
-    ComponentMacro,
-    GlobalMacro,
-    EventMacro,
-    SystemMacro,
-    // Engine crate
-    ComponentsMacro,
-    Entities,
-}
-
-impl HardcodedSymbol {
-    pub fn get_path(&self) -> &CratePath {
-        match self {
-            HardcodedSymbol::ComponentMacro => &MACRO_PATHS.component,
-            HardcodedSymbol::GlobalMacro => &MACRO_PATHS.global,
-            HardcodedSymbol::EventMacro => &MACRO_PATHS.event,
-            HardcodedSymbol::SystemMacro => &MACRO_PATHS.system,
-            HardcodedSymbol::ComponentsMacro => &MACRO_PATHS.components,
-            HardcodedSymbol::Entities => &ENGINE_PATHS.entities,
-        }
-    }
-}
-
-#[derive(PartialEq, Eq, Copy, Clone, Hash, Debug)]
-pub struct ComponentSymbol {
-    pub idx: usize,
-    pub args: ComponentMacroArgs,
-}
-
-#[derive(Copy, Clone, Debug)]
-pub struct GlobalSymbol {
-    pub idx: usize,
-    pub args: GlobalMacroArgs,
-}
-
-#[derive(Copy, Clone, Debug)]
-pub enum SymbolType {
-    Component(ComponentSymbol),
-    Global(GlobalSymbol),
-    Trait(GlobalSymbol),
-    Event(usize),
-    System(usize, Span),
-    ComponentSet(usize),
-    Hardcoded(HardcodedSymbol),
-}
-
-impl std::fmt::Display for SymbolType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(match self {
-            SymbolType::Component { .. } => "Component",
-            SymbolType::Global { .. } => "Global",
-            SymbolType::Trait { .. } => "Trait",
-            SymbolType::Event(..) => "Event",
-            SymbolType::System(..) => "System",
-            SymbolType::ComponentSet(..) => "ComponentSet",
-            SymbolType::Hardcoded(..) => "Hardcoded Path",
-        })
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct Symbol {
-    pub kind: SymbolType,
-    pub path: Vec<String>,
-    pub public: bool,
-}
-
-impl Symbol {
-    fn panic_msg(&self, expected: &str) -> Msg {
-        Msg::String(format!(
-            "When resolving '{}': Expected '{}' but found '{}'",
-            self.path.join("::"),
-            expected,
-            self.kind
-        ))
-    }
-}
-
-pub trait MatchSymbol<'a> {
-    fn expect_component(self) -> MsgResult<(&'a Symbol, ComponentSymbol)>;
-
-    fn expect_global(self) -> MsgResult<(&'a Symbol, GlobalSymbol)>;
-
-    fn expect_trait(self) -> MsgResult<(&'a Symbol, GlobalSymbol)>;
-
-    fn expect_global_or_trait(self) -> MsgResult<(&'a Symbol, GlobalSymbol)>;
-
-    fn expect_event(self) -> MsgResult<(&'a Symbol, usize)>;
-
-    fn expect_system(self) -> MsgResult<(&'a Symbol, (usize, Span))>;
-
-    fn expect_component_set(self) -> MsgResult<(&'a Symbol, usize)>;
-
-    fn expect_any_hardcoded(self) -> MsgResult<(&'a Symbol, HardcodedSymbol)>;
-
-    fn expect_hardcoded(self, sym: HardcodedSymbol) -> MsgResult<&'a Symbol>;
-}
-
-impl<'a> MatchSymbol<'a> for MsgResult<&'a Symbol> {
-    fn expect_component(self) -> MsgResult<(&'a Symbol, ComponentSymbol)> {
-        self.and_then(|arg| match arg.kind {
-            SymbolType::Component(c_sym) => Ok((arg, c_sym)),
-            _ => Err(vec![arg.panic_msg("Component")]),
-        })
-    }
-
-    fn expect_global(self) -> MsgResult<(&'a Symbol, GlobalSymbol)> {
-        self.and_then(|arg| match arg.kind {
-            SymbolType::Global(g_sym) => Ok((arg, g_sym)),
-            _ => Err(vec![arg.panic_msg("Global")]),
-        })
-    }
-
-    fn expect_trait(self) -> MsgResult<(&'a Symbol, GlobalSymbol)> {
-        self.and_then(|arg| match arg.kind {
-            SymbolType::Trait(g_sym) => Ok((arg, g_sym)),
-            _ => Err(vec![arg.panic_msg("Trait")]),
-        })
-    }
-
-    fn expect_global_or_trait(self) -> MsgResult<(&'a Symbol, GlobalSymbol)> {
-        self.and_then(|arg| match arg.kind {
-            SymbolType::Global(g_sym) | SymbolType::Trait(g_sym) => Ok((arg, g_sym)),
-            _ => Err(vec![arg.panic_msg("Trait or Global")]),
-        })
-    }
-
-    fn expect_event(self) -> MsgResult<(&'a Symbol, usize)> {
-        self.and_then(|arg| match arg.kind {
-            SymbolType::Event(i) => Ok((arg, i)),
-            _ => Err(vec![arg.panic_msg("Event")]),
-        })
-    }
-
-    fn expect_system(self) -> MsgResult<(&'a Symbol, (usize, Span))> {
-        self.and_then(|arg| match arg.kind {
-            SymbolType::System(i, s) => Ok((arg, (i, s))),
-            _ => Err(vec![arg.panic_msg("System")]),
-        })
-    }
-
-    fn expect_component_set(self) -> MsgResult<(&'a Symbol, usize)> {
-        self.and_then(|arg| match arg.kind {
-            SymbolType::ComponentSet(i) => Ok((arg, i)),
-            _ => Err(vec![arg.panic_msg("Component Set")]),
-        })
-    }
-
-    fn expect_any_hardcoded(self) -> MsgResult<(&'a Symbol, HardcodedSymbol)> {
-        self.and_then(|arg| match arg.kind {
-            SymbolType::Hardcoded(sym) => Ok((arg, sym)),
-            _ => Err(vec![arg.panic_msg("Hardcoded Path")]),
-        })
-    }
-
-    fn expect_hardcoded(self, sym: HardcodedSymbol) -> MsgResult<&'a Symbol> {
-        self.expect_any_hardcoded()
-            .and_then(|(s, h_sym)| match h_sym == sym {
-                true => Ok(s),
-                false => Err(vec![s.panic_msg(&format!("Hardcoded Path: {s:#?}"))]),
-            })
-    }
-}
-
-// Helper function to just get the data from a resolved symbol
-pub trait DiscardSymbol<T> {
-    fn discard_symbol(self) -> MsgResult<T>;
-}
-
-impl<T> DiscardSymbol<T> for MsgResult<(&Symbol, T)> {
-    fn discard_symbol(self) -> MsgResult<T> {
-        self.map(|(_, t)| t)
-    }
 }
 
 // Use statement
@@ -281,6 +103,7 @@ pub struct AstMod {
     pub ty: AstModType,
     pub dir: PathBuf,
     pub span_file: usize,
+    pub span_start: Option<usize>,
     pub path: Vec<String>,
     pub mods: Vec<AstMod>,
     pub uses: Vec<AstUse>,
@@ -291,11 +114,18 @@ pub struct AstMod {
 // TODO: ignore private mods to avoid name collisions
 // Pass 1: parsing
 impl AstMod {
-    pub fn new(dir: PathBuf, path: Vec<String>, ty: AstModType, span_file: usize) -> Self {
+    pub fn new(
+        dir: PathBuf,
+        path: Vec<String>,
+        ty: AstModType,
+        span_file: usize,
+        span_start: Option<usize>,
+    ) -> Self {
         Self {
             ty,
             dir,
             span_file,
+            span_start,
             path,
             mods: Vec::new(),
             uses: Vec::new(),
@@ -328,7 +158,9 @@ impl AstMod {
             path,
             ty,
             span_files.add(file.display().to_string(), file_contents),
+            ast.span().to_range().ok().map(|r| r.start),
         );
+
         s.visit_file(ast, &mut VisitorArgs { span_files });
         // Post processing
         s.resolve_local_use_paths();
@@ -387,6 +219,7 @@ impl AstMod {
                         [self.path.to_vec(), vec![i.ident.to_string()]].concat(),
                         AstModType::Internal,
                         self.span_file,
+                        self.span_start,
                     );
                     new_mod.visit_items(items, args);
                     new_mod
@@ -443,7 +276,10 @@ impl AstMod {
             if i.ident.is_none() {
                 self.items.macro_calls.push(AstItem {
                     path: use_path_from_syn(&self.path, &i.mac.path),
-                    data: AstMacroCall { args: i.mac.tokens },
+                    data: AstMacroCall {
+                        span: i.mac.span(),
+                        args: i.mac.tokens,
+                    },
                 });
             }
         }

@@ -12,8 +12,8 @@ use shared::traits::{Call, Catch, CollectVec, CollectVecInto, ExpandEnum, GetSli
 
 use super::{
     ast_file::DirType,
-    ast_mod::{AstMod, AstModType, SymbolType},
-    HardcodedSymbol, Symbol,
+    ast_mod::{AstMod, AstModType},
+    HardcodedSymbol, Symbol, SymbolType,
 };
 use crate::{
     codegen::Crates,
@@ -221,6 +221,7 @@ impl AstCrate {
             path.to_vec(),
             AstModType::Internal,
             m.span_file,
+            m.span_start,
         ));
         m.mods.last_mut().catch(format!("Mod not added: {path:#?}"))
     }

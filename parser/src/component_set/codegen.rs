@@ -294,7 +294,6 @@ impl ComponentSet {
                 #(#vars: #other.#vars),*
             }
         );
-        eprintln!("{c}");
         c
     }
 
@@ -302,7 +301,6 @@ impl ComponentSet {
         let v = format_ident!("v");
         let copy = Self::codegen_copy(v.clone(), ty, vars);
         let c = quote!(#other.iter().map(|#v| #copy).collect());
-        eprintln!("{c}");
         c
     }
 

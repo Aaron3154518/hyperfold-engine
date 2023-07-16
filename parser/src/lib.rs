@@ -55,41 +55,18 @@ pub fn parse(entry: PathBuf) {
 
     errs.extend(codegen::codegen(&crates, &items));
 
-    // let engine_cr_idx = crates.get_crate_index(Crate::Engine);
     if !errs.is_empty() {
         let writer = StandardStream::stderr(ColorChoice::Always);
         let config = codespan_reporting::term::Config::default();
         for msg in errs {
-            match msg {
-                utils::Msg::Diagnostic { msg, file, span } => {
-                    let diagnostic = Diagnostic::error()
-                        .with_message(msg)
-                        .with_labels(vec![Label::primary(file, span)]);
-                    term::emit(&mut writer.lock(), &config, &span_files, &diagnostic).unwrap();
-                }
-                utils::Msg::String(msg) => eprintln!("{}", msg),
-            }
+            let diagnostic = match msg {
+                utils::Msg::Diagnostic { msg, file, span } => Diagnostic::error()
+                    .with_message(msg)
+                    .with_labels(vec![Label::primary(file, span)]),
+                utils::Msg::String(msg) => Diagnostic::error().with_message(msg),
+            };
+            term::emit(&mut writer.lock(), &config, &span_files, &diagnostic);
         }
         panic!("Build failed");
     }
-    // match code {
-    //     Ok(code) => Ok(write_codegen(crates, code.map_vec_into(|c| c.to_string()))),
-    //     Err(errs) => {
-    // let errs = errs.join("\n");
-    // let err_msg = "Engine build failed, go to the file below for more information";
-    // write_codegen(
-    //     crates,
-    //     crates
-    //         .iter_except([crates.get_crate_index(Crate::Macros)])
-    //         .map_vec_into(|cr| match cr.idx {
-    //             i if i == engine_cr_idx => {
-    //                 format!(
-    //                     "compile_error!(\"{err_msg}\");\nconst _: &str = \"\n{errs}\n\";"
-    //                 )
-    //             }
-    //             _ => String::new(),
-    //         }),
-    // )
-    //     }
-    // }
 }

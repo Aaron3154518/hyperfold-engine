@@ -11,10 +11,7 @@ use shared::{
 
 use crate::{
     codegen::Crates,
-    parse::{
-        resolve_path_from_crate, DiscardSymbol, GlobalSymbol, ItemPath, MatchSymbol,
-        ResolveResultTrait,
-    },
+    parse::{resolve_path_from_crate, DiscardSymbol, GlobalSymbol, ItemPath, MatchSymbol},
     utils::{constants::NAMESPACE, idents::global_var, syn::vec_to_path, Msg, MsgResult},
 };
 
@@ -171,7 +168,6 @@ macro_rules! engine_globals {
                         .get_path(cr_idx, cr_path)
                         .and_then(|path| {
                             resolve_path_from_crate(path, cr, crates.get_crates())
-                                .expect_symbol()
                                 .expect_global()
                                 .discard_symbol()
                         })

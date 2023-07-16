@@ -1,4 +1,4 @@
-use proc_macro2::TokenStream;
+use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::{spanned::Spanned, Error, Token};
 
@@ -68,8 +68,8 @@ impl Expression {
                         // Combine expressions with the same operation
                         let items = items.into_iter().fold(Vec::new(), |mut items, item| {
                             match item {
-                                AstLabelItem::Item { not, ty } => {
-                                    items.push(AstLabelItem::Item { not, ty })
+                                AstLabelItem::Item { not, ty, span } => {
+                                    items.push(AstLabelItem::Item { not, ty, span })
                                 }
                                 AstLabelItem::Expression {
                                     op: exp_op,
@@ -142,6 +142,7 @@ pub enum AstLabelItem {
     Item {
         not: bool,
         ty: Vec<String>,
+        span: Span,
     },
     Expression {
         op: LabelOp,
@@ -152,7 +153,7 @@ pub enum AstLabelItem {
 impl AstLabelItem {
     pub fn negate(&mut self) {
         match self {
-            AstLabelItem::Item { not, ty } => *not = !*not,
+            AstLabelItem::Item { not, .. } => *not = !*not,
             AstLabelItem::Expression { op, items } => {
                 op.negate();
                 items.iter_mut().for_each(|i| i.negate());
@@ -175,6 +176,7 @@ impl syn::parse::Parse for AstLabelItem {
                     |ty| match ty {
                         syn::Type::Path(p) => Ok(Self::Item {
                             not,
+                            span: p.span(),
                             ty: p
                                 .path
                                 .segments
@@ -194,7 +196,7 @@ impl syn::parse::Parse for AstLabelItem {
 impl std::fmt::Display for AstLabelItem {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AstLabelItem::Item { not, ty } => f.write_fmt(format_args!(
+            AstLabelItem::Item { not, ty, .. } => f.write_fmt(format_args!(
                 "{}{}",
                 if *not { "!" } else { "" },
                 ty.join("::")
@@ -215,6 +217,7 @@ pub struct AstComponentSetItem {
     pub ty: ItemPath,
     pub ref_cnt: usize,
     pub is_mut: bool,
+    pub span: Span,
 }
 
 impl AstComponentSetItem {
@@ -234,6 +237,7 @@ impl AstComponentSetItem {
                 },
                 ref_cnt: 0,
                 is_mut: false,
+                span: ty.span(),
             }),
             syn::Type::Reference(ty) => match Self::from(var, *ty.elem) {
                 Ok(mut i) => {

@@ -6,7 +6,9 @@ use codespan_reporting::{
     },
 };
 use proc_macro2::Span;
-use quote::{spanned::Spanned, ToTokens};
+use quote::ToTokens;
+use syn::spanned::Spanned;
+
 use shared::{
     msg_result::CombineMsgs,
     parsing::SystemMacroArgs,
@@ -75,8 +77,6 @@ impl FnArg {
 
     fn parse_type(ty: &syn::Type, (m, cr, crates): ModInfo) -> MsgResult<Self> {
         let ty_str = ty.to_token_stream().to_string();
-        let span = ty.__span();
-        eprintln!("{:#?}", span.start());
         match ty {
             syn::Type::Path(p) => {
                 let generics = p.path.segments.last().and_then(|s| match &s.arguments {
@@ -87,7 +87,7 @@ impl FnArg {
                 });
 
                 resolve_syn_path(&m.path, &p.path, (m, cr, crates))
-                    .expect_symbol()
+                    .expect_symbol_in_mod(m, ty)
                     .and_then(|sym| match sym.kind {
                         crate::parse::SymbolType::Global(g_sym) => Ok(FnArgType::Global(g_sym.idx)),
                         crate::parse::SymbolType::Event(i) => Ok(FnArgType::Event(i)),
@@ -99,8 +99,7 @@ impl FnArg {
                                 match generics.as_ref().and_then(|v| v.first()) {
                                     Some(syn::GenericArgument::Type(syn::Type::Path(ty))) => {
                                         resolve_syn_path(&m.path, &ty.path, (m, cr, crates))
-                                            .expect_symbol()
-                                            .expect_component_set()
+                                            .expect_component_set_in_mod(m, ty)
                                             .discard_symbol()
                                             .map(|idx| FnArgType::Entities { idx, is_vec: true })
                                     }
@@ -115,7 +114,7 @@ impl FnArg {
                         ty: data,
                         is_mut: false,
                         ref_cnt: 0,
-                        span: ty.__span(),
+                        span: ty.span(),
                     })
             }
             syn::Type::Reference(r) => {
@@ -142,14 +141,13 @@ impl FnArg {
                     )])
                 } else {
                     resolve_syn_path(&m.path, &traits[0].path, (m, cr, crates))
-                        .expect_symbol()
-                        .expect_trait()
+                        .expect_trait_in_mod(m, ty)
                         .discard_symbol()
                         .map(|g_sym| Self {
                             ty: FnArgType::Global(g_sym.idx),
                             is_mut: false,
                             ref_cnt: 0,
-                            span: ty.__span(),
+                            span: ty.span(),
                         })
                 }
             }
@@ -176,6 +174,7 @@ pub struct ItemSystem {
     pub attr_args: SystemMacroArgs,
     pub file: usize,
     pub span: Span,
+    pub span_start: Option<usize>,
 }
 
 impl ItemSystem {
@@ -196,6 +195,15 @@ impl ItemSystem {
             attr_args,
             file: m.span_file,
             span: fun.data.sig.ident.span(),
+            span_start: m.span_start,
         })
+    }
+
+    pub fn new_msg(&self, msg: &str, span: &impl Spanned) -> Msg {
+        Msg::for_file(msg, self.file, span, self.span_start)
+    }
+
+    pub fn msg(&self, msg: &str) -> Msg {
+        Msg::for_file(msg, self.file, &self.span, self.span_start)
     }
 }
