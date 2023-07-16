@@ -139,8 +139,7 @@ impl ComponentSet {
     pub fn parse(tokens: TokenStream, (m, cr, crates): ModInfo) -> MsgResult<Self> {
         let span = tokens.span();
         parse_tokens(tokens)
-            .for_mod(span.range_start().ok(), m)
-            .add_msg(|| Msg::for_mod("Failed to parse component set", m, &span))
+            .for_mod(m)
             .and_then(|cs| Self::resolve(cs, (m, cr, crates)))
     }
 

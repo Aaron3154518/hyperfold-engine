@@ -3,7 +3,7 @@ use std::ops::Range;
 use proc_macro2::Span;
 use shared::{
     msg_result,
-    traits::{CollectVec, CollectVecInto, ShiftRange},
+    traits::{CollectVec, CollectVecInto, RangeTrait},
 };
 use syn::spanned::Spanned;
 
@@ -32,70 +32,47 @@ impl ParseMsg {
     pub fn from_str(msg: &str) -> Self {
         Self::String(msg.to_string())
     }
-
-    pub fn offset(&mut self, start: Span) {
-        match (self, start.to_range()) {
-            (ParseMsg::Diagnostic { span, .. }, Ok(start)) => {
-                eprint!("{span:#?} -> ");
-                *span = span.start + start.start..span.end + start.start;
-                eprintln!("{span:#?}");
-            }
-            _ => (),
-        }
-    }
 }
 
 pub type ParseMsgResult<T> = msg_result::MsgResult<T, ParseMsg>;
 
 // Convert ParseMsg to Msg
 pub trait ToMsg<T> {
-    fn for_file(self, parent_start: Option<usize>, file: usize, mod_start: Option<usize>) -> T;
+    fn for_file(self, file: usize, mod_start: Option<usize>) -> T;
 
-    fn for_mod(self, parent_start: Option<usize>, m: &AstMod) -> T;
+    fn for_mod(self, m: &AstMod) -> T;
 }
 
 impl ToMsg<Msg> for ParseMsg {
-    fn for_file(self, parent_start: Option<usize>, file: usize, mod_start: Option<usize>) -> Msg {
+    fn for_file(self, file: usize, mod_start: Option<usize>) -> Msg {
         match self {
-            ParseMsg::Diagnostic { msg, span } => {
-                Msg::from_range(msg, file, span.add(parent_start.unwrap_or(0)), mod_start)
-            }
+            ParseMsg::Diagnostic { msg, span } => Msg::from_range(msg, file, span, mod_start),
             ParseMsg::String(msg) => Msg::String(msg),
         }
     }
 
-    fn for_mod(self, parent_start: Option<usize>, m: &AstMod) -> Msg {
-        self.for_file(parent_start, m.span_file, m.span_start)
+    fn for_mod(self, m: &AstMod) -> Msg {
+        self.for_file(m.span_file, m.span_start)
     }
 }
 
 impl ToMsg<Vec<Msg>> for Vec<ParseMsg> {
-    fn for_file(
-        self,
-        parent_start: Option<usize>,
-        file: usize,
-        mod_start: Option<usize>,
-    ) -> Vec<Msg> {
-        self.map_vec_into(|msg| msg.for_file(parent_start, file, mod_start))
+    fn for_file(self, file: usize, mod_start: Option<usize>) -> Vec<Msg> {
+        self.map_vec_into(|msg| msg.for_file(file, mod_start))
     }
 
-    fn for_mod(self, parent_start: Option<usize>, m: &AstMod) -> Vec<Msg> {
-        self.map_vec_into(|msg| msg.for_mod(parent_start, m))
+    fn for_mod(self, m: &AstMod) -> Vec<Msg> {
+        self.map_vec_into(|msg| msg.for_mod(m))
     }
 }
 
 impl<T> ToMsg<MsgResult<T>> for ParseMsgResult<T> {
-    fn for_file(
-        self,
-        parent_start: Option<usize>,
-        file: usize,
-        mod_start: Option<usize>,
-    ) -> MsgResult<T> {
-        self.map_err(|e| e.for_file(parent_start, file, mod_start))
+    fn for_file(self, file: usize, mod_start: Option<usize>) -> MsgResult<T> {
+        self.map_err(|e| e.for_file(file, mod_start))
     }
 
-    fn for_mod(self, parent_start: Option<usize>, m: &AstMod) -> MsgResult<T> {
-        self.map_err(|e| e.for_mod(parent_start, m))
+    fn for_mod(self, m: &AstMod) -> MsgResult<T> {
+        self.map_err(|e| e.for_mod(m))
     }
 }
 
@@ -152,7 +129,7 @@ impl Msg {
         Self::Diagnostic {
             msg,
             file,
-            span: range.sub(start.unwrap_or(0)),
+            span: range.sub_into(start.unwrap_or(0)),
         }
     }
 

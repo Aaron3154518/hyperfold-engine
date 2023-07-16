@@ -1,7 +1,7 @@
 use std::any::type_name;
 
 use proc_macro2::{Span, TokenStream, TokenTree};
-use shared::traits::Increment;
+use shared::traits::{Increment, RangeTrait};
 use syn::{
     parse::{discouraged::AnyDelimiter, ParseStream},
     spanned::Spanned,
@@ -30,7 +30,7 @@ where
         // Consume remaining input so that errs are correctly propogated
         // Otherwise syn injects an 'unexpected token' error
         if let Err(e) = &result {
-            input.consume()
+            input.consume();
         }
         Ok(ParseMsgResultWrapper(result))
     }
@@ -41,7 +41,7 @@ pub trait StreamParse {
     where
         T: Parse;
 
-    fn consume(self);
+    fn consume(self) -> bool;
 }
 
 impl StreamParse for ParseStream<'_> {
@@ -52,13 +52,15 @@ impl StreamParse for ParseStream<'_> {
         T::parse(self)
     }
 
-    fn consume(self) {
-        // Parse up to 10000 remaining tokens
+    // Consumes up to 10000 remaining tokens, returns true if tokens were consumed
+    fn consume(self) -> bool {
         let mut i = 0;
         while self
             .parse::<TokenTree>()
             .is_ok_and(|_| i.add_then(1) < 10000)
         {}
+
+        i != 0
     }
 }
 
@@ -66,8 +68,21 @@ pub fn parse_tokens<T>(input: TokenStream) -> ParseMsgResult<T>
 where
     T: Parse<T>,
 {
+    let span = input.span();
     match syn::parse2::<ParseMsgResultWrapper<T>>(input) {
-        Ok(t) => t.0,
+        Ok(mut t) => {
+            // Add input span to empty message spans
+            if let (Err(msgs), Ok(start)) = (&mut t.0, span.range_start()) {
+                msgs.iter_mut().for_each(|msg| {
+                    if let ParseMsg::Diagnostic { span, .. } = msg {
+                        if span.start == 0 && span.end == 0 {
+                            span.add(start);
+                        }
+                    }
+                });
+            }
+            t.0
+        }
         Err(e) => Err(vec![ParseMsg::from_span(&format!("{e}"), e.span())]),
     }
 }

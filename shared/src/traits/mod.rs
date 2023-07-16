@@ -25,6 +25,6 @@ pub use get::{End, Get2D, GetFirst, GetSlice};
 pub use increment::Increment;
 pub use option::{MapNone, NoneOr};
 pub use push_into::PushInto;
-pub use range::ShiftRange;
+pub use range::RangeTrait;
 pub use result::{GetResult, HandleErr, ThenOk};
 pub use split::{SplitAround, SplitAroundCopy, SplitCollect};

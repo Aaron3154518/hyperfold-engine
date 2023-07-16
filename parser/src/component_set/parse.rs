@@ -129,33 +129,20 @@ impl Expression {
 
 impl Parse for Expression {
     fn parse(input: syn::parse::ParseStream) -> ParseMsgResult<Self> {
-        let span = input.span();
-        eprintln!("{span:#?}: {}", input.to_string());
+        let first = input.parse_stream()?;
 
-        let first = input
-            .parse_stream()
-            .add_msg(|| ParseMsg::from_span("Expected label expression in parentheses", span))?;
+        let mut noops = vec![];
+        let mut ops = vec![];
 
-        match input.parse_stream() {
-            Ok(op) => {
-                let mut noops = vec![input
-                    .parse_stream()
-                    .add_msg(|| ParseMsg::from_span("Expected NoOp after Op", span))?];
-                let mut ops = vec![op];
-
-                while let Ok(op) = input.parse_stream() {
-                    ops.push(op);
-                    noops.push(
-                        input
-                            .parse_stream()
-                            .add_msg(|| ParseMsg::from_span("Expected NoOp after Op", span))?,
-                    );
-                }
-
-                Ok(Self::Expr { first, noops, ops })
-            }
-            Err(_) => Ok(Self::Item(first)),
+        while !input.is_empty() {
+            ops.push(input.parse_stream()?);
+            noops.push(input.parse_stream()?);
         }
+
+        Ok(match ops.is_empty() {
+            true => Self::Item(first),
+            false => Self::Expr { first, noops, ops },
+        })
     }
 }
 
@@ -195,31 +182,20 @@ impl Parse for AstLabelItem {
         input.parse::<proc_macro2::Group>().map_or_else(
             |_| {
                 input
-                    .parse::<syn::Type>()
-                    .catch_err("Expected parentheses or ident in label")
-                    .and_then(|ty| match ty {
-                        syn::Type::Path(p) => Ok(Self::Item {
-                            not,
-                            span: p.span(),
-                            ty: p
-                                .path
-                                .segments
-                                .iter()
-                                .map(|s| s.ident.to_string())
-                                .collect(),
-                        }),
-                        _ => Err(vec![ParseMsg::from_span(
-                            "Invalid type in label",
-                            ty.span(),
-                        )]),
+                    .parse::<syn::TypePath>()
+                    .catch_err("Expected label type")
+                    .map(|p| Self::Item {
+                        not,
+                        span: p.span(),
+                        ty: p
+                            .path
+                            .segments
+                            .iter()
+                            .map(|s| s.ident.to_string())
+                            .collect(),
                     })
             },
-            |g| {
-                let stream = g.stream();
-                eprintln!("AstLabelItem: {:#?}", stream.span());
-
-                parse_tokens::<Expression>(stream).map(|e| e.to_item(not))
-            },
+            |g| parse_tokens::<Expression>(g.stream()).map(|e| e.to_item(not)),
         )
     }
 }
@@ -312,7 +288,6 @@ impl Parse for AstComponentSet {
                 .catch_err("Expected parentheses after labels")
                 .and_then(|g| {
                     let stream = g.stream();
-                    eprintln!("AstComponentSet: {:#?}", stream.span());
                     Ok(match stream.is_empty() {
                         true => None,
                         false => {
@@ -326,7 +301,10 @@ impl Parse for AstComponentSet {
 
         let mut args = Vec::new();
         while input.parse::<Comma>().is_ok() {
-            args.push(input.parse_stream()?);
+            match input.parse_stream() {
+                Ok(i) => args.push(i),
+                Err(_) => break,
+            }
         }
 
         Ok(Self {

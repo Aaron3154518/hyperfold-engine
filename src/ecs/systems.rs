@@ -48,12 +48,12 @@ macro_rules! components {
             $crate::components!(@no_op $($tts)*);
         };
 
-        (labels ($($labels: tt)*), $name: ident $(,$n: ident: $t: ty)*) => {
+        (labels ($($labels: tt)*), $name: ident $(,$n: ident: $t: ty)* $(,)?) => {
             $crate::components!(@labels $($labels)*);
             $crate::components!($name $(,$n: $t)*);
         };
 
-        ($name: ident $(,$n: ident: $t: ty)*) => {
+        ($name: ident $(,$n: ident: $t: ty)* $(,)?) => {
             pub struct $name<'a> {
                 pub eid: &'a crate::_engine::Entity
                 $(,pub $n: $t)*
