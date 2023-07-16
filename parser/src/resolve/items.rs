@@ -2,6 +2,7 @@ use proc_macro2::{token_stream::IntoIter, TokenStream, TokenTree};
 use quote::quote;
 use quote::ToTokens;
 use shared::msg_result::MsgResult;
+use shared::msg_result::MsgTrait;
 use shared::msg_result::Zip8Msgs;
 use std::{collections::VecDeque, env::temp_dir, fs, path::PathBuf};
 use syn::{
@@ -218,8 +219,8 @@ impl Items {
                 })
                 .collect();
 
-            let mut m = cr.add_mod(path.push_into(NAMESPACE.to_string()));
-            m.uses = uses;
+            cr.add_mod(path.push_into(NAMESPACE.to_string()))
+                .record_err_or(&mut errs, |m| m.uses = uses);
         }
 
         // Insert trait symbols
@@ -247,6 +248,7 @@ impl Items {
                         path: gl_path.to_vec(),
                         public: true,
                     })
+                    .record_err(&mut errs)
                 }
                 // Add traits to all crates
                 cr.add_symbol(Symbol {
@@ -254,6 +256,7 @@ impl Items {
                     path: path.to_vec(),
                     public: true,
                 })
+                .record_err(&mut errs)
             }
         }
 

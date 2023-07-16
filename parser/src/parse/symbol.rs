@@ -351,21 +351,6 @@ where
 
 impl<'a, T> MatchSymbol<'a> for T where T: match_symbol::MatchSymbolPrivate<'a> {}
 
-impl<'a> MatchSymbolTrait<'a> for MsgResult<&'a Symbol> {
-    fn and_then_symbol<T>(self, f: impl FnOnce(&'a Symbol) -> MsgResult<T>) -> MsgResult<T> {
-        self.and_then(f)
-    }
-
-    fn and_then_symbol_in_mod<T>(
-        self,
-        f: impl FnOnce(&'a Symbol) -> MsgResult<T>,
-        m: &AstMod,
-        span: &dyn Spanned,
-    ) -> MsgResult<T> {
-        self.and_then(f)
-    }
-}
-
 // Helper function to just get the data from a resolved symbol
 pub trait DiscardSymbol<T> {
     fn discard_symbol(self) -> MsgResult<T>;

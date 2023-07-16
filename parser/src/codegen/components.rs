@@ -101,11 +101,7 @@ pub fn components(
 ) -> MsgResult<TokenStream> {
     let vars = (0..components.len()).map_vec_into(|i| component_var(i));
     let types = components
-        .map_vec(|c| {
-            crates
-                .get_item_path(cr_idx, &c.path)
-                .map(|v| vec_to_path(v))
-        })
+        .map_vec(|c| crates.get_item_syn_path(cr_idx, &c.path))
         .combine_msgs();
 
     let entity_set = crates.get_syn_path(cr_idx, &ENGINE_PATHS.entity_set);
@@ -157,16 +153,11 @@ pub fn component_trait_impls(
     let macro_cr_idx = crates.get_crate_index(Crate::Macros);
 
     let types = components
-        .map_vec(|c| {
-            crates
-                .get_item_path(cr_idx, &c.path)
-                .map(|v| vec_to_path(v))
-        })
+        .map_vec(|c| crates.get_item_syn_path(cr_idx, &c.path))
         .combine_msgs();
     let crate_paths = crates
-        .get_crate_paths(cr_idx, [macro_cr_idx])
-        .map(|v| v.into_iter().map_vec_into(|(i, path)| vec_to_path(path)))
-        .ok_or(vec![Msg::String(format!("Invalid crate index: {cr_idx}"))]);
+        .get_crate_syn_paths(cr_idx, [macro_cr_idx])
+        .map(|paths| paths.map_vec_into(|(_, p)| p));
 
     let CodegenIdents {
         namespace,

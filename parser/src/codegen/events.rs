@@ -46,11 +46,7 @@ pub fn events(cr_idx: usize, events: &Vec<ItemEvent>, crates: &Crates) -> MsgRes
 
     let (vars, variants) = (0..events.len()).unzip_vec_into(|i| (event_var(i), event_variant(i)));
     let types = events
-        .map_vec(|e| {
-            crates
-                .get_item_path(cr_idx, &e.path)
-                .map(|v| vec_to_path(v))
-        })
+        .map_vec(|e| crates.get_item_syn_path(cr_idx, &e.path))
         .combine_msgs();
 
     types.map(|types| {
@@ -127,17 +123,12 @@ pub fn event_trait_impls(
 
     // Implement trait for every event
     let types = events
-        .map_vec(|c| {
-            crates
-                .get_item_path(cr_idx, &c.path)
-                .map(|v| vec_to_path(v))
-        })
+        .map_vec(|c| crates.get_item_syn_path(cr_idx, &c.path))
         .combine_msgs();
     // Implement all dependency traits
     let crate_paths = crates
-        .get_crate_paths(cr_idx, [macro_cr_idx])
-        .map(|v| v.into_iter().map_vec_into(|(i, path)| vec_to_path(path)))
-        .ok_or(vec![Msg::String(format!("Invalid crate index: {cr_idx}"))]);
+        .get_crate_syn_paths(cr_idx, [macro_cr_idx])
+        .map(|v| v.map_vec_into(|(_, p)| p));
 
     let CodegenIdents {
         events: events_type,

@@ -15,6 +15,10 @@ pub trait MsgTrait<T, E> {
     fn then_msgs<U>(self, rhs: MsgResult<U, E>) -> MsgResult<U, E>;
 
     fn add_msg(self, f: impl FnOnce() -> E) -> MsgResult<T, E>;
+
+    fn record_err(self, errs: &mut Vec<E>);
+
+    fn record_err_or(self, errs: &mut Vec<E>, f: impl FnOnce(T));
 }
 
 impl<T, E> MsgTrait<T, E> for MsgResult<T, E>
@@ -46,6 +50,20 @@ where
 
     fn add_msg(self, f: impl FnOnce() -> E) -> MsgResult<T, E> {
         self.map_err(|errs| errs.push_into(f()))
+    }
+
+    fn record_err(self, errs: &mut Vec<E>) {
+        match self {
+            Ok(_) => (),
+            Err(e) => errs.extend(e),
+        }
+    }
+
+    fn record_err_or(self, errs: &mut Vec<E>, f: impl FnOnce(T)) {
+        match self {
+            Ok(t) => f(t),
+            Err(e) => errs.extend(e),
+        }
     }
 }
 
@@ -79,6 +97,17 @@ impl<T, E> FlattenMsgs<T, E> for MsgResult<MsgResult<T, E>, E> {
             Ok(t) => t,
             Err(e) => Err(e),
         }
+    }
+}
+
+// Vec<E> -> MsgResult
+pub trait ToMsgs<T, E> {
+    fn err_or(self, t: T) -> MsgResult<T, E>;
+}
+
+impl<T, E> ToMsgs<T, E> for Vec<E> {
+    fn err_or(self, t: T) -> MsgResult<T, E> {
+        self.is_empty().ok(t, self)
     }
 }
 

@@ -3,8 +3,11 @@ use proc_macro2::Span;
 use quote::ToTokens;
 use syn::spanned::Spanned;
 
-use crate::utils::syn::use_path_from_vec;
-use shared::traits::NoneOr;
+use crate::utils::{syn::use_path_from_vec, CatchErr, MsgResult};
+use shared::{
+    msg_result::{MsgTrait, ToMsgs},
+    traits::NoneOr,
+};
 
 #[derive(Clone, Debug)]
 pub struct AstAttribute {
@@ -57,43 +60,48 @@ pub fn get_attributes_if_active(
     attrs: &Vec<syn::Attribute>,
     path: &Vec<String>,
     features: &Vec<String>,
-) -> Option<Vec<AstAttribute>> {
+) -> MsgResult<Option<Vec<AstAttribute>>> {
     let mut is_active = true;
-    let new_attrs = get_attributes(attrs, path)
-        .into_iter()
-        .fold(Vec::new(), |mut new_attrs, a| {
-            match a {
-                Attribute::Ecs(attr) => new_attrs.push(attr),
-                Attribute::Cfg(cfg) => {
-                    is_active = eval_cfg_args(&cfg, features).is_none_or_into(|b| b)
+    let new_attrs =
+        get_attributes(attrs, path)?
+            .into_iter()
+            .fold(Vec::new(), |mut new_attrs, a| {
+                match a {
+                    Attribute::Ecs(attr) => new_attrs.push(attr),
+                    Attribute::Cfg(cfg) => {
+                        is_active = eval_cfg_args(&cfg, features).is_none_or_into(|b| b)
+                    }
                 }
-            }
-            new_attrs
-        });
-    is_active.then_some(new_attrs)
+                new_attrs
+            });
+    Ok(is_active.then_some(new_attrs))
 }
 
 // Returns list of parsed attributes from ast attributes
-pub fn get_attributes(attrs: &Vec<syn::Attribute>, path: &Vec<String>) -> Vec<Attribute> {
-    attrs
-        .iter()
-        .map(|a| {
-            parse_attr_args(
-                Attribute::from(
-                    use_path_from_vec(
-                        path,
-                        &a.path()
-                            .segments
-                            .iter()
-                            .map(|s| s.ident.to_string())
-                            .collect(),
-                    ),
-                    a.span(),
+pub fn get_attributes(
+    attrs: &Vec<syn::Attribute>,
+    path: &Vec<String>,
+) -> MsgResult<Vec<Attribute>> {
+    let mut new_attrs = Vec::new();
+    let mut errs = Vec::new();
+    for a in attrs {
+        parse_attr_args(
+            Attribute::from(
+                use_path_from_vec(
+                    path,
+                    &a.path()
+                        .segments
+                        .iter()
+                        .map(|s| s.ident.to_string())
+                        .collect(),
                 ),
-                a,
-            )
-        })
-        .collect()
+                a.span(),
+            ),
+            a,
+        )
+        .record_err_or(&mut errs, |attr| new_attrs.push(attr));
+    }
+    errs.err_or(new_attrs)
 }
 
 // Check cfg args to make sure we are valid
@@ -125,7 +133,7 @@ pub fn eval_cfg_args(cfg: &Cfg, features: &Vec<String>) -> Option<bool> {
 }
 
 // Parses arguments to a single ast attribute
-fn parse_attr_args(mut attr_type: Attribute, attr: &syn::Attribute) -> Attribute {
+fn parse_attr_args(mut attr_type: Attribute, attr: &syn::Attribute) -> MsgResult<Attribute> {
     match &mut attr_type {
         Attribute::Ecs(ast_attr) => match &attr.meta {
             syn::Meta::List(l) => {
@@ -153,10 +161,10 @@ fn parse_attr_args(mut attr_type: Attribute, attr: &syn::Attribute) -> Attribute
                     .to_token_stream()
                     .to_string()
                     .parse()
-                    .expect("Could not parse cfg_str");
+                    .catch_err("Could not parse cfg_str")?;
             }
             _ => (),
         },
     };
-    attr_type
+    Ok(attr_type)
 }

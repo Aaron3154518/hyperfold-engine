@@ -24,13 +24,13 @@ use crate::{
         constants::NAMESPACE,
         paths::{Crate, NAMESPACE_USE_STMTS},
         syn::ToRange,
-        Msg, MsgResult,
+        CatchErr, Msg, MsgResult,
     },
 };
 
 use super::Crates;
 
-pub fn codegen(crates: &Crates, items: &Items) -> Vec<Msg> {
+pub fn codegen(crates: &Crates, items: &Items) -> MsgResult<()> {
     let main_cr_idx = crates.get_crate_index(Crate::Main);
     let macro_cr_idx = crates.get_crate_index(Crate::Macros);
 
@@ -149,37 +149,39 @@ pub fn codegen(crates: &Crates, items: &Items) -> Vec<Msg> {
     );
 
     match code {
-        Ok(code) => {
-            write_codegen(crates, code.map_vec_into(|c| c.to_string()));
-            vec![]
-        }
-        Err(errs) => errs,
+        Ok(code) => write_codegen(crates, code.map_vec_into(|c| c.to_string())),
+        Err(errs) => write_codegen(
+            crates,
+            crates
+                .iter_except([macro_cr_idx])
+                .map_vec_into(|_| String::new()),
+        )
+        .map_err(|msgs| [errs, msgs].concat()),
     }
 }
 
-fn write_codegen(crates: &Crates, code: Vec<String>) {
-    let out = PathBuf::from(std::env::var("OUT_DIR").expect("No out directory specified"));
+fn write_codegen(crates: &Crates, code: Vec<String>) -> MsgResult<()> {
+    let out = PathBuf::from(std::env::var("OUT_DIR").catch_err("No out dir specified")?);
+
+    let mut index_lines = Vec::new();
+    for (i, (cr, code)) in crates
+        .iter_except([crates.get_crate_index(Crate::Macros)])
+        .zip(code)
+        .enumerate()
+    {
+        // Write to file
+        let file = out.join(format!("{}.rs", i));
+        fs::write(file.to_owned(), code)
+            .catch_err(&format!("Could not write to: {}", file.display()))?;
+        index_lines.push(format!(
+            "{}{}{}",
+            cr.dir.to_string_lossy().to_string(),
+            INDEX_SEP,
+            file.display()
+        ));
+    }
 
     // Create index file
-    fs::write(
-        temp_dir().join(INDEX),
-        crates
-            .iter_except([crates.get_crate_index(Crate::Macros)])
-            .zip(code)
-            .enumerate()
-            .map_vec_into(|(i, (cr, code))| {
-                // Write to file
-                let file = out.join(format!("{}.rs", i));
-                fs::write(file.to_owned(), code)
-                    .catch(format!("Could not write to: {}", file.display()));
-                format!(
-                    "{}{}{}",
-                    cr.dir.to_string_lossy().to_string(),
-                    INDEX_SEP,
-                    file.display()
-                )
-            })
-            .join("\n"),
-    )
-    .catch(format!("Could not write to index file: {INDEX}"))
+    fs::write(temp_dir().join(INDEX), index_lines.join("\n"))
+        .catch_err(&format!("Could not write to index file: {INDEX}"))
 }

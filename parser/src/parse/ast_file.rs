@@ -3,7 +3,7 @@ use std::{fs, path::PathBuf};
 use syn::visit::Visit;
 
 use super::{ast_mod::AstModType, AstMod};
-use crate::utils::{constants::NAMESPACE, SpanFiles};
+use crate::utils::{constants::NAMESPACE, Msg, MsgResult, SpanFiles};
 
 #[derive(Debug)]
 pub enum DirType {
@@ -34,7 +34,11 @@ impl From<DirType> for AstModType {
 
 // Pass 1: parsing
 impl AstMod {
-    pub fn parse_mod(span_files: &mut SpanFiles, path: PathBuf, mods: &Vec<String>) -> Self {
+    pub fn parse_mod(
+        span_files: &mut SpanFiles,
+        path: PathBuf,
+        mods: &Vec<String>,
+    ) -> MsgResult<Self> {
         if path.is_dir() {
             Self::parse_dir(span_files, path, mods, DirType::Mod)
         } else {
@@ -43,7 +47,10 @@ impl AstMod {
             if f_path.is_file() {
                 Self::parse_file(span_files, path, f_path, mods, AstModType::File)
             } else {
-                panic!("File does not exist: {}", (f_path.display()))
+                Err(vec![Msg::String(format!(
+                    "File does not exist: {}",
+                    (f_path.display())
+                ))])
             }
         }
     }
@@ -54,7 +61,7 @@ impl AstMod {
         path: PathBuf,
         mods: &Vec<String>,
         ty: AstModType,
-    ) -> Self {
+    ) -> MsgResult<Self> {
         Self::parse(span_files, dir, path, mods.to_vec(), ty)
     }
 
@@ -63,7 +70,7 @@ impl AstMod {
         path: PathBuf,
         mods: &Vec<String>,
         ty: DirType,
-    ) -> Self {
+    ) -> MsgResult<Self> {
         Self::parse_file(
             span_files,
             path.to_owned(),

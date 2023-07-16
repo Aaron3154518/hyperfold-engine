@@ -52,11 +52,7 @@ pub fn globals(
 ) -> MsgResult<TokenStream> {
     let vars = (0..globals.len()).map_vec_into(|i| global_var(i));
     let types = globals
-        .map_vec(|g| {
-            crates
-                .get_item_path(cr_idx, &g.path)
-                .map(|v| vec_to_path(v))
-        })
+        .map_vec(|g| crates.get_item_syn_path(cr_idx, &g.path))
         .combine_msgs();
 
     match_ok!(types, {

@@ -139,3 +139,60 @@ impl Msg {
 }
 
 pub type MsgResult<T> = msg_result::MsgResult<T, Msg>;
+
+// Inject span into string messages
+pub trait InjectSpan {
+    fn in_mod(self, m: &AstMod, span: &(impl Spanned + ?Sized)) -> Self;
+
+    fn in_file(self, f: usize, span: &(impl Spanned + ?Sized), start: Option<usize>) -> Self;
+}
+
+impl InjectSpan for Msg {
+    fn in_mod(self, m: &AstMod, span: &(impl Spanned + ?Sized)) -> Self {
+        self.in_file(m.span_file, span, m.span_start)
+    }
+
+    fn in_file(self, f: usize, span: &(impl Spanned + ?Sized), start: Option<usize>) -> Self {
+        if let Self::String(msg) = &self {
+            return Self::for_file(msg, f, span, start);
+        }
+        self
+    }
+}
+
+impl InjectSpan for Vec<Msg> {
+    fn in_mod(self, m: &AstMod, span: &(impl Spanned + ?Sized)) -> Self {
+        self.map_vec_into(|msg| msg.in_mod(m, span))
+    }
+
+    fn in_file(self, f: usize, span: &(impl Spanned + ?Sized), start: Option<usize>) -> Self {
+        self.map_vec_into(|msg| msg.in_file(f, span, start))
+    }
+}
+
+impl<T> InjectSpan for MsgResult<T> {
+    fn in_mod(mut self, m: &AstMod, span: &(impl Spanned + ?Sized)) -> Self {
+        self.map_err(|msgs| msgs.in_mod(m, span))
+    }
+
+    fn in_file(self, f: usize, span: &(impl Spanned + ?Sized), start: Option<usize>) -> Self {
+        self.map_err(|msgs| msgs.in_file(f, span, start))
+    }
+}
+
+// Convert error type to Msg
+pub trait CatchErr<T> {
+    fn catch_err(self, msg: &str) -> MsgResult<T>;
+}
+
+impl<T> CatchErr<T> for Option<T> {
+    fn catch_err(self, msg: &str) -> MsgResult<T> {
+        self.ok_or_else(|| vec![Msg::String(msg.to_string())])
+    }
+}
+
+impl<T, E> CatchErr<T> for Result<T, E> {
+    fn catch_err(self, msg: &str) -> MsgResult<T> {
+        self.map_err(|_| vec![Msg::String(msg.to_string())])
+    }
+}

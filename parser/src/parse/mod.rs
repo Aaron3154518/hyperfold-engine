@@ -12,7 +12,4 @@ pub use symbol::{
     ComponentSymbol, DiscardSymbol, GlobalSymbol, HardcodedSymbol, MatchSymbol, Symbol, SymbolType,
 };
 pub type ModInfo<'a> = (&'a AstMod, &'a AstCrate, &'a Vec<AstCrate>);
-pub use find_path::{
-    resolve_path, resolve_path_from_crate, resolve_syn_path, ItemPath, ResolveResult,
-    ResolveResultTrait,
-};
+pub use find_path::{resolve_path, resolve_path_from_crate, resolve_syn_path, ItemPath};

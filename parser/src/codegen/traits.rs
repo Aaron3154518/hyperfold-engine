@@ -2,7 +2,7 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use shared::{
     match_ok,
-    msg_result::Zip2Msgs,
+    msg_result::{CombineMsgs, Zip3Msgs},
     traits::{CollectVec, CollectVecInto},
 };
 
@@ -35,10 +35,12 @@ where
     let trait_source = crates.get_syn_path(cr_idx, trait_source);
 
     // Events for this crate
-    let types = items.filter_map_vec(|t| {
-        let path = get_item_path(t);
-        (cr_idx == path.cr_idx).then(|| vec_to_path(path.path.to_vec()))
-    });
+    let types = items
+        .filter_map_vec(|t| {
+            let path = get_item_path(t);
+            (cr_idx == path.cr_idx).then(|| vec_to_path(path.path.to_vec()))
+        })
+        .combine_msgs();
     // Event traits for dependency crates
     let macro_cr_idx = crates.get_crate_index(Crate::Macros);
     let dep_traits = crates
@@ -54,7 +56,7 @@ where
                 })
         });
 
-    match_ok!(Zip2Msgs, trait_source, dep_traits, {
+    match_ok!(Zip3Msgs, trait_source, dep_traits, types, {
         let traits = [dep_traits, types.map_vec(|ty| quote!(#trait_source<#ty>))].concat();
         match traits.split_first() {
             Some((first, tail)) => {

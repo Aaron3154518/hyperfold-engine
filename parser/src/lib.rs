@@ -37,7 +37,7 @@ use shared::{
     parsing::ComponentMacroArgs,
     traits::CollectVecInto,
 };
-use utils::syn::format_code;
+use utils::{syn::format_code, SpanFiles};
 
 use crate::parse::resolve_path;
 
@@ -49,11 +49,18 @@ use crate::parse::resolve_path;
 // 5) Parse systems; Validate arguments; insert symbols
 // 6) Codegen
 pub fn parse(entry: PathBuf) {
-    let (mut crates, span_files) = AstCrate::parse(entry);
+    let (errs, span_files) = match AstCrate::parse(entry) {
+        Ok((mut crates, span_files)) => {
+            let (items, mut errs) = Items::resolve(&mut crates);
 
-    let (items, mut errs) = Items::resolve(&mut crates);
+            if let Err(codegen_errs) = codegen::codegen(&crates, &items) {
+                errs.extend(codegen_errs);
+            }
 
-    errs.extend(codegen::codegen(&crates, &items));
+            (errs, span_files)
+        }
+        Err(errs) => (errs, SpanFiles::new()),
+    };
 
     if !errs.is_empty() {
         let writer = StandardStream::stderr(ColorChoice::Always);

@@ -18,10 +18,10 @@ use shared::{
 use crate::{
     parse::{
         resolve_syn_path, AstAttribute, AstFunction, AstItem, DiscardSymbol, HardcodedSymbol,
-        ItemPath, MatchSymbol, ModInfo, ResolveResultTrait,
+        ItemPath, MatchSymbol, ModInfo,
     },
     resolve::Items,
-    utils::{syn::ToRange, Msg, MsgResult},
+    utils::{syn::ToRange, InjectSpan, Msg, MsgResult},
 };
 
 #[derive(Clone, Debug)]
@@ -87,7 +87,7 @@ impl FnArg {
                 });
 
                 resolve_syn_path(&m.path, &p.path, (m, cr, crates))
-                    .expect_symbol_in_mod(m, ty)
+                    .in_mod(m, &ty)
                     .and_then(|sym| match sym.kind {
                         crate::parse::SymbolType::Global(g_sym) => Ok(FnArgType::Global(g_sym.idx)),
                         crate::parse::SymbolType::Event(i) => Ok(FnArgType::Event(i)),

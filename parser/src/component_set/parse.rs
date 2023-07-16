@@ -72,58 +72,61 @@ enum Expression {
 }
 
 impl Expression {
-    pub fn to_item(self, neg: bool) -> AstLabelItem {
+    pub fn to_item(self, neg: bool) -> ParseMsgResult<AstLabelItem> {
         let mut item = match self {
             Expression::Item(i) => i,
             Expression::Expr { first, noops, ops } => {
-                let mut get_item = |items: Vec<AstLabelItem>, op: LabelOp| {
-                    if items.len() <= 1 {
-                        items.into_iter().next().expect("Empty label expression")
-                    } else {
-                        // Combine expressions with the same operation
-                        let items = items.into_iter().fold(Vec::new(), |mut items, item| {
-                            match item {
-                                AstLabelItem::Item { not, ty, span } => {
-                                    items.push(AstLabelItem::Item { not, ty, span })
-                                }
-                                AstLabelItem::Expression {
-                                    op: exp_op,
-                                    items: exp_items,
-                                } => {
-                                    if op == exp_op {
-                                        items.extend(exp_items);
-                                    } else {
-                                        items.push(AstLabelItem::Expression {
-                                            op: exp_op,
-                                            items: exp_items,
-                                        });
+                let mut get_item =
+                    |items: Vec<AstLabelItem>, op: LabelOp| -> ParseMsgResult<AstLabelItem> {
+                        Ok(if items.len() <= 1 {
+                            items.into_iter().next().ok_or(vec![ParseMsg::String(
+                                "Empty label expression".to_string(),
+                            )])?
+                        } else {
+                            // Combine expressions with the same operation
+                            let items = items.into_iter().fold(Vec::new(), |mut items, item| {
+                                match item {
+                                    AstLabelItem::Item { not, ty, span } => {
+                                        items.push(AstLabelItem::Item { not, ty, span })
+                                    }
+                                    AstLabelItem::Expression {
+                                        op: exp_op,
+                                        items: exp_items,
+                                    } => {
+                                        if op == exp_op {
+                                            items.extend(exp_items);
+                                        } else {
+                                            items.push(AstLabelItem::Expression {
+                                                op: exp_op,
+                                                items: exp_items,
+                                            });
+                                        }
                                     }
                                 }
-                            }
-                            items
-                        });
-                        AstLabelItem::Expression { op, items }
-                    }
-                };
+                                items
+                            });
+                            AstLabelItem::Expression { op, items }
+                        })
+                    };
                 let mut ors = Vec::new();
                 let mut ands = vec![first];
                 for (item, op) in noops.into_iter().zip(ops.into_iter()) {
                     match op {
                         LabelOp::And => ands.push(item),
                         LabelOp::Or => {
-                            ors.push(get_item(ands, LabelOp::And));
+                            ors.push(get_item(ands, LabelOp::And)?);
                             ands = vec![item];
                         }
                     }
                 }
-                ors.push(get_item(ands, LabelOp::And));
-                get_item(ors, LabelOp::Or)
+                ors.push(get_item(ands, LabelOp::And)?);
+                get_item(ors, LabelOp::Or)?
             }
         };
         if neg {
             item.negate();
         }
-        item
+        Ok(item)
     }
 }
 
@@ -195,7 +198,7 @@ impl Parse for AstLabelItem {
                             .collect(),
                     })
             },
-            |g| parse_tokens::<Expression>(g.stream()).map(|e| e.to_item(not)),
+            |g| parse_tokens::<Expression>(g.stream()).and_then(|e| e.to_item(not)),
         )
     }
 }
@@ -290,9 +293,9 @@ impl Parse for AstComponentSet {
                     let stream = g.stream();
                     Ok(match stream.is_empty() {
                         true => None,
-                        false => {
-                            Some(parse_tokens::<Expression>(stream).map(|e| e.to_item(false))?)
-                        }
+                        false => Some(
+                            parse_tokens::<Expression>(stream).and_then(|e| e.to_item(false))?,
+                        ),
                     })
                 })?;
             input.parse::<Comma>().catch_err("Expected ','")?;
