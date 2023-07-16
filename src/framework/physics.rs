@@ -1,4 +1,5 @@
 use crate::{
+    components,
     ecs::events::core,
     utils::rect::{PointF, Rect},
 };
@@ -23,8 +24,14 @@ impl PhysicsData {
     }
 }
 
+components!(
+    UpdatePhysics,
+    pos: &'a mut Position,
+    pd: &'a mut PhysicsData
+);
+
 #[macros::system]
-fn update_physics(up: &core::Update, pos: &mut Position, pd: &mut PhysicsData) {
+fn update_physics(up: &core::Update, UpdatePhysics { pos, pd, .. }: UpdatePhysics) {
     let s = up.0 as f32 / 1000.0;
     let a_f = s * s / 2.0;
     pos.0

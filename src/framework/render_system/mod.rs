@@ -8,7 +8,8 @@ use font::{Font, FontData};
 pub use render_data::RenderComponent;
 
 use crate::{
-    ecs::{entities::Entity, events},
+    components,
+    ecs::{entities::Entity, events, systems::Entities},
     sdl2,
     utils::rect::{Align, Dimensions, Rect},
 };
@@ -100,22 +101,24 @@ pub fn rect_to_camera_coords(rect: &Rect, screen: &Screen, camera: &Camera) -> R
 #[macros::component]
 struct Elevation(pub u8);
 
+components!(RenderArgs, e: &'a Elevation, tex: &'a mut RenderComponent);
+
 #[macros::system]
 fn render(
     _e: &events::core::Render,
-    mut comps: Vec<(&Entity, &Elevation, &mut RenderComponent)>,
+    mut comps: Entities<RenderArgs>,
     r: &Renderer,
     am: &mut AssetManager,
 ) {
-    comps.sort_by(|(id1, e1, ..), (id2, e2, ..)| {
-        let cmp = e1.0.cmp(&e2.0);
+    comps.sort_by(|e1, e2| {
+        let cmp = e1.e.0.cmp(&e2.e.0);
         if cmp == Ordering::Equal {
-            id1.cmp(&id2)
+            e1.eid.cmp(&e2.eid)
         } else {
             cmp
         }
     });
-    comps
-        .into_iter()
-        .for_each(|(_, _, rc)| r.draw_asset(r, am, rc));
+    for RenderArgs { tex, .. } in comps {
+        r.draw_asset(r, am, tex);
+    }
 }

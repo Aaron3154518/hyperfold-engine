@@ -1,8 +1,7 @@
 use shared::traits::{Call, SplitAround};
 
 use crate::{
-    ecs::{entities::Entity, events::core::PreRender},
-    framework::physics::Position,
+    ecs::{entities::Entity, events::core::PreRender, systems::Entities},
     sdl2,
     utils::{
         colors::{BLACK, GRAY},
@@ -15,7 +14,7 @@ use super::{
     drawable::{Canvas, Drawable},
     font::FontData,
     rect_to_camera_coords,
-    render_data::{RenderAsset, RenderDataTrait, RenderTexture},
+    render_data::{RenderAsset, RenderDataTrait, RenderPos, RenderTexture},
     shapes::{Rectangle, ShapeTrait},
     text::render_text,
     AssetManager, Camera, RenderComponent, Screen,
@@ -132,7 +131,7 @@ impl Drawable for RenderText {
 #[macros::system]
 fn update_render_text(
     _ev: &PreRender,
-    mut rcs: Vec<(&Entity, &Position, &mut RenderComponent)>,
+    mut rcs: Entities<RenderPos>,
     r: &super::Renderer,
     am: &mut AssetManager,
     screen: &Screen,
@@ -140,8 +139,8 @@ fn update_render_text(
 ) {
     let n = rcs.len();
     for i in 0..n {
-        let (left, (.., pos, rc), right) = rcs.split_around_mut(i);
-        rc.try_mut(|rt: &mut RenderText| {
+        let (left, RenderPos { tex, pos, .. }, right) = rcs.split_around_mut(i);
+        tex.try_mut(|rt: &mut RenderText| {
             // Render text if no existing texture
             let tex = rt.tex.get_or_insert_texture(|| {
                 render_text(
@@ -178,13 +177,13 @@ fn update_render_text(
                     TextImage::Reference(eid) => {
                         for j in 0..n {
                             if i != j {
-                                let (id, .., rc) = if j > i {
+                                let RenderPos { eid: id, tex, .. } = if j > i {
                                     &mut right[j - i - 1]
                                 } else {
                                     &mut left[j]
                                 };
                                 if *id == eid {
-                                    draw(*rc, rect);
+                                    draw(*tex, rect);
                                 }
                             }
                         }

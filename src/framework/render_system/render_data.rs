@@ -1,9 +1,11 @@
 use uuid::Uuid;
 
 use crate::{
+    components,
     ecs::{
         entities::Entity,
         events::core::{PreRender, Update},
+        systems::Entities,
     },
     framework::physics::Position,
     utils::{
@@ -333,19 +335,22 @@ impl AssetDrawable for RenderAsset {
     }
 }
 
+components!(RenderPos, tex: &'a mut RenderComponent, pos: &'a Position);
+
 #[macros::system]
 fn set_render_pos(
     _ev: &PreRender,
-    rc: &mut RenderComponent,
-    pos: &Position,
     screen: &Screen,
     camera: &Camera,
+    entities: Entities<RenderPos>,
 ) {
-    let dest = rect_to_camera_coords(&pos.0, screen, camera);
-    rc.try_mut(|rt: &mut RenderTexture| rt.get_render_data_mut().set_dest_rect(dest))
-        .try_mut(rc, |ra: &mut RenderAsset| {
-            ra.get_render_data_mut().set_dest_rect(dest)
-        });
+    for RenderPos { tex, pos, .. } in entities {
+        let dest = rect_to_camera_coords(&pos.0, screen, camera);
+        tex.try_mut(|rt: &mut RenderTexture| rt.get_render_data_mut().set_dest_rect(dest))
+            .try_mut(tex, |ra: &mut RenderAsset| {
+                ra.get_render_data_mut().set_dest_rect(dest)
+            });
+    }
 }
 
 // RenderComponent
@@ -401,31 +406,39 @@ impl Animation {
     }
 }
 
+components!(
+    Animations,
+    anim: &'a mut Animation,
+    tex: &'a mut RenderComponent
+);
+
 #[macros::system]
-pub fn update_animations(update: &Update, anim: &mut Animation, rc: &mut RenderComponent) {
-    anim.timer += update.0;
-    if anim.timer >= anim.mspf {
-        anim.frame = (anim.frame + anim.timer / anim.mspf) % anim.num_frames;
-        anim.timer %= anim.mspf;
+pub fn update_animations(update: &Update, entities: Entities<Animations>) {
+    for Animations { anim, tex, .. } in entities {
+        anim.timer += update.0;
+        if anim.timer >= anim.mspf {
+            anim.frame = (anim.frame + anim.timer / anim.mspf) % anim.num_frames;
+            anim.timer %= anim.mspf;
 
-        let f = |rd: &mut RenderData| {
-            let frame_size = rd.dim.w / anim.num_frames;
-            match &mut rd.area {
-                Some(a) => {
-                    a.x = (a.x + frame_size as f32) % rd.dim.w as f32;
+            let f = |rd: &mut RenderData| {
+                let frame_size = rd.dim.w / anim.num_frames;
+                match &mut rd.area {
+                    Some(a) => {
+                        a.x = (a.x + frame_size as f32) % rd.dim.w as f32;
+                    }
+                    None => {
+                        rd.area = Some(Rect {
+                            x: (rd.dim.w * anim.frame) as f32,
+                            y: 0.0,
+                            w: frame_size as f32,
+                            h: rd.dim.h as f32,
+                        })
+                    }
                 }
-                None => {
-                    rd.area = Some(Rect {
-                        x: (rd.dim.w * anim.frame) as f32,
-                        y: 0.0,
-                        w: frame_size as f32,
-                        h: rd.dim.h as f32,
-                    })
-                }
-            }
-        };
+            };
 
-        rc.try_mut(|rt: &mut RenderTexture| f(rt.get_render_data_mut()))
-            .try_mut(rc, |ra: &mut RenderAsset| f(ra.get_render_data_mut()));
+            tex.try_mut(|rt: &mut RenderTexture| f(rt.get_render_data_mut()))
+                .try_mut(tex, |ra: &mut RenderAsset| f(ra.get_render_data_mut()));
+        }
     }
 }
