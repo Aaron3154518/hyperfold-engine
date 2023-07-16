@@ -1,7 +1,4 @@
-use shared::{
-    msg_result::MsgResult,
-    traits::{AndThen, CollectVec, CollectVecInto, ExpandEnum, Get2D, NoneOr},
-};
+use shared::traits::{AndThen, CollectVec, CollectVecInto, ExpandEnum, Get2D, NoneOr};
 
 use crate::{
     parse::{AstCrate, ItemPath},
@@ -9,6 +6,7 @@ use crate::{
         constants::NAMESPACE,
         paths::{Crate, CratePath},
         syn::vec_to_path,
+        Msg, MsgResult,
     },
 };
 
@@ -91,7 +89,9 @@ impl Crates {
     pub fn get_crate_syn_path(&self, start_idx: usize, end_idx: usize) -> MsgResult<syn::Path> {
         self.get_crate_path(start_idx, end_idx)
             .map(|v| vec_to_path(v))
-            .ok_or(vec![format!("No path from {start_idx} to {end_idx}")])
+            .ok_or(vec![Msg::String(format!(
+                "No path from {start_idx} to {end_idx}"
+            ))])
     }
 
     pub fn get_named_crate_path(&self, start_idx: usize, cr: Crate) -> Option<Vec<String>> {
@@ -101,7 +101,9 @@ impl Crates {
     pub fn get_named_crate_syn_path(&self, start_idx: usize, cr: Crate) -> MsgResult<syn::Path> {
         self.get_named_crate_path(start_idx, cr)
             .map(|v| vec_to_path(v))
-            .ok_or(vec![format!("No path from {start_idx} to {cr:#?} crate")])
+            .ok_or(vec![Msg::String(format!(
+                "No path from {start_idx} to {cr:#?} crate"
+            ))])
     }
 
     pub fn get_item_path(&self, start_idx: usize, path: &ItemPath) -> MsgResult<Vec<String>> {
@@ -111,10 +113,10 @@ impl Crates {
             0
         };
         self.get_crate_path(start_idx, path.cr_idx).map_or(
-            Err(vec![format!(
+            Err(vec![Msg::String(format!(
                 "No path from crate {start_idx} to crate {}",
                 path.cr_idx
-            )]),
+            ))]),
             |pre| Ok([pre, path.path[i..].to_vec()].concat()),
         )
     }

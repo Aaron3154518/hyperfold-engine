@@ -2,7 +2,6 @@ use std::{collections::HashMap, hash::Hash};
 
 use shared::{
     hash_map,
-    msg_result::MsgResult,
     traits::{Call, CollectVec, CollectVecInto, Discard, MapNone, PushInto},
 };
 

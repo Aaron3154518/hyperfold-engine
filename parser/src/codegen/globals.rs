@@ -2,7 +2,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use shared::{
     match_ok,
-    msg_result::{CombineMsgs, MsgResult},
+    msg_result::CombineMsgs,
     traits::{CollectVec, CollectVecInto},
 };
 
@@ -11,6 +11,7 @@ use crate::{
     utils::{
         idents::{global_var, CODEGEN_IDENTS},
         syn::vec_to_path,
+        MsgResult,
     },
 };
 

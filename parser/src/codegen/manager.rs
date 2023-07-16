@@ -1,11 +1,7 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 
-use shared::{
-    match_ok,
-    msg_result::{MsgResult, Zip5Msgs},
-    traits::CollectVecInto,
-};
+use shared::{match_ok, msg_result::Zip5Msgs, traits::CollectVecInto};
 
 use crate::{
     component_set::ComponentSet,
@@ -14,6 +10,7 @@ use crate::{
     utils::{
         idents::{CodegenIdents, CODEGEN_IDENTS},
         paths::{Crate, EngineGlobalPaths, ENGINE_GLOBALS, ENGINE_PATHS, ENGINE_TRAITS},
+        MsgResult,
     },
 };
 

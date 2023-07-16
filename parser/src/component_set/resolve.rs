@@ -15,9 +15,10 @@ use crate::{
         ResolveResultTrait,
     },
     parse_expect,
+    utils::{Msg, MsgResult},
 };
 use shared::{
-    msg_result::{CombineMsgs, MsgResult, Zip2Msgs},
+    msg_result::{CombineMsgs, Zip2Msgs},
     traits::{Call, CollectVec, CollectVecInto, PushInto},
 };
 
@@ -139,13 +140,9 @@ impl ComponentSet {
     }
 
     pub fn parse(tokens: TokenStream, (m, cr, crates): ModInfo) -> MsgResult<Self> {
+        let span = tokens.span();
         syn::parse2(tokens)
-            .map_err(|_| {
-                vec![format!(
-                    "Failed to parse component set in mod: {}",
-                    m.path.join("::")
-                )]
-            })
+            .map_err(|_| vec![Msg::for_mod("Failed to parse component set", m, &span)])
             .and_then(|cs| Self::resolve(cs, (m, cr, crates)))
     }
 

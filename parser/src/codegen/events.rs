@@ -2,7 +2,7 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use shared::{
     match_ok,
-    msg_result::{CombineMsgs, MsgResult, Zip3Msgs},
+    msg_result::{CombineMsgs, Zip3Msgs},
     traits::{CollectVec, CollectVecInto},
 };
 
@@ -12,6 +12,7 @@ use crate::{
         idents::{event_var, event_variant, CodegenIdents, CODEGEN_IDENTS},
         paths::{Crate, ENGINE_TRAITS},
         syn::vec_to_path,
+        Msg, MsgResult,
     },
 };
 
@@ -136,7 +137,7 @@ pub fn event_trait_impls(
     let crate_paths = crates
         .get_crate_paths(cr_idx, [macro_cr_idx])
         .map(|v| v.into_iter().map_vec_into(|(i, path)| vec_to_path(path)))
-        .ok_or(vec![format!("Invalid crate index: {cr_idx}")]);
+        .ok_or(vec![Msg::String(format!("Invalid crate index: {cr_idx}"))]);
 
     let CodegenIdents {
         events: events_type,

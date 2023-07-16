@@ -4,7 +4,7 @@ use std::array;
 
 use shared::{
     match_ok,
-    msg_result::{CombineMsgs, MsgResult, Zip5Msgs},
+    msg_result::{CombineMsgs, Zip5Msgs},
     traits::{AndThen, CollectVec, CollectVecInto, ThenOk},
 };
 
@@ -14,6 +14,7 @@ use crate::{
         idents::{component_var, CodegenIdents, CODEGEN_IDENTS},
         paths::{Crate, ENGINE_GLOBALS, ENGINE_PATHS, ENGINE_TRAITS},
         syn::vec_to_path,
+        Msg, MsgResult,
     },
 };
 
@@ -165,7 +166,7 @@ pub fn component_trait_impls(
     let crate_paths = crates
         .get_crate_paths(cr_idx, [macro_cr_idx])
         .map(|v| v.into_iter().map_vec_into(|(i, path)| vec_to_path(path)))
-        .ok_or(vec![format!("Invalid crate index: {cr_idx}")]);
+        .ok_or(vec![Msg::String(format!("Invalid crate index: {cr_idx}"))]);
 
     let CodegenIdents {
         namespace,

@@ -1,6 +1,9 @@
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    path::{Display, PathBuf},
+};
 
-use proc_macro2::TokenStream;
+use proc_macro2::{Span, TokenStream};
 
 use syn::visit::Visit;
 
@@ -10,6 +13,7 @@ use crate::{
     utils::{
         paths::{CratePath, ENGINE_PATHS, MACRO_PATHS},
         syn::{add_use_item, use_path_from_syn},
+        Msg, MsgResult, SpanFiles,
     },
 };
 
@@ -17,7 +21,6 @@ use super::attributes::AstAttribute;
 
 use shared::{
     macros::{expand_enum, ExpandEnum},
-    msg_result::MsgResult,
     parsing::{ComponentMacroArgs, GlobalMacroArgs},
     traits::{Catch, PushInto},
 };
@@ -94,7 +97,7 @@ pub enum SymbolType {
     Global(GlobalSymbol),
     Trait(GlobalSymbol),
     Event(usize),
-    System(usize),
+    System(usize, Span),
     ComponentSet(usize),
     Hardcoded(HardcodedSymbol),
 }
@@ -105,10 +108,10 @@ impl std::fmt::Display for SymbolType {
             SymbolType::Component { .. } => "Component",
             SymbolType::Global { .. } => "Global",
             SymbolType::Trait { .. } => "Trait",
-            SymbolType::Event(_) => "Event",
-            SymbolType::System(_) => "System",
-            SymbolType::ComponentSet(_) => "ComponentSet",
-            SymbolType::Hardcoded(_) => "Hardcoded Path",
+            SymbolType::Event(..) => "Event",
+            SymbolType::System(..) => "System",
+            SymbolType::ComponentSet(..) => "ComponentSet",
+            SymbolType::Hardcoded(..) => "Hardcoded Path",
         })
     }
 }
@@ -121,31 +124,13 @@ pub struct Symbol {
 }
 
 impl Symbol {
-    pub fn from(
-        kind: SymbolType,
-        mut path: Vec<String>,
-        ident: &syn::Ident,
-        vis: &syn::Visibility,
-    ) -> Self {
-        path.push(ident.to_string());
-        // Add to the symbol table
-        Self {
-            kind,
-            path,
-            public: match vis {
-                syn::Visibility::Public(_) => true,
-                syn::Visibility::Restricted(_) | syn::Visibility::Inherited => false,
-            },
-        }
-    }
-
-    fn panic_msg(&self, expected: &str) -> String {
-        format!(
+    fn panic_msg(&self, expected: &str) -> Msg {
+        Msg::String(format!(
             "When resolving '{}': Expected '{}' but found '{}'",
             self.path.join("::"),
             expected,
             self.kind
-        )
+        ))
     }
 }
 
@@ -160,7 +145,7 @@ pub trait MatchSymbol<'a> {
 
     fn expect_event(self) -> MsgResult<(&'a Symbol, usize)>;
 
-    fn expect_system(self) -> MsgResult<(&'a Symbol, usize)>;
+    fn expect_system(self) -> MsgResult<(&'a Symbol, (usize, Span))>;
 
     fn expect_component_set(self) -> MsgResult<(&'a Symbol, usize)>;
 
@@ -205,9 +190,9 @@ impl<'a> MatchSymbol<'a> for MsgResult<&'a Symbol> {
         })
     }
 
-    fn expect_system(self) -> MsgResult<(&'a Symbol, usize)> {
+    fn expect_system(self) -> MsgResult<(&'a Symbol, (usize, Span))> {
         self.and_then(|arg| match arg.kind {
-            SymbolType::System(i) => Ok((arg, i)),
+            SymbolType::System(i, s) => Ok((arg, (i, s))),
             _ => Err(vec![arg.panic_msg("System")]),
         })
     }
@@ -287,10 +272,15 @@ pub enum AstModType {
 }
 
 // Module
+struct VisitorArgs<'a> {
+    span_files: &'a mut SpanFiles,
+}
+
 #[derive(Debug)]
 pub struct AstMod {
     pub ty: AstModType,
     pub dir: PathBuf,
+    pub span_file: usize,
     pub path: Vec<String>,
     pub mods: Vec<AstMod>,
     pub uses: Vec<AstUse>,
@@ -301,10 +291,11 @@ pub struct AstMod {
 // TODO: ignore private mods to avoid name collisions
 // Pass 1: parsing
 impl AstMod {
-    pub fn new(dir: PathBuf, path: Vec<String>, ty: AstModType) -> Self {
+    pub fn new(dir: PathBuf, path: Vec<String>, ty: AstModType, span_file: usize) -> Self {
         Self {
             ty,
             dir,
+            span_file,
             path,
             mods: Vec::new(),
             uses: Vec::new(),
@@ -318,17 +309,31 @@ impl AstMod {
         }
     }
 
-    pub fn parse(&mut self, path: PathBuf) {
-        let file_contents = fs::read_to_string(path.to_owned())
-            .catch(format!("Failed to read file: {}", path.display()));
+    pub fn parse(
+        span_files: &mut SpanFiles,
+        dir: PathBuf,
+        file: PathBuf,
+        path: Vec<String>,
+        ty: AstModType,
+    ) -> Self {
+        let file_contents = fs::read_to_string(file.to_owned())
+            .catch(format!("Failed to read file: {}", file.display()));
         let ast = syn::parse_file(&file_contents).catch(format!(
             "Failed to parse file contents of: {}",
-            path.display()
+            file.display()
         ));
-        self.visit_file(ast);
 
+        let mut s = Self::new(
+            dir,
+            path,
+            ty,
+            span_files.add(file.display().to_string(), file_contents),
+        );
+        s.visit_file(ast, &mut VisitorArgs { span_files });
         // Post processing
-        self.resolve_local_use_paths();
+        s.resolve_local_use_paths();
+
+        s
     }
 
     // E.g. mod Foo; use Foo::Bar;
@@ -348,20 +353,20 @@ impl AstMod {
 
 // File/items
 impl AstMod {
-    pub fn visit_file(&mut self, i: syn::File) {
-        self.visit_items(i.items);
+    fn visit_file(&mut self, i: syn::File, args: &mut VisitorArgs) {
+        self.visit_items(i.items, args);
     }
 
-    fn visit_items(&mut self, items: Vec<syn::Item>) {
+    fn visit_items(&mut self, items: Vec<syn::Item>, args: &mut VisitorArgs) {
         for item in items {
-            self.visit_item(item);
+            self.visit_item(item, args);
         }
     }
 
-    fn visit_item(&mut self, i: syn::Item) {
+    fn visit_item(&mut self, i: syn::Item, args: &mut VisitorArgs) {
         // Match again to parse
         match i {
-            syn::Item::Mod(i) => self.visit_item_mod(i),
+            syn::Item::Mod(i) => self.visit_item_mod(i, args),
             syn::Item::Use(i) => self.visit_item_use(i),
             syn::Item::Fn(i) => self.visit_item_fn(i),
             syn::Item::Enum(i) => self.visit_item_enum(i),
@@ -372,7 +377,7 @@ impl AstMod {
     }
 
     // Mod
-    fn visit_item_mod(&mut self, i: syn::ItemMod) {
+    fn visit_item_mod(&mut self, i: syn::ItemMod, args: &mut VisitorArgs) {
         if let Some(attrs) = get_attributes_if_active(&i.attrs, &self.path, &Vec::new()) {
             self.mods.push(match i.content {
                 // Parse inner mod
@@ -381,12 +386,14 @@ impl AstMod {
                         self.dir.to_owned(),
                         [self.path.to_vec(), vec![i.ident.to_string()]].concat(),
                         AstModType::Internal,
+                        self.span_file,
                     );
-                    new_mod.visit_items(items);
+                    new_mod.visit_items(items, args);
                     new_mod
                 }
                 // Parse file mod
                 None => Self::parse_mod(
+                    args.span_files,
                     self.dir.join(i.ident.to_string()),
                     &[self.path.to_vec(), vec![i.ident.to_string()]].concat(),
                 ),

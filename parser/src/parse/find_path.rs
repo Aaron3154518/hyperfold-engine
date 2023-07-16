@@ -4,9 +4,9 @@ use crate::{
     parse::{
         AstCrate, ModInfo, {AstMod, Symbol},
     },
-    utils::syn::use_path_from_syn,
+    utils::{syn::use_path_from_syn, Msg, MsgResult},
 };
-use shared::{msg_result::MsgResult, traits::Catch};
+use shared::traits::Catch;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct ItemPath {
@@ -209,10 +209,10 @@ impl<'a> ResolveResultTrait<'a> for ResolveResult<'a> {
     fn expect_symbol(self) -> MsgResult<&'a Symbol> {
         match self {
             Ok(sym) => Ok(sym),
-            Err(e) => Err(vec![format!(
+            Err(e) => Err(vec![Msg::String(format!(
                 "Could not resolve path: {}",
                 e.path.join("::")
-            )]),
+            ))]),
         }
     }
 }

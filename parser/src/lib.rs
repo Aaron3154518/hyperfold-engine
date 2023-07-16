@@ -12,6 +12,13 @@ mod resolve;
 mod system;
 mod utils;
 
+use codespan_reporting::{
+    diagnostic::{Diagnostic, Label},
+    term::{
+        self,
+        termcolor::{ColorChoice, StandardStream},
+    },
+};
 use regex::Regex;
 use resolve::Items;
 use std::{
@@ -26,7 +33,7 @@ use component_set::ComponentSetLabels;
 use parse::{AstCrate, ComponentSymbol};
 use shared::{
     macros::hash_map,
-    msg_result::{MsgResult, MsgTrait, Zip2Msgs},
+    msg_result::{MsgTrait, Zip2Msgs},
     parsing::ComponentMacroArgs,
     traits::CollectVecInto,
 };
@@ -42,9 +49,47 @@ use crate::parse::resolve_path;
 // 5) Parse systems; Validate arguments; insert symbols
 // 6) Codegen
 pub fn parse(entry: PathBuf) {
-    let mut crates = AstCrate::parse(entry);
+    let (mut crates, span_files) = AstCrate::parse(entry);
 
-    let (items, errs) = Items::resolve(&mut crates);
+    let (items, mut errs) = Items::resolve(&mut crates);
 
-    codegen::codegen(&crates, &items, errs);
+    errs.extend(codegen::codegen(&crates, &items));
+
+    // let engine_cr_idx = crates.get_crate_index(Crate::Engine);
+    if !errs.is_empty() {
+        let writer = StandardStream::stderr(ColorChoice::Always);
+        let config = codespan_reporting::term::Config::default();
+        for msg in errs {
+            match msg {
+                utils::Msg::Diagnostic { msg, file, span } => {
+                    let diagnostic = Diagnostic::error()
+                        .with_message(msg)
+                        .with_labels(vec![Label::primary(file, span)]);
+                    term::emit(&mut writer.lock(), &config, &span_files, &diagnostic).unwrap();
+                }
+                utils::Msg::String(msg) => eprintln!("{}", msg),
+            }
+        }
+        panic!("Build failed");
+    }
+    // match code {
+    //     Ok(code) => Ok(write_codegen(crates, code.map_vec_into(|c| c.to_string()))),
+    //     Err(errs) => {
+    // let errs = errs.join("\n");
+    // let err_msg = "Engine build failed, go to the file below for more information";
+    // write_codegen(
+    //     crates,
+    //     crates
+    //         .iter_except([crates.get_crate_index(Crate::Macros)])
+    //         .map_vec_into(|cr| match cr.idx {
+    //             i if i == engine_cr_idx => {
+    //                 format!(
+    //                     "compile_error!(\"{err_msg}\");\nconst _: &str = \"\n{errs}\n\";"
+    //                 )
+    //             }
+    //             _ => String::new(),
+    //         }),
+    // )
+    //     }
+    // }
 }

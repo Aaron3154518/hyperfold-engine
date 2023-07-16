@@ -1,15 +1,16 @@
 use std::collections::{HashMap, HashSet};
 
+use proc_macro2::Span;
 use shared::{
     constants::TAB,
-    msg_result::{CombineMsgs, MsgResult, MsgTrait},
+    msg_result::{CombineMsgs, MsgTrait},
     traits::{CollectVec, CollectVecInto, PushInto, ThenOk},
 };
 
 use crate::{
     component_set::{ComponentSet, ComponentSetLabels},
     resolve::{ItemEvent, ItemGlobal, Items},
-    utils::paths::ENGINE_PATHS,
+    utils::{paths::ENGINE_PATHS, Msg, MsgResult},
 };
 
 use super::{
@@ -71,34 +72,39 @@ impl ComponentRefTracker {
         }
     }
 
-    pub fn validate(&self, comp_name: String) -> MsgResult<()> {
+    pub fn validate(&self, file: usize, span: &Span) -> MsgResult<()> {
         let (mut_cnt, immut_cnt) = (self.mut_refs.len(), self.immut_refs.len());
 
         (mut_cnt > 1)
             .err(
-                vec![format!("Multiple mutable references to '{comp_name}'")],
+                vec![Msg::for_file("Multiple mutable references", file, span)],
                 (),
             )
             .and_msgs((mut_cnt > 0 && immut_cnt > 0).err(
-                vec![format!("Mutable and immutable references to '{comp_name}'")],
+                vec![Msg::for_file(
+                    "Mutable and immutable references",
+                    file,
+                    span,
+                )],
                 (),
             ))
-            .map_err(|mut errs| {
-                if !self.mut_refs.is_empty() {
-                    errs.push(format!(
-                        "{TAB}Mutable references in '{}'",
-                        self.mut_refs.join("', '")
-                    ));
-                }
+        // TODO: add hint
+        // .map_err(|mut errs| {
+        //     if !self.mut_refs.is_empty() {
+        //         errs.push(format!(
+        //             "{TAB}Mutable references in '{}'",
+        //             self.mut_refs.join("', '")
+        //         ));
+        //     }
 
-                if !self.immut_refs.is_empty() {
-                    errs.push(format!(
-                        "{TAB}Immutable references in '{}'",
-                        self.immut_refs.join("', '")
-                    ));
-                }
-                errs
-            })
+        //     if !self.immut_refs.is_empty() {
+        //         errs.push(format!(
+        //             "{TAB}Immutable references in '{}'",
+        //             self.immut_refs.join("', '")
+        //         ));
+        //     }
+        //     errs
+        // })
     }
 }
 
@@ -109,18 +115,17 @@ impl ItemSystem {
         if self.attr_args.is_init {
             self.args
                 .enumerate_map_vec(|(arg_idx, arg)| match &arg.ty {
-                    FnArgType::Global(idx) => {
-                        Self::validate_global(arg, *idx, &mut global_idxs, items).map(|_| {
-                            GlobalFnArg {
-                                arg_idx,
-                                idx: *idx,
-                                is_mut: arg.is_mut,
-                            }
-                        })
-                    }
-                    FnArgType::Event(_) | FnArgType::Entities { .. } => Err(vec![format!(
-                        "Init systems may not contain {}: {arg}",
-                        arg.ty
+                    FnArgType::Global(idx) => self
+                        .validate_global(arg, *idx, &mut global_idxs, items)
+                        .map(|_| GlobalFnArg {
+                            arg_idx,
+                            idx: *idx,
+                            is_mut: arg.is_mut,
+                        }),
+                    FnArgType::Event(_) | FnArgType::Entities { .. } => Err(vec![Msg::for_file(
+                        &format!("Init systems may not contain {}", arg.ty),
+                        self.file,
+                        &self.span,
                     )]),
                 })
                 .combine_msgs()
@@ -134,44 +139,46 @@ impl ItemSystem {
             self.args
                 .enumerate_map_vec(|(arg_idx, arg)| match &arg.ty {
                     FnArgType::Event(idx) => match event {
-                        Some(_) => Err(vec![format!("Multiple events specified: {arg}")]),
-                        None => Self::validate_event(arg, *idx, items)
+                        Some(_) => Err(vec![Msg::for_file(
+                            "Event already specified",
+                            self.file,
+                            &arg.span,
+                        )]),
+                        None => self
+                            .validate_event(arg, *idx, items)
                             .map(|_| event = Some(EventFnArg { arg_idx, idx: *idx })),
                     },
-                    FnArgType::Global(idx) => {
-                        Self::validate_global(arg, *idx, &mut global_idxs, items).map(|_| {
+                    FnArgType::Global(idx) => self
+                        .validate_global(arg, *idx, &mut global_idxs, items)
+                        .map(|_| {
                             globals.push(GlobalFnArg {
                                 arg_idx,
                                 idx: *idx,
                                 is_mut: arg.is_mut,
                             });
-                        })
-                    }
-                    FnArgType::Entities { idx, is_vec } => {
-                        Self::validate_component_set(arg, *idx, *is_vec, &mut component_refs, items)
-                            .map(|_| {
-                                component_sets.push(ComponentSetFnArg {
-                                    arg_idx,
-                                    idx: *idx,
-                                    is_vec: *is_vec,
-                                });
-                            })
-                    }
+                        }),
+                    FnArgType::Entities { idx, is_vec } => self
+                        .validate_component_set(arg, *idx, *is_vec, &mut component_refs, items)
+                        .map(|_| {
+                            component_sets.push(ComponentSetFnArg {
+                                arg_idx,
+                                idx: *idx,
+                                is_vec: *is_vec,
+                            });
+                        }),
                 })
                 .combine_msgs()
                 // Require event
-                .then_msgs(event.ok_or(vec![format!("System must specify an event")]))
+                .then_msgs(event.ok_or(vec![Msg::for_file(
+                    "System must specify an event",
+                    self.file,
+                    &self.span,
+                )]))
                 // Check component reference mutability
                 .and_msgs(
                     component_refs
                         .into_iter()
-                        .map_vec_into(|(i, refs)| {
-                            items
-                                .components
-                                .get(i)
-                                .ok_or(vec![format!("Invalid Component index: {i}")])
-                                .and_then(|c| refs.validate(c.path.path.join("::")))
-                        })
+                        .map_vec_into(|(i, refs)| refs.validate(self.file, &self.span))
                         .combine_msgs(),
                 )
                 .map(|event| FnArgs::System {
@@ -180,17 +187,10 @@ impl ItemSystem {
                     component_sets,
                 })
         }
-        .map_err(|errs| {
-            [
-                vec![format!("In system: '{}' {{", self.path.path.join("::"))],
-                errs,
-            ]
-            .concat()
-            .push_into("}".to_string())
-        })
     }
 
     fn validate_global<'a>(
+        &self,
         arg: &FnArg,
         i: usize,
         globals: &mut HashSet<usize>,
@@ -199,32 +199,37 @@ impl ItemSystem {
         items
             .globals
             .get(i)
-            .ok_or(vec![format!("Invalid Global index: {i}")])
+            .ok_or(vec![Msg::String(format!("Invalid Global index: {i}"))])
             .and_then(|g| {
                 if g.args.is_const {
-                    Self::validate_mut(arg, false).map(|_| g)
+                    self.validate_mut(arg, false).map(|_| g)
                 } else {
                     Ok(g)
                 }
             })
-            .and_msgs(Self::validate_ref(arg, 1))
-            .and_msgs(
-                globals
-                    .insert(i)
-                    .ok((), vec![format!("Duplicate global: {arg}")]),
-            )
+            .and_msgs(self.validate_ref(arg, 1))
+            .and_msgs(globals.insert(i).ok(
+                (),
+                vec![Msg::for_file("Duplicate global", self.file, &arg.span)],
+            ))
     }
 
-    fn validate_event<'a>(arg: &FnArg, i: usize, items: &'a Items) -> MsgResult<&'a ItemEvent> {
+    fn validate_event<'a>(
+        &self,
+        arg: &FnArg,
+        i: usize,
+        items: &'a Items,
+    ) -> MsgResult<&'a ItemEvent> {
         items
             .events
             .get(i)
-            .ok_or(vec![format!("Invalid Event index: {i}")])
-            .and_msgs(Self::validate_ref(arg, 1))
-            .and_msgs(Self::validate_mut(arg, false))
+            .ok_or(vec![Msg::String(format!("Invalid Event index: {i}"))])
+            .and_msgs(self.validate_ref(arg, 1))
+            .and_msgs(self.validate_mut(arg, false))
     }
 
     fn validate_component_set<'a>(
+        &self,
         arg: &FnArg,
         i: usize,
         is_vec: bool,
@@ -236,7 +241,7 @@ impl ItemSystem {
         items
             .component_sets
             .get(i)
-            .ok_or(vec![format!("Invalid component set index: {i}")])
+            .ok_or(vec![Msg::String(format!("Invalid component set index: {i}"))])
             .and_then(|cs| {
                 let path = cs.path.path.join("::");
 
@@ -256,59 +261,66 @@ impl ItemSystem {
                     true => Ok(cs),
                     // Must have a required singleton in the labels
                     false => {
-                        let mut errs = vec![format!("{TAB}Entity set must contain singletons or be wrapped with {entities}<>")];
-                        if let Some(ComponentSetLabels::Expression(e)) = &cs.labels {
-                            for (symbs, verb) in [(&e.false_symbols, "must"), (&e.unknown_symbols, "may")] {
-                                let comps = symbs
-                                    .filter_map_vec(|c_sym|
-                                        c_sym.args.is_singleton
-                                            .then_some(items.components.get(c_sym.idx)
-                                            .map_or_else(|| "Unknown".to_string(), 
-                                            |c| c.path.path.join("::")
-                                    )));
-                                if !comps.is_empty() {
-                                    errs.push(format!("{TAB}{TAB}These singleton are included as labels but {verb} be false: {}", comps.join(", ")))
-                                }
-                            }
-                        }
-                        Err(errs)
+                        let err = Msg::for_file(&format!("Entity set must contain singletons or be wrapped with {entities}<>"), self.file, &arg.span);
+                        // TODO: add help
+                        // if let Some(ComponentSetLabels::Expression(e)) = &cs.labels {
+                        //     for (symbs, verb) in [(&e.false_symbols, "must"), (&e.unknown_symbols, "may")] {
+                        //         let comps = symbs
+                        //             .filter_map_vec(|c_sym|
+                        //                 c_sym.args.is_singleton
+                        //                     .then_some(items.components.get(c_sym.idx)
+                        //                     .map_or_else(|| "Unknown".to_string(), 
+                        //                     |c| c.path.path.join("::")
+                        //             )));
+                        //         if !comps.is_empty() {
+                        //             errs.push(format!("{TAB}{TAB}These singleton are included as labels but {verb} be false: {}", comps.join(", ")))
+                        //         }
+                        //     }
+                        // }
+                        Err(vec![err])
                     },
-                }.map_err(|mut errs| {
-                    [vec![format!("In entity set argument: {path} {{")], errs.push_into("}".to_string())].concat()
-                })
+                }
             })
-            .and_msgs(Self::validate_ref(arg, 0))
+            .and_msgs(self.validate_ref(arg, 0))
     }
 
     // Validate conditions
-    fn validate_ref(arg: &FnArg, should_be_cnt: usize) -> MsgResult<()> {
+    fn validate_ref(&self, arg: &FnArg, should_be_cnt: usize) -> MsgResult<()> {
         (arg.ref_cnt == should_be_cnt).ok(
             (),
-            vec![format!(
-                "Type should be taken by {}: \"{}\"",
-                if should_be_cnt == 0 {
-                    "borrow".to_string()
-                } else if should_be_cnt == 1 {
-                    "single reference".to_string()
-                } else {
-                    format!("{} references", should_be_cnt)
-                },
-                arg
+            vec![Msg::for_file(
+                &format!(
+                    "Type should be taken by {}: \"{}\"",
+                    if should_be_cnt == 0 {
+                        "borrow".to_string()
+                    } else if should_be_cnt == 1 {
+                        "single reference".to_string()
+                    } else {
+                        format!("{} references", should_be_cnt)
+                    },
+                    arg
+                ),
+                self.file,
+                &arg.span,
             )],
         )
     }
 
-    fn validate_mut(arg: &FnArg, should_be_mut: bool) -> MsgResult<()> {
+    fn validate_mut(&self, arg: &FnArg, should_be_mut: bool) -> MsgResult<()> {
         (arg.is_mut == should_be_mut).ok(
             (),
-            vec![format!(
-                "Type should be taken {}: \"{}\"",
-                if should_be_mut {
-                    "mutably"
-                } else {
-                    "immutably"
-                },
-                arg
+            vec![Msg::for_file(
+                &format!(
+                    "Type should be taken {}: \"{}\"",
+                    if should_be_mut {
+                        "mutably"
+                    } else {
+                        "immutably"
+                    },
+                    arg
+                ),
+                self.file,
+                &arg.span,
             )],
         )
     }

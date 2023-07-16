@@ -5,7 +5,7 @@ use quote::{format_ident, quote};
 use shared::{
     macros::{expand_enum, ExpandEnum},
     match_ok,
-    msg_result::{MsgResult, Zip7Msgs},
+    msg_result::Zip7Msgs,
     traits::{Call, CollectVec, PushInto},
 };
 
@@ -15,7 +15,7 @@ use crate::{
         resolve_path_from_crate, DiscardSymbol, GlobalSymbol, ItemPath, MatchSymbol,
         ResolveResultTrait,
     },
-    utils::{constants::NAMESPACE, idents::global_var, syn::vec_to_path},
+    utils::{constants::NAMESPACE, idents::global_var, syn::vec_to_path, Msg, MsgResult},
 };
 
 // All named crate indices
@@ -164,7 +164,7 @@ macro_rules! engine_globals {
             pub fn get_global_vars(&self, crates: &Crates, cr_idx: usize) -> MsgResult<$ty_res> {
                 let cr = match crates.get(cr_idx) {
                     Some(cr) => cr,
-                    None => return Err(vec![format!("Invalid crate index: {cr_idx}")]),
+                    None => return Err(vec![Msg::String(format!("Invalid crate index: {cr_idx}"))]),
                 };
                 let get_global = |cr_path| {
                     crates

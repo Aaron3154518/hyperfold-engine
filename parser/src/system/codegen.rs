@@ -2,7 +2,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use shared::{
     match_ok,
-    msg_result::{CombineMsgs, MsgResult, MsgTrait, Zip4Msgs},
+    msg_result::{CombineMsgs, MsgTrait, Zip4Msgs},
     traits::{CollectVec, CollectVecInto},
 };
 
@@ -14,6 +14,7 @@ use crate::{
         idents::{event_variant, global_var, CodegenIdents, CODEGEN_IDENTS},
         paths::{ENGINE_PATHS, ENGINE_TRAITS},
         syn::Quote,
+        Msg, MsgResult,
     },
 };
 
@@ -108,7 +109,6 @@ pub struct SystemsCodegenResult {
     pub system_events: Vec<syn::Ident>,
 }
 
-// TODO: handle errors
 pub fn codegen_systems(
     cr_idx: usize,
     items: &Items,
@@ -142,7 +142,10 @@ pub fn codegen_systems(
                             items
                                 .component_sets
                                 .get(fn_arg.idx)
-                                .ok_or(vec![format!("Invalid component set index: {}", fn_arg.idx)])
+                                .ok_or(vec![Msg::String(format!(
+                                    "Invalid component set index: {}",
+                                    fn_arg.idx
+                                ))])
                                 .and_then(|cs| {
                                     crates
                                         .get_item_syn_path(cr_idx, &cs.path)
@@ -168,18 +171,9 @@ pub fn codegen_systems(
         });
     }
 
-    systems
-        .filter_vec_into(|r| match r {
-            Ok(_) => true,
-            Err(err) => {
-                eprintln!("{}", err.join("\n"));
-                false
-            }
-        })
-        .combine_msgs()
-        .map(|systems| SystemsCodegenResult {
-            init_systems,
-            systems,
-            system_events,
-        })
+    systems.combine_msgs().map(|systems| SystemsCodegenResult {
+        init_systems,
+        systems,
+        system_events,
+    })
 }

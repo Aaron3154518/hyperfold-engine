@@ -1,12 +1,19 @@
 use std::{env::temp_dir, fs, path::PathBuf};
 
+use codespan_reporting::{
+    diagnostic::{Diagnostic, Label},
+    term::{
+        self,
+        termcolor::{ColorChoice, StandardStream},
+    },
+};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
 use shared::{
     constants::{INDEX, INDEX_SEP},
     match_ok,
-    msg_result::{CombineMsgs, MsgResult, MsgTrait, Zip2Msgs, Zip8Msgs, Zip9Msgs},
+    msg_result::{CombineMsgs, MsgTrait, Zip2Msgs, Zip8Msgs},
     traits::{Catch, CollectVec, CollectVecInto, ThenOk},
 };
 
@@ -16,12 +23,14 @@ use crate::{
     utils::{
         constants::NAMESPACE,
         paths::{Crate, NAMESPACE_USE_STMTS},
+        syn::ToRange,
+        Msg, MsgResult,
     },
 };
 
 use super::Crates;
 
-pub fn codegen(crates: &Crates, items: &Items, mut errs: Vec<String>) {
+pub fn codegen(crates: &Crates, items: &Items) -> Vec<Msg> {
     let main_cr_idx = crates.get_crate_index(Crate::Main);
     let macro_cr_idx = crates.get_crate_index(Crate::Macros);
 
@@ -81,10 +90,8 @@ pub fn codegen(crates: &Crates, items: &Items, mut errs: Vec<String>) {
         #[allow(unused_parens)]
         #[allow(dead_code)]
     );
-    let errors = MsgResult::new((), errs);
     let code = match_ok!(
-        Zip9Msgs,
-        errors,
+        Zip8Msgs,
         globals,
         components,
         component_traits,
@@ -141,27 +148,12 @@ pub fn codegen(crates: &Crates, items: &Items, mut errs: Vec<String>) {
         }
     );
 
-    let engine_cr_idx = crates.get_crate_index(Crate::Engine);
-
     match code {
-        Ok(code) => write_codegen(crates, code.map_vec_into(|c| c.to_string())),
-        Err(errs) => {
-            let errs = errs.join("\n");
-            let err_msg = "Engine build failed, go to the file below for more information";
-            write_codegen(
-                crates,
-                crates
-                    .iter_except([crates.get_crate_index(Crate::Macros)])
-                    .map_vec_into(|cr| match cr.idx {
-                        i if i == engine_cr_idx => {
-                            format!(
-                                "compile_error!(\"{err_msg}\");\nconst _: &str = \"\n{errs}\n\";"
-                            )
-                        }
-                        _ => String::new(),
-                    }),
-            )
+        Ok(code) => {
+            write_codegen(crates, code.map_vec_into(|c| c.to_string()));
+            vec![]
         }
+        Err(errs) => errs,
     }
 }
 

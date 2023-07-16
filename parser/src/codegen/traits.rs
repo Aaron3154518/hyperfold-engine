@@ -2,7 +2,7 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use shared::{
     match_ok,
-    msg_result::{MsgResult, Zip2Msgs},
+    msg_result::Zip2Msgs,
     traits::{CollectVec, CollectVecInto},
 };
 
@@ -12,6 +12,7 @@ use crate::{
         idents::{CodegenIdents, CODEGEN_IDENTS},
         paths::{Crate, CratePath},
         syn::vec_to_path,
+        Msg, MsgResult,
     },
 };
 
@@ -42,7 +43,7 @@ where
     let macro_cr_idx = crates.get_crate_index(Crate::Macros);
     let dep_traits = crates
         .get(cr_idx)
-        .ok_or(vec![format!("Invalid crate index: {cr_idx}")])
+        .ok_or(vec![Msg::String(format!("Invalid crate index: {cr_idx}"))])
         .map(|cr| {
             cr.deps
                 .iter()

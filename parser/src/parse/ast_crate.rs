@@ -18,7 +18,7 @@ use super::{
 use crate::{
     codegen::Crates,
     parse::ItemPath,
-    utils::{constants::NAMESPACE, paths::Crate},
+    utils::{constants::NAMESPACE, paths::Crate, SpanFiles},
 };
 
 // TODO: hardcoded
@@ -46,7 +46,7 @@ pub struct AstCrate {
 }
 
 impl AstCrate {
-    pub fn new(dir: PathBuf, idx: usize, is_entry: bool) -> Self {
+    pub fn new(span_files: &mut SpanFiles, dir: PathBuf, idx: usize, is_entry: bool) -> Self {
         let rel_dir = dir.to_owned();
         let dir: PathBuf = fs::canonicalize(dir).catch(format!(
             "Could not canonicalize path: {}",
@@ -62,6 +62,7 @@ impl AstCrate {
                 .to_string(),
             dir: dir.to_owned(),
             main: AstMod::parse_dir(
+                span_files,
                 dir.join("src"),
                 &vec!["crate".to_string()],
                 if is_entry {
@@ -74,8 +75,10 @@ impl AstCrate {
         }
     }
 
-    pub fn parse(mut dir: PathBuf) -> Crates {
-        let mut crates = vec![AstCrate::new(dir.to_owned(), 0, true)];
+    pub fn parse(mut dir: PathBuf) -> (Crates, SpanFiles) {
+        let mut span_files = SpanFiles::new();
+
+        let mut crates = vec![AstCrate::new(&mut span_files, dir.to_owned(), 0, true)];
 
         let engine_dir = get_engine_dir();
         let macros_dir = get_macros_dir();
@@ -88,7 +91,12 @@ impl AstCrate {
                 |(deps, new_deps)| {
                     crate_deps.push(deps);
                     for path in new_deps {
-                        crates.push(AstCrate::new(cr_dir.join(path), crates.len(), false))
+                        crates.push(AstCrate::new(
+                            &mut span_files,
+                            cr_dir.join(path),
+                            crates.len(),
+                            false,
+                        ))
                     }
                 },
             );
@@ -114,7 +122,7 @@ impl AstCrate {
         crate_idxs[Crate::Engine as usize] = engine_cr_idx;
         crate_idxs[Crate::Macros as usize] = macros_cr_idx;
 
-        Crates::new(crates, crate_idxs)
+        (Crates::new(crates, crate_idxs), span_files)
     }
 
     fn get_crate_dependencies(
@@ -212,6 +220,7 @@ impl AstCrate {
             m.dir.to_owned(),
             path.to_vec(),
             AstModType::Internal,
+            m.span_file,
         ));
         m.mods.last_mut().catch(format!("Mod not added: {path:#?}"))
     }

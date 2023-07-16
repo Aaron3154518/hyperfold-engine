@@ -2,7 +2,7 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use shared::{
     match_ok,
-    msg_result::{MsgResult, Zip3Msgs},
+    msg_result::Zip3Msgs,
     traits::{CollectVec, CollectVecInto},
 };
 
@@ -16,6 +16,7 @@ use crate::{
         },
         paths::ENGINE_PATHS,
         syn::{get_fn_name, Quote},
+        MsgResult,
     },
 };
 

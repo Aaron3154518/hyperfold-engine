@@ -8,6 +8,7 @@ use syn::{
     parenthesized, parse_macro_input, spanned::Spanned, token::Trait, Error, PatType, Token,
 };
 
+use crate::utils::Msg;
 use crate::{
     codegen::{self as codegen, Crates, Traits},
     component_set::ComponentSet,
@@ -77,7 +78,7 @@ impl Items {
         }
     }
 
-    pub fn resolve(crates: &mut Crates) -> (Self, Vec<String>) {
+    pub fn resolve(crates: &mut Crates) -> (Self, Vec<Msg>) {
         let mut errs = Vec::new();
         let mut items = Items::new();
 
@@ -180,7 +181,7 @@ impl Items {
                                 call.data.args.clone(),
                                 (m, cr, crates.get_crates()),
                             )
-                            .handle_err(|es| errs.push_item(String::new()).extend(es))
+                            .handle_err(|es| errs.extend(es))
                             .map(|cs| {
                                 let sym = Symbol {
                                     kind: SymbolType::ComponentSet(items.component_sets.len()),
@@ -269,10 +270,13 @@ impl Items {
                             .ok()
                             .and_then(|sym| {
                                 ItemSystem::parse(fun, attr, &items, (m, cr, crates.get_crates()))
-                                    .handle_err(|es| errs.push_item(String::new()).extend(es))
+                                    .handle_err(|es| errs.extend(es))
                                     .map(|sys| {
                                         let sym = Symbol {
-                                            kind: SymbolType::System(items.systems.len()),
+                                            kind: SymbolType::System(
+                                                items.systems.len(),
+                                                fun.data.sig.span(),
+                                            ),
                                             path: sys.path.path.to_vec(),
                                             public: true,
                                         };

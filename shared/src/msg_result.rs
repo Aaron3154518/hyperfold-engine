@@ -1,33 +1,36 @@
 use crate::traits::ThenOk;
 
 // Type for propogating errors
-pub type MsgResult<T> = Result<T, Vec<String>>;
+pub type MsgResult<T, E> = Result<T, Vec<E>>;
 
-pub trait MsgTrait<T> {
-    fn new(t: T, errs: Vec<String>) -> MsgResult<T>;
+pub trait MsgTrait<T, E> {
+    fn new(t: T, errs: Vec<E>) -> MsgResult<T, E>;
 
-    fn get_ref<'a>(&'a self) -> MsgResult<&'a T>;
+    fn get_ref<'a>(&'a self) -> MsgResult<&'a T, E>;
 
     // Add rhs errors, don't overwrite data
-    fn and_msgs<U>(self, rhs: MsgResult<U>) -> MsgResult<T>;
+    fn and_msgs<U>(self, rhs: MsgResult<U, E>) -> MsgResult<T, E>;
 
     // Add rhs errors, do overwrite data
-    fn then_msgs<U>(self, rhs: MsgResult<U>) -> MsgResult<U>;
+    fn then_msgs<U>(self, rhs: MsgResult<U, E>) -> MsgResult<U, E>;
 }
 
-impl<T> MsgTrait<T> for MsgResult<T> {
-    fn new(t: T, errs: Vec<String>) -> MsgResult<T> {
+impl<T, E> MsgTrait<T, E> for MsgResult<T, E>
+where
+    E: Clone,
+{
+    fn new(t: T, errs: Vec<E>) -> MsgResult<T, E> {
         errs.is_empty().ok(t, errs)
     }
 
-    fn get_ref<'a>(&'a self) -> MsgResult<&'a T> {
+    fn get_ref<'a>(&'a self) -> MsgResult<&'a T, E> {
         match self {
             Ok(t) => Ok(t),
             Err(e) => Err(e.to_vec()),
         }
     }
 
-    fn and_msgs<U>(self, rhs: MsgResult<U>) -> MsgResult<T> {
+    fn and_msgs<U>(self, rhs: MsgResult<U, E>) -> MsgResult<T, E> {
         match (self, rhs) {
             (Ok(t), Ok(_)) => Ok(t),
             (Ok(_), Err(e)) | (Err(e), Ok(_)) => Err(e),
@@ -35,18 +38,18 @@ impl<T> MsgTrait<T> for MsgResult<T> {
         }
     }
 
-    fn then_msgs<U>(self, rhs: MsgResult<U>) -> MsgResult<U> {
+    fn then_msgs<U>(self, rhs: MsgResult<U, E>) -> MsgResult<U, E> {
         rhs.and_msgs(self)
     }
 }
 
 // Combines vectors of messages
-pub trait CombineMsgs<T> {
-    fn combine_msgs(self) -> MsgResult<T>;
+pub trait CombineMsgs<T, E> {
+    fn combine_msgs(self) -> MsgResult<T, E>;
 }
 
-impl<T> CombineMsgs<Vec<T>> for Vec<MsgResult<T>> {
-    fn combine_msgs(self) -> MsgResult<Vec<T>> {
+impl<T, E> CombineMsgs<Vec<T>, E> for Vec<MsgResult<T, E>> {
+    fn combine_msgs(self) -> MsgResult<Vec<T>, E> {
         let mut msgs = Vec::new();
         let mut ts = Vec::new();
         for msg in self {
@@ -60,12 +63,12 @@ impl<T> CombineMsgs<Vec<T>> for Vec<MsgResult<T>> {
 }
 
 // Flatten messages
-pub trait FlattenMsgs<T> {
-    fn flatten_msgs(self) -> MsgResult<T>;
+pub trait FlattenMsgs<T, E> {
+    fn flatten_msgs(self) -> MsgResult<T, E>;
 }
 
-impl<T> FlattenMsgs<T> for MsgResult<MsgResult<T>> {
-    fn flatten_msgs(self) -> MsgResult<T> {
+impl<T, E> FlattenMsgs<T, E> for MsgResult<MsgResult<T, E>, E> {
+    fn flatten_msgs(self) -> MsgResult<T, E> {
         match self {
             Ok(t) => t,
             Err(e) => Err(e),
@@ -74,15 +77,15 @@ impl<T> FlattenMsgs<T> for MsgResult<MsgResult<T>> {
 }
 
 macro_rules! msgs_zip {
-    (($tr: ident), ($v0: ident, $vn: ident)) => {
+    ($err: ident, ($tr: ident), ($v0: ident, $vn: ident)) => {
         #[allow(non_snake_case)]
-        pub trait $tr<$v0, $vn> {
-            fn zip(self, $vn: MsgResult<$vn>) -> MsgResult<($v0, $vn)>;
+        pub trait $tr<$v0, $vn, $err> {
+            fn zip(self, $vn: MsgResult<$vn, $err>) -> MsgResult<($v0, $vn), $err>;
         }
 
         #[allow(non_snake_case)]
-        impl<$v0, $vn> $tr<$v0, $vn> for MsgResult<$v0> {
-            fn zip(self, $vn: MsgResult<$vn>) -> MsgResult<($v0, $vn)> {
+        impl<$v0, $vn, $err> $tr<$v0, $vn, Er> for MsgResult<$v0, $err> where $err: Clone {
+            fn zip(self, $vn: MsgResult<$vn, $err>) -> MsgResult<($v0, $vn), $err> {
                 match (self, $vn) {
                     (Ok($v0), Ok($vn)) => Ok(($v0, $vn)),
                     (Ok(_), Err(e)) | (Err(e), Ok(_)) => Err(e),
@@ -92,20 +95,20 @@ macro_rules! msgs_zip {
         }
     };
 
-    (($tr: ident, $tr1: ident $(,$trs: ident)*), ($v0: ident, $vn: ident, $vn1: ident $(,$vs: ident)*)) => {
-        msgs_zip!(($tr1 $(,$trs)*), ($v0, $vn1 $(,$vs)*));
+    ($err: ident, ($tr: ident, $tr1: ident $(,$trs: ident)*), ($v0: ident, $vn: ident, $vn1: ident $(,$vs: ident)*)) => {
+        msgs_zip!($err, ($tr1 $(,$trs)*), ($v0, $vn1 $(,$vs)*));
 
         #[allow(non_snake_case)]
-        pub trait $tr<$v0 $(,$vs)*, $vn1, $vn> {
-            fn zip(self $(,$vs: MsgResult<$vs>)*, $vn1: MsgResult<$vn1>, $vn: MsgResult<$vn>)
-                -> MsgResult<($v0 $(,$vs)*, $vn1, $vn)>;
+        pub trait $tr<$v0 $(,$vs)*, $vn1, $vn, $err> {
+            fn zip(self $(,$vs: MsgResult<$vs, $err>)*, $vn1: MsgResult<$vn1, $err>, $vn: MsgResult<$vn, $err>)
+                -> MsgResult<($v0 $(,$vs)*, $vn1, $vn), $err>;
         }
 
         #[allow(non_snake_case)]
-        impl<$v0 $(,$vs)*, $vn1, $vn> $tr<$v0 $(,$vs)*, $vn1, $vn> for MsgResult<$v0> {
-            fn zip(self $(,$vs: MsgResult<$vs>)*, $vn1: MsgResult<$vn1>, $vn: MsgResult<$vn>)
-                -> MsgResult<($v0 $(,$vs)*, $vn1, $vn)> {
-                    match (<Self as $tr1<$v0 $(,$vs)*, $vn1>>::zip(self $(,$vs)*, $vn1), $vn) {
+        impl<$v0 $(,$vs)*, $vn1, $vn, $err> $tr<$v0 $(,$vs)*, $vn1, $vn, $err> for MsgResult<$v0, $err> where $err: Clone {
+            fn zip(self $(,$vs: MsgResult<$vs, $err>)*, $vn1: MsgResult<$vn1, $err>, $vn: MsgResult<$vn, $err>)
+                -> MsgResult<($v0 $(,$vs)*, $vn1, $vn), $err> {
+                    match (<Self as $tr1<$v0 $(,$vs)*, $vn1, $err>>::zip(self $(,$vs)*, $vn1), $vn) {
                         (Ok(($v0 $(,$vs)*, $vn1)), Ok($vn)) => Ok(($v0 $(,$vs)*, $vn1, $vn)),
                         (Ok(_), Err(e)) | (Err(e), Ok(_)) => Err(e),
                         (Err(e1), Err(e2)) => Err([e1, e2].concat())
@@ -116,6 +119,7 @@ macro_rules! msgs_zip {
 }
 
 msgs_zip!(
+    Er,
     (
         Zip26Msgs, Zip25Msgs, Zip24Msgs, Zip23Msgs, Zip22Msgs, Zip21Msgs, Zip20Msgs, Zip19Msgs,
         Zip18Msgs, Zip17Msgs, Zip16Msgs, Zip15Msgs, Zip14Msgs, Zip13Msgs, Zip12Msgs, Zip11Msgs,
