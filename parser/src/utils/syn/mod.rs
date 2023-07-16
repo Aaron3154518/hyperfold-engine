@@ -1,3 +1,4 @@
+mod parse;
 mod path;
 mod quote;
 mod span;
@@ -7,6 +8,7 @@ mod uses;
 mod util;
 
 pub use self::quote::Quote;
+pub use parse::{parse_tokens, Parse, StreamParse};
 pub use path::{arr_to_path, string_to_path, vec_to_path};
 pub use r#type::{arr_to_type, string_to_type, type_to_type};
 pub use span::ToRange;

@@ -15,4 +15,4 @@ pub type ItemIndex = (usize, usize);
 
 pub type SpanFiles = SimpleFiles<String, String>;
 
-pub use msg::{Msg, MsgResult};
+pub use msg::{CatchSpanErr, Msg, MsgResult, ParseMsg, ParseMsgResult, ToMsg};

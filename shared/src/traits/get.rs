@@ -1,3 +1,5 @@
+use std::vec;
+
 // Get for multidimensional vecetor
 pub trait Get2D<T> {
     fn get<'a>(&'a self, i: usize, j: usize) -> Option<&'a T>;
@@ -12,6 +14,21 @@ impl<T> Get2D<T> for Vec<Vec<T>> {
 
     fn get_mut<'a>(&'a mut self, i: usize, j: usize) -> Option<&'a mut T> {
         <[Vec<T>]>::get_mut(self, i).and_then(|v| v.get_mut(j))
+    }
+}
+
+// Get first into
+pub trait GetFirst<T, I>
+where
+    I: Iterator<Item = T>,
+{
+    fn first_into(self) -> Option<(T, I)>;
+}
+
+impl<T> GetFirst<T, vec::IntoIter<T>> for Vec<T> {
+    fn first_into(self) -> Option<(T, vec::IntoIter<T>)> {
+        let mut it = self.into_iter();
+        it.next().map(|t| (t, it))
     }
 }
 

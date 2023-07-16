@@ -7,6 +7,10 @@ const SPAN_REGEX: LazyCell<regex::Regex> =
 
 pub trait ToRange {
     fn to_range(&self) -> Result<Range<usize>, String>;
+
+    fn range_start(&self) -> Result<usize, String> {
+        self.to_range().map(|r| r.start)
+    }
 }
 
 impl ToRange for Span {
@@ -16,7 +20,7 @@ impl ToRange for Span {
             Some(c) => match (c.name("start"), c.name("end")) {
                 (Some(s), Some(e)) => {
                     match (s.as_str().parse::<usize>(), e.as_str().parse::<usize>()) {
-                        (Ok(s), Ok(e)) => Ok(s - 1..e - 1),
+                        (Ok(s), Ok(e)) => Ok(s..e),
                         (Ok(_), Err(e)) | (Err(e), Ok(_)) => Err(e.to_string()),
                         (Err(e1), Err(e2)) => Err(format!("{e1}\n{e2}")),
                     }

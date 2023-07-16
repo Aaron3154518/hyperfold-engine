@@ -9,13 +9,14 @@ use super::{
     parse::{AstComponentSet, AstComponentSetItem, AstLabelItem, LabelOp},
 };
 use crate::{
-    err,
     parse::{resolve_path, ComponentSymbol, DiscardSymbol, ItemPath, MatchSymbol, ModInfo},
-    parse_expect,
-    utils::{Msg, MsgResult},
+    utils::{
+        syn::{parse_tokens, ToRange},
+        Msg, MsgResult, ParseMsg, ToMsg,
+    },
 };
 use shared::{
-    msg_result::{CombineMsgs, Zip2Msgs},
+    msg_result::{CombineMsgs, MsgTrait, Zip2Msgs},
     traits::{Call, CollectVec, CollectVecInto, PushInto},
 };
 
@@ -137,8 +138,9 @@ impl ComponentSet {
 
     pub fn parse(tokens: TokenStream, (m, cr, crates): ModInfo) -> MsgResult<Self> {
         let span = tokens.span();
-        syn::parse2(tokens)
-            .map_err(|_| vec![Msg::for_mod("Failed to parse component set", m, &span)])
+        parse_tokens(tokens)
+            .for_mod(span.range_start().ok(), m)
+            .add_msg(|| Msg::for_mod("Failed to parse component set", m, &span))
             .and_then(|cs| Self::resolve(cs, (m, cr, crates)))
     }
 

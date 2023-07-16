@@ -1,4 +1,4 @@
-use crate::traits::ThenOk;
+use crate::traits::{PushInto, ThenOk};
 
 // Type for propogating errors
 pub type MsgResult<T, E> = Result<T, Vec<E>>;
@@ -13,6 +13,8 @@ pub trait MsgTrait<T, E> {
 
     // Add rhs errors, do overwrite data
     fn then_msgs<U>(self, rhs: MsgResult<U, E>) -> MsgResult<U, E>;
+
+    fn add_msg(self, f: impl FnOnce() -> E) -> MsgResult<T, E>;
 }
 
 impl<T, E> MsgTrait<T, E> for MsgResult<T, E>
@@ -40,6 +42,10 @@ where
 
     fn then_msgs<U>(self, rhs: MsgResult<U, E>) -> MsgResult<U, E> {
         rhs.and_msgs(self)
+    }
+
+    fn add_msg(self, f: impl FnOnce() -> E) -> MsgResult<T, E> {
+        self.map_err(|errs| errs.push_into(f()))
     }
 }
 
