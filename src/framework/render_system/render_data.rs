@@ -5,7 +5,6 @@ use crate::{
     ecs::{
         entities::Entity,
         events::core::{PreRender, Update},
-        systems::Entities,
     },
     framework::physics::Position,
     utils::{
@@ -338,12 +337,7 @@ impl AssetDrawable for RenderAsset {
 components!(RenderPos, tex: &'a mut RenderComponent, pos: &'a Position);
 
 #[macros::system]
-fn set_render_pos(
-    _ev: &PreRender,
-    screen: &Screen,
-    camera: &Camera,
-    entities: Entities<RenderPos>,
-) {
+fn set_render_pos(_ev: &PreRender, screen: &Screen, camera: &Camera, entities: Vec<RenderPos>) {
     for RenderPos { tex, pos, .. } in entities {
         let dest = rect_to_camera_coords(&pos.0, screen, camera);
         tex.try_mut(|rt: &mut RenderTexture| rt.get_render_data_mut().set_dest_rect(dest))
@@ -413,7 +407,7 @@ components!(
 );
 
 #[macros::system]
-pub fn update_animations(update: &Update, entities: Entities<Animations>) {
+pub fn update_animations(update: &Update, entities: Vec<Animations>) {
     for Animations { anim, tex, .. } in entities {
         anim.timer += update.0;
         if anim.timer >= anim.mspf {

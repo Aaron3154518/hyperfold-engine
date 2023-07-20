@@ -66,5 +66,3 @@ macro_rules! components {
             }
         };
     }
-
-pub type Entities<T> = Vec<T>;

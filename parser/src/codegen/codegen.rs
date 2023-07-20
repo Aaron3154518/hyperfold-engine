@@ -150,13 +150,12 @@ pub fn codegen(crates: &Crates, items: &Items) -> MsgResult<()> {
 
     match code {
         Ok(code) => write_codegen(crates, code.map_vec_into(|c| c.to_string())),
-        Err(errs) => write_codegen(
+        Err(errs) => Err(errs).and_msgs(write_codegen(
             crates,
             crates
                 .iter_except([macro_cr_idx])
                 .map_vec_into(|_| String::new()),
-        )
-        .map_err(|msgs| [errs, msgs].concat()),
+        )),
     }
 }
 

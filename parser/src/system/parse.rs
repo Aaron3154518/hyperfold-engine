@@ -17,11 +17,14 @@ use shared::{
 
 use crate::{
     parse::{
-        resolve_syn_path, AstAttribute, AstFunction, AstItem, DiscardSymbol, HardcodedSymbol,
-        ItemPath, MatchSymbol, ModInfo,
+        resolve_path, resolve_syn_path, AstAttribute, AstFunction, AstItem, DiscardSymbol,
+        HardcodedSymbol, ItemPath, MatchSymbol, ModInfo,
     },
     resolve::Items,
-    utils::{syn::ToRange, InjectSpan, Msg, MsgResult},
+    utils::{
+        syn::{use_path_from_syn, ToRange},
+        InjectSpan, Msg, MsgResult,
+    },
 };
 
 #[derive(Clone, Debug)]
@@ -86,36 +89,39 @@ impl FnArg {
                     _ => None,
                 });
 
-                resolve_syn_path(&m.path, &p.path, (m, cr, crates))
-                    .in_mod(m, &ty)
-                    .and_then(|sym| match sym.kind {
-                        crate::parse::SymbolType::Global(g_sym) => Ok(FnArgType::Global(g_sym.idx)),
-                        crate::parse::SymbolType::Event(i) => Ok(FnArgType::Event(i)),
-                        crate::parse::SymbolType::ComponentSet(idx) => {
-                            Ok(FnArgType::Entities { idx, is_vec: false })
+                // TODO: Type alias support must include Vec (Add path resolution for built-ins)
+                let path = use_path_from_syn(&m.path, &p.path);
+                match path.join("::").as_str() {
+                    "Vec" => match generics.as_ref().and_then(|v| v.first()) {
+                        Some(syn::GenericArgument::Type(syn::Type::Path(ty))) => {
+                            resolve_syn_path(&m.path, &ty.path, (m, cr, crates))
+                                .expect_component_set_in_mod(m, ty)
+                                .discard_symbol()
+                                .map(|idx| FnArgType::Entities { idx, is_vec: true })
                         }
-                        crate::parse::SymbolType::Hardcoded(s) => match s {
-                            HardcodedSymbol::Entities => {
-                                match generics.as_ref().and_then(|v| v.first()) {
-                                    Some(syn::GenericArgument::Type(syn::Type::Path(ty))) => {
-                                        resolve_syn_path(&m.path, &ty.path, (m, cr, crates))
-                                            .expect_component_set_in_mod(m, ty)
-                                            .discard_symbol()
-                                            .map(|idx| FnArgType::Entities { idx, is_vec: true })
-                                    }
-                                    _ => Err(vec![Msg::for_mod("Invalid argument type", m, ty)]),
-                                }
-                            }
-                            _ => Err(vec![Msg::for_mod("Invalid argument type", m, ty)]),
-                        },
                         _ => Err(vec![Msg::for_mod("Invalid argument type", m, ty)]),
-                    })
-                    .map(|data| Self {
-                        ty: data,
-                        is_mut: false,
-                        ref_cnt: 0,
-                        span: ty.span(),
-                    })
+                    },
+                    _ => {
+                        resolve_path(path, (m, cr, crates))
+                            .in_mod(m, &ty)
+                            .and_then(|sym| match sym.kind {
+                                crate::parse::SymbolType::Global(g_sym) => {
+                                    Ok(FnArgType::Global(g_sym.idx))
+                                }
+                                crate::parse::SymbolType::Event(i) => Ok(FnArgType::Event(i)),
+                                crate::parse::SymbolType::ComponentSet(idx) => {
+                                    Ok(FnArgType::Entities { idx, is_vec: false })
+                                }
+                                _ => Err(vec![Msg::for_mod("Invalid argument type", m, ty)]),
+                            })
+                    }
+                }
+                .map(|data| Self {
+                    ty: data,
+                    is_mut: false,
+                    ref_cnt: 0,
+                    span: ty.span(),
+                })
             }
             syn::Type::Reference(r) => {
                 Self::parse_type(&r.elem, (m, cr, crates)).map(|mut fn_arg| {

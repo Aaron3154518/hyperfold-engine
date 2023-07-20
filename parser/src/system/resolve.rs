@@ -220,20 +220,19 @@ impl ItemSystem {
         component_refs: &mut HashMap<usize, ComponentRefTracker>,
         items: &'a Items,
     ) -> MsgResult<&'a ComponentSet> {
-        let entities = ENGINE_PATHS.entities.get_ident();
-
         items
             .component_sets
             .get(i)
-            .ok_or(vec![Msg::String(format!("Invalid component set index: {i}"))])
+            .ok_or(vec![Msg::String(format!(
+                "Invalid component set index: {i}"
+            ))])
             .and_then(|cs| {
                 let path = cs.path.path.join("::");
 
                 // Add component refs
                 for item in cs.args.iter() {
                     if !component_refs.contains_key(&item.comp.idx) {
-                        component_refs
-                            .insert(item.comp.idx, ComponentRefTracker::new());
+                        component_refs.insert(item.comp.idx, ComponentRefTracker::new());
                     }
 
                     if let Some(refs) = component_refs.get_mut(&item.comp.idx) {
@@ -245,7 +244,10 @@ impl ItemSystem {
                     true => Ok(cs),
                     // Must have a required singleton in the labels
                     false => {
-                        let err = self.new_msg(&format!("Entity set must contain singletons or be wrapped with {entities}<>"), &arg.span);
+                        let err = self.new_msg(
+                            &format!("Entity set must contain singletons or be wrapped with Vec<>"),
+                            &arg.span,
+                        );
                         // TODO: add help
                         // if let Some(ComponentSetLabels::Expression(e)) = &cs.labels {
                         //     for (symbs, verb) in [(&e.false_symbols, "must"), (&e.unknown_symbols, "may")] {
@@ -253,7 +255,7 @@ impl ItemSystem {
                         //             .filter_map_vec(|c_sym|
                         //                 c_sym.args.is_singleton
                         //                     .then_some(items.components.get(c_sym.idx)
-                        //                     .map_or_else(|| "Unknown".to_string(), 
+                        //                     .map_or_else(|| "Unknown".to_string(),
                         //                     |c| c.path.path.join("::")
                         //             )));
                         //         if !comps.is_empty() {
@@ -262,7 +264,7 @@ impl ItemSystem {
                         //     }
                         // }
                         Err(vec![err])
-                    },
+                    }
                 }
             })
             .and_msgs(self.validate_ref(arg, 0))

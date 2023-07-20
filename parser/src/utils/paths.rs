@@ -218,10 +218,6 @@ paths!(ENGINE_PATHS = EnginePaths {
         entity_set => EntitySet,
         entity_map => EntityMap
     },
-    // Systems
-    Engine::ecs::systems {
-        entities => Entities,
-    },
     // Use statements
     Engine {
         sdl2 => sdl2,

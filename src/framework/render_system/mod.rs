@@ -9,7 +9,7 @@ pub use render_data::RenderComponent;
 
 use crate::{
     components,
-    ecs::{entities::Entity, events, systems::Entities},
+    ecs::{entities::Entity, events},
     sdl2,
     utils::rect::{Align, Dimensions, Rect},
 };
@@ -106,7 +106,7 @@ components!(RenderArgs, e: &'a Elevation, tex: &'a mut RenderComponent);
 #[macros::system]
 fn render(
     _e: &events::core::Render,
-    mut comps: Entities<RenderArgs>,
+    mut comps: Vec<RenderArgs>,
     r: &Renderer,
     am: &mut AssetManager,
 ) {

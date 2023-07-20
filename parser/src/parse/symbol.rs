@@ -23,7 +23,6 @@ pub enum HardcodedSymbol {
     SystemMacro,
     // Engine crate
     ComponentsMacro,
-    Entities,
 }
 
 impl HardcodedSymbol {
@@ -34,7 +33,6 @@ impl HardcodedSymbol {
             HardcodedSymbol::EventMacro => &MACRO_PATHS.event,
             HardcodedSymbol::SystemMacro => &MACRO_PATHS.system,
             HardcodedSymbol::ComponentsMacro => &MACRO_PATHS.components,
-            HardcodedSymbol::Entities => &ENGINE_PATHS.entities,
         }
     }
 }

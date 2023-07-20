@@ -1,7 +1,7 @@
 use shared::traits::{Call, SplitAround};
 
 use crate::{
-    ecs::{entities::Entity, events::core::PreRender, systems::Entities},
+    ecs::{entities::Entity, events::core::PreRender},
     sdl2,
     utils::{
         colors::{BLACK, GRAY},
@@ -131,7 +131,7 @@ impl Drawable for RenderText {
 #[macros::system]
 fn update_render_text(
     _ev: &PreRender,
-    mut rcs: Entities<RenderPos>,
+    mut rcs: Vec<RenderPos>,
     r: &super::Renderer,
     am: &mut AssetManager,
     screen: &Screen,

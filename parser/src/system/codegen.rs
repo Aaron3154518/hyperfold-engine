@@ -2,7 +2,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use shared::{
     match_ok,
-    msg_result::{CombineMsgs, MsgTrait, Zip4Msgs},
+    msg_result::{CombineMsgs, MsgTrait, ToMsgs, Zip4Msgs},
     traits::{CollectVec, CollectVecInto},
 };
 
@@ -121,6 +121,8 @@ pub fn codegen_systems(
     let mut systems = Vec::new();
     let mut system_events = Vec::new();
 
+    let mut errs = Vec::new();
+
     for system in &items.systems {
         let event_trait = event_trait.get_ref();
         let intersect = intersect.get_ref();
@@ -168,12 +170,16 @@ pub fn codegen_systems(
                     }));
                 }
             }
-        });
+        })
+        .record_err(&mut errs)
     }
 
-    systems.combine_msgs().map(|systems| SystemsCodegenResult {
-        init_systems,
-        systems,
-        system_events,
-    })
+    systems
+        .combine_msgs()
+        .and_msgs(errs.err_or(()))
+        .map(|systems| SystemsCodegenResult {
+            init_systems,
+            systems,
+            system_events,
+        })
 }
