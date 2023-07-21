@@ -1,5 +1,3 @@
-pub type Event<'a, T> = &'a T;
-
 pub trait AddEvent<T> {
     fn new_event(&mut self, t: T);
 
@@ -7,6 +5,8 @@ pub trait AddEvent<T> {
 }
 
 pub mod core {
+    use crate::utils::event::Event;
+
     #[macros::event]
     pub struct Update(pub u32);
     #[macros::event]

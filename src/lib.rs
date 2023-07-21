@@ -20,10 +20,7 @@ pub mod utils;
 game_crate!();
 
 pub mod test {
-    use crate::ecs::{
-        entities::{Entity, NewEntity},
-        events::Event,
-    };
+    use crate::ecs::entities::{Entity, NewEntity};
 
     // Labels tests
     pub mod A {
@@ -78,14 +75,14 @@ pub mod test {
     impl T for TFoo {}
 
     fn qux(
-        ev: Event<u32>,
+        // ev: Event<u32>,
         components: Vec<QuxComponents>,
         (cnt, timer, tr): (&mut u8, &u8, &dyn T),
     ) {
         for c in components {
             *cnt += 1;
             println!(
-                "{ev},({},{},{}),({cnt},{timer},{})",
+                "({},{},{}),({cnt},{timer},{})",
                 c.t.to_string(),
                 c.greet,
                 c.happy,
@@ -108,7 +105,7 @@ pub mod test {
 
         // let k = Components::new(&eid, (&greet, &mut happy));
         qux(
-            &event,
+            // &event,
             eids.iter()
                 .zip(happies.iter_mut())
                 .map(|(eid, happy)| QuxComponents::new(eid, &t, &greet, happy))
