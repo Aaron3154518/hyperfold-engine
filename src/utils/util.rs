@@ -1,5 +1,6 @@
 use std::{
     array,
+    cmp::Ordering,
     f32::consts::{PI, TAU},
     sync::LazyLock,
 };
@@ -180,4 +181,16 @@ impl UuidTrait for Uuid {
     fn create() -> LazyLock<Uuid> {
         LazyLock::new(|| Uuid::new_v4())
     }
+}
+
+// Function to order multiple comparisons
+pub fn cmp<const N: usize>(cmps: [Ordering; N]) -> Ordering {
+    for cmp in cmps {
+        match cmp {
+            Ordering::Less => return Ordering::Less,
+            Ordering::Greater => return Ordering::Greater,
+            Ordering::Equal => (),
+        }
+    }
+    Ordering::Equal
 }

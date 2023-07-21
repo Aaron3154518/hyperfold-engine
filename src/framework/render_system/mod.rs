@@ -11,7 +11,10 @@ use crate::{
     components,
     ecs::{entities::Entity, events},
     sdl2,
-    utils::rect::{Align, Dimensions, Rect},
+    utils::{
+        rect::{Align, Dimensions, Rect},
+        util::cmp,
+    },
 };
 
 pub mod asset_manager;
@@ -101,24 +104,35 @@ pub fn rect_to_camera_coords(rect: &Rect, screen: &Screen, camera: &Camera) -> R
 #[macros::component]
 struct Elevation(pub u8);
 
+pub enum Order {
+    Asc,
+    Desc,
+}
+
+pub fn sort_elevation<T>(
+    mut arr: Vec<T>,
+    get_elevation: impl for<'a> Fn(&'a T) -> &'a Elevation,
+    get_eid: impl for<'a> Fn(&'a T) -> &'a Entity,
+    asc: Order,
+) -> Vec<T> {
+    arr.sort_unstable_by(|t1, t2| {
+        let (t1, t2) = match asc {
+            Order::Asc => (t1, t2),
+            Order::Desc => (t2, t1),
+        };
+        cmp([
+            get_elevation(t1).0.cmp(&get_elevation(t2).0),
+            get_eid(t1).cmp(get_eid(t2)),
+        ])
+    });
+    arr
+}
+
 components!(RenderArgs, e: &'a Elevation, tex: &'a mut RenderComponent);
 
 #[macros::system]
-fn render(
-    _e: &events::core::Render,
-    mut comps: Vec<RenderArgs>,
-    r: &Renderer,
-    am: &mut AssetManager,
-) {
-    comps.sort_by(|e1, e2| {
-        let cmp = e1.e.0.cmp(&e2.e.0);
-        if cmp == Ordering::Equal {
-            e1.eid.cmp(&e2.eid)
-        } else {
-            cmp
-        }
-    });
-    for RenderArgs { tex, .. } in comps {
+fn render(_e: &events::core::Render, comps: Vec<RenderArgs>, r: &Renderer, am: &mut AssetManager) {
+    for RenderArgs { tex, .. } in sort_elevation(comps, |t| t.e, |t| t.eid, Order::Asc) {
         r.draw_asset(r, am, tex);
     }
 }

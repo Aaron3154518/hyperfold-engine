@@ -556,6 +556,17 @@ impl Rect {
         Self::min_rect(w, h, Some(self.w), Some(self.h))
     }
 
+    pub fn contains_point_i32(&self, p: Point) -> bool {
+        self.contains_point(PointF {
+            x: p.x as f32,
+            y: p.y as f32,
+        })
+    }
+
+    pub fn contains_point(&self, p: PointF) -> bool {
+        (self.x <= p.x && p.x <= self.x2()) && (self.y <= p.y && p.y <= self.y2())
+    }
+
     pub fn intersects(&self, r: &Self) -> bool {
         (self.x <= r.x2() && self.x2() >= r.x) && (self.y <= r.y2() && self.y2() >= r.y)
     }
