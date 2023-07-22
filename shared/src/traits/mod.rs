@@ -1,4 +1,4 @@
-mod and_then;
+mod bool;
 mod call;
 mod catch;
 mod collect_vec;
@@ -14,7 +14,7 @@ mod result;
 mod split;
 pub mod unzip;
 
-pub use and_then::AndThen;
+pub use self::bool::{AndThen, ThenNone};
 pub use call::Call;
 pub use catch::Catch;
 pub use collect_vec::{CollectVec, CollectVecInto};

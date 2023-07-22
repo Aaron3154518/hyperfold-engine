@@ -74,6 +74,6 @@ pub fn parse(entry: PathBuf) {
             };
             term::emit(&mut writer.lock(), &config, &span_files, &diagnostic);
         }
-        // panic!("Build failed");
+        panic!("Build failed");
     }
 }

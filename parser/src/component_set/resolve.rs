@@ -17,7 +17,7 @@ use crate::{
 };
 use shared::{
     msg_result::{CombineMsgs, MsgTrait, Zip2Msgs},
-    traits::{Call, CollectVec, CollectVecInto, PushInto},
+    traits::{Call, CollectVec, CollectVecInto, PushInto, ThenNone},
 };
 
 // Resolve Ast structs to actual items
@@ -65,6 +65,7 @@ pub struct ComponentSetItem {
     pub comp: ComponentSymbol,
     pub ref_cnt: usize,
     pub is_mut: bool,
+    pub is_opt: bool,
 }
 
 impl ComponentSetItem {
@@ -74,6 +75,7 @@ impl ComponentSetItem {
             ty,
             ref_cnt,
             is_mut,
+            is_opt,
             span,
         }: AstComponentSetItem,
         (m, cr, crates): ModInfo,
@@ -86,6 +88,7 @@ impl ComponentSetItem {
                 comp,
                 ref_cnt,
                 is_mut,
+                is_opt,
             })
     }
 }
@@ -98,12 +101,12 @@ pub struct ComponentSet {
 }
 
 impl ComponentSet {
-    // Gets first arg, precedence given to singleton args
+    // Gets first non-optional arg, precedence given to singleton args
     pub fn first_arg(&self) -> Option<&ComponentSetItem> {
         self.args
             .iter()
-            .find(|item| item.comp.args.is_singleton)
-            .or(self.args.first())
+            .find(|item| item.comp.args.is_singleton && !item.is_opt)
+            .or(self.args.iter().find(|item| !item.is_opt))
     }
 
     // Gets first required true label, precedence given to singleton labels
@@ -160,7 +163,11 @@ impl ComponentSet {
             .map(|(args, labels)| {
                 let labels = labels.map(|labels| {
                     labels
-                        .evaluate_labels(args.iter().map(|sym| (sym.comp, true)).collect())
+                        .evaluate_labels(
+                            args.iter()
+                                .filter_map(|sym| sym.is_opt.then_none((sym.comp, true)))
+                                .collect(),
+                        )
                         .call_into(|labels| {
                             match labels {
                                 ComponentSetLabels::Constant(false) => warn(&format!(

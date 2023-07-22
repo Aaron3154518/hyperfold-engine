@@ -9,7 +9,7 @@ use syn::{
 use crate::{
     parse::ItemPath,
     utils::{
-        syn::{parse_tokens, Parse, StreamParse},
+        syn::{get_type_generics, parse_tokens, use_path_from_syn, Parse, StreamParse},
         CatchSpanErr, ParseMsg, ParseMsgResult,
     },
 };
@@ -227,32 +227,66 @@ pub struct AstComponentSetItem {
     pub ty: ItemPath,
     pub ref_cnt: usize,
     pub is_mut: bool,
+    pub is_opt: bool,
     pub span: Span,
 }
 
 impl AstComponentSetItem {
-    pub fn from(var: String, ty: syn::Type) -> ParseMsgResult<Self> {
+    pub fn from(var: String, ty: &syn::Type) -> ParseMsgResult<Self> {
         let span = ty.span();
         match ty {
-            syn::Type::Path(ty) => Ok(Self {
-                var,
-                ty: ItemPath {
-                    cr_idx: 0,
-                    path: ty
-                        .path
-                        .segments
-                        .iter()
-                        .map(|s| s.ident.to_string())
-                        .collect(),
-                },
-                ref_cnt: 0,
-                is_mut: false,
-                span: ty.span(),
-            }),
-            syn::Type::Reference(ty) => Self::from(var, *ty.elem).map(|mut i| {
+            syn::Type::Path(ty) => {
+                let mut path = use_path_from_syn(&Vec::new(), &ty.path);
+                match path.join("::").as_str() {
+                    "Option" => {
+                        match get_type_generics(&ty).ok_or(vec![ParseMsg::from_span(
+                            "Missing generics after Option<>",
+                            ty.span(),
+                        )])?[..]
+                        {
+                            [arg] => match arg {
+                                syn::GenericArgument::Type(ty) => {
+                                    let mut i = Self::from(var, ty)?;
+                                    if i.is_opt {
+                                        return Err(vec![ParseMsg::from_span(
+                                            "Cannot nest Option<>",
+                                            ty.span(),
+                                        )]);
+                                    }
+                                    i.is_opt = true;
+                                    Ok(i)
+                                }
+                                _ => Err(vec![ParseMsg::from_span(
+                                    "Expected type generic",
+                                    arg.span(),
+                                )]),
+                            },
+                            _ => Err(vec![ParseMsg::from_span(
+                                "Multiple generics after Option<>",
+                                ty.span(),
+                            )]),
+                        }
+                    }
+                    _ => Ok(Self {
+                        var,
+                        ty: ItemPath { cr_idx: 0, path },
+                        ref_cnt: 0,
+                        is_mut: false,
+                        is_opt: false,
+                        span: ty.span(),
+                    }),
+                }
+            }
+            syn::Type::Reference(ty) => Self::from(var, &ty.elem).and_then(|mut i| {
+                if i.is_mut {
+                    return Err(vec![ParseMsg::from_span(
+                        "Option args may not be taken by reference",
+                        ty.span(),
+                    )]);
+                }
                 i.ref_cnt += 1;
                 i.is_mut |= ty.mutability.is_some();
-                i
+                Ok(i)
             }),
             _ => Err(vec![ParseMsg::from_span("Invalid variable type", span)]),
         }
@@ -267,7 +301,7 @@ impl Parse for AstComponentSetItem {
             .map(|i| i.to_string())
             .catch_err("Expected variable name")?;
         input.parse::<Colon>().catch_err("Expected ':'")?;
-        AstComponentSetItem::from(var, input.parse().catch_err("Expected variable type")?)
+        AstComponentSetItem::from(var, &input.parse().catch_err("Expected variable type")?)
     }
 }
 

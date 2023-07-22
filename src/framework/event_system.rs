@@ -62,60 +62,24 @@ pub fn on_event(_ev: &core::Events, e: &event::Event, events: &mut dyn crate::_e
     }
 }
 
-components!(OnClickArgs, e: &'a Elevation, pos: &'a Position);
-
-#[macros::system]
-fn on_click(m: &inputs::Mouse, entities: Vec<OnClickArgs>, events: &mut dyn AddEvent) {
-    if !m.0.clicked() {
-        return;
-    }
-    for OnClickArgs { eid, pos, .. } in sort_elevation(entities, |t| t.e, |t| t.eid, Order::Desc) {
-        if pos.0.contains_point_i32(m.0.click_pos) {
-            events.new_event(inputs::Click {
-                eid: Some(*eid),
-                button: m.0,
-            });
-            return;
-        }
-    }
-    events.new_event(inputs::Click {
-        eid: None,
-        button: m.0,
-    });
-}
-
+// Drag components/globals
+#[macros::component]
 #[derive(Copy, Clone)]
 pub enum DragTrigger {
     DelayMs(u32),
     OnMove,
 }
 
-#[macros::component]
-struct Drag {
-    pub trigger: DragTrigger,
-    // dragging: bool,
+struct DragHoldTarget {
+    eid: Entity,
+    trigger: DragTrigger,
+    mouse: Mouse,
 }
-
-impl Drag {
-    pub fn new(trigger: DragTrigger) -> Self {
-        Self {
-            trigger,
-            // dragging: false,
-        }
-    }
-}
-
-components!(
-    DragArgs,
-    e: &'a Elevation,
-    pos: &'a Position,
-    drag: &'a mut Drag
-);
 
 #[macros::global]
 struct DragState {
     dragging: Option<Entity>,
-    hold_target: Option<(Entity, DragTrigger, Mouse)>,
+    hold_target: Option<DragHoldTarget>,
 }
 
 impl DragState {
@@ -127,33 +91,63 @@ impl DragState {
     }
 }
 
-// TODO: lock mouse clicks
+// Handle mouse events
+components!(
+    MouseArgs,
+    e: &'a Elevation,
+    pos: &'a Position,
+    drag_trigger: Option<&'a DragTrigger>
+);
+
 #[macros::system]
-fn trigger_drag(
+fn mouse_event(
     m: &inputs::Mouse,
-    entities: Vec<DragArgs>,
+    entities: Vec<MouseArgs>,
     events: &mut dyn AddEvent,
     drag_state: &mut DragState,
 ) {
+    // Finished dragging; no more mouse events
     if m.0.up() {
         if let Some(eid) = drag_state.dragging {
             events.new_event(inputs::DragEnd(eid));
             drag_state.dragging = None;
             drag_state.hold_target = None;
+            return;
         }
-    } else if m.0.down() {
-        for DragArgs { eid, e, pos, drag } in
-            sort_elevation(entities, |t| t.e, |t| t.eid, Order::Desc)
-        {
-            if pos.0.contains_point_i32(m.0.click_pos) {
+    }
+
+    // Get entity under mouse
+    let target = sort_elevation(entities, |t| t.e, |t| t.eid, Order::Desc)
+        .into_iter()
+        .find(|MouseArgs { pos, .. }| pos.0.contains_point_i32(m.0.click_pos));
+
+    // New drag target
+    if m.0.down() {
+        match target {
+            Some(MouseArgs {
+                eid,
+                drag_trigger: Some(trigger),
+                ..
+            }) => {
+                // End previous drag (shouldn't be one)
                 if let Some(eid) = drag_state.dragging {
                     events.new_event(inputs::DragEnd(eid));
                     drag_state.dragging = None;
                 }
-                drag_state.hold_target = Some((*eid, drag.trigger, m.0.mouse));
-                return;
+                drag_state.hold_target = Some(DragHoldTarget {
+                    eid: *eid,
+                    trigger: *trigger,
+                    mouse: m.0.mouse,
+                });
             }
+            _ => (),
         }
+    // Mouse click
+    } else if m.0.clicked() {
+        events.new_event(inputs::Click {
+            eid: target.map(|t| *t.eid),
+            button: m.0,
+        });
     }
 }
 
@@ -169,7 +163,12 @@ fn drag(_: &core::Events, event: &Event, events: &mut dyn AddEvent, drag_state: 
                 mouse_dy: event.mouse_delta.y,
             });
         }
-    } else if let Some((eid, trigger, mouse)) = drag_state.hold_target {
+    } else if let Some(DragHoldTarget {
+        eid,
+        trigger,
+        mouse,
+    }) = drag_state.hold_target
+    {
         if match trigger {
             DragTrigger::OnMove => event.mouse_moved(),
             DragTrigger::DelayMs(d) if event.get_mouse(mouse).duration >= d => true,
@@ -181,6 +180,13 @@ fn drag(_: &core::Events, event: &Event, events: &mut dyn AddEvent, drag_state: 
             }
         } {
             events.new_event(inputs::DragStart(eid));
+            events.new_event(inputs::Drag {
+                eid,
+                mouse_x: event.mouse.x,
+                mouse_y: event.mouse.y,
+                mouse_dx: 0,
+                mouse_dy: 0,
+            });
             drag_state.dragging = Some(eid);
             drag_state.hold_target = None;
         }

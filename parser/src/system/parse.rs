@@ -22,7 +22,7 @@ use crate::{
     },
     resolve::Items,
     utils::{
-        syn::{use_path_from_syn, ToRange},
+        syn::{get_type_generics, use_path_from_syn, ToRange},
         InjectSpan, Msg, MsgResult,
     },
 };
@@ -82,17 +82,10 @@ impl FnArg {
         let ty_str = ty.to_token_stream().to_string();
         match ty {
             syn::Type::Path(p) => {
-                let generics = p.path.segments.last().and_then(|s| match &s.arguments {
-                    syn::PathArguments::AngleBracketed(ab) => {
-                        Some(ab.args.iter().collect::<Vec<_>>())
-                    }
-                    _ => None,
-                });
-
                 // TODO: Type alias support must include Vec (Add path resolution for built-ins)
                 let path = use_path_from_syn(&m.path, &p.path);
                 match path.join("::").as_str() {
-                    "Vec" => match generics.as_ref().and_then(|v| v.first()) {
+                    "Vec" => match get_type_generics(p).as_ref().and_then(|v| v.first()) {
                         Some(syn::GenericArgument::Type(syn::Type::Path(ty))) => {
                             resolve_syn_path(&m.path, &ty.path, (m, cr, crates))
                                 .expect_component_set_in_mod(m, ty)

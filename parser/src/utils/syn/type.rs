@@ -23,3 +23,11 @@ pub fn string_to_type(ty: String, r: bool, m: bool) -> MsgResult<syn::Type> {
     )
     .catch_err("Could not parse type")
 }
+
+// Get type generics
+pub fn get_type_generics(ty: &syn::TypePath) -> Option<Vec<&syn::GenericArgument>> {
+    ty.path.segments.last().and_then(|s| match &s.arguments {
+        syn::PathArguments::AngleBracketed(ab) => Some(ab.args.iter().collect::<Vec<_>>()),
+        _ => None,
+    })
+}
