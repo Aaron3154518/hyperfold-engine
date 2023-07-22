@@ -267,7 +267,16 @@ impl ComponentSet {
             (Some(ComponentSetItem { comp, .. }), _) | (_, Some(comp))
                 if comp.args.is_singleton =>
             {
-                let get = args.map_vec(|item| get_fn_name("get", item.is_mut));
+                let get = args.map_vec(|item| {
+                    get_fn_name(
+                        if item.comp.args.is_singleton {
+                            "get_value"
+                        } else {
+                            "get"
+                        },
+                        item.is_mut,
+                    )
+                });
                 quote!(
                     let #v = #v.and_then(|#k| match (#(#comps_var.#var.#get(#k)),*) {
                         (#(Some(#var)),*) => Some(#new),
