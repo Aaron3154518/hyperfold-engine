@@ -85,7 +85,7 @@ pub fn get_attributes(
     let mut new_attrs = Vec::new();
     let mut errs = Vec::new();
     for a in attrs {
-        parse_attr_args(
+        if let Some(attr) = parse_attr_args(
             Attribute::from(
                 use_path_from_vec(
                     path,
@@ -99,7 +99,10 @@ pub fn get_attributes(
             ),
             a,
         )
-        .record_err_or(&mut errs, |attr| new_attrs.push(attr));
+        .record_errs(&mut errs)
+        {
+            new_attrs.push(attr)
+        }
     }
     errs.err_or(new_attrs)
 }

@@ -12,34 +12,24 @@ mod resolve;
 mod system;
 mod utils;
 
+use std::{io::Write, path::PathBuf};
+
+use codegen::write_codegen;
 use codespan_reporting::{
     diagnostic::{Diagnostic, Label},
-    term::{
-        self,
-        termcolor::{ColorChoice, StandardStream},
-    },
+    term,
 };
-use regex::Regex;
 use resolve::Items;
-use std::{
-    collections::HashMap,
-    fs::{self, File},
-    hash::Hash,
-    io::Read,
-    path::PathBuf,
-};
 
 use component_set::ComponentSetLabels;
 use parse::{AstCrate, ComponentSymbol};
 use shared::{
-    macros::hash_map,
-    msg_result::{MsgTrait, Zip2Msgs},
-    parsing::ComponentMacroArgs,
-    traits::CollectVecInto,
+    msg_result::{MsgTrait, ToMsgs, Zip2Msgs},
+    traits::{CollectVec, CollectVecInto, GetSlice},
 };
-use utils::{syn::format_code, SpanFiles};
+use utils::{paths::Crate, SpanFiles};
 
-use crate::parse::resolve_path;
+use crate::utils::writer::{Writer, WriterTrait};
 
 // Process:
 // 1) Parse AST, get mod/crate structure, use statements, and important syntax items
@@ -53,9 +43,35 @@ pub fn parse(entry: PathBuf) {
         Ok((mut crates, span_files)) => {
             let (items, mut errs) = Items::resolve(&mut crates);
 
-            if let Err(codegen_errs) = codegen::codegen(&crates, &items) {
-                errs.extend(codegen_errs);
-            }
+            let macro_cr_idx = crates.get_crate_index(Crate::Macros);
+
+            let code = match codegen::codegen(&crates, &items).record_errs(&mut errs) {
+                Some(code) if errs.is_empty() => crates
+                    .iter_except([macro_cr_idx])
+                    .zip(code)
+                    .map_vec_into(|(cr, c)| (cr, c.to_string())),
+                _ => {
+                    let engine_cr_idx = crates.get_crate_index(Crate::Engine);
+                    crates
+                        .iter_except([macro_cr_idx])
+                        .enumerate()
+                        .map_vec_into(|(i, cr)| {
+                            (
+                                cr,
+                                if i == engine_cr_idx {
+                                    format!(
+                                        "compile_error!(\"{}\");",
+                                        "Encountered errors when compiling",
+                                    )
+                                } else {
+                                    String::new()
+                                },
+                            )
+                        })
+                }
+            };
+
+            write_codegen(code).record_errs(&mut errs);
 
             (errs, span_files)
         }
@@ -63,7 +79,9 @@ pub fn parse(entry: PathBuf) {
     };
 
     if !errs.is_empty() {
-        let writer = StandardStream::stderr(ColorChoice::Always);
+        let mut writer = Writer::empty();
+        writer.write(b"\n");
+
         let config = codespan_reporting::term::Config::default();
         for msg in errs {
             let diagnostic = match msg {
@@ -72,8 +90,11 @@ pub fn parse(entry: PathBuf) {
                     .with_labels(vec![Label::primary(file, span)]),
                 utils::Msg::String(msg) => Diagnostic::error().with_message(msg),
             };
-            term::emit(&mut writer.lock(), &config, &span_files, &diagnostic);
+            term::emit(&mut writer, &config, &span_files, &diagnostic);
         }
-        panic!("Build failed");
+
+        let warning = "cargo:warning=";
+        let replace = format!("\n{warning}\r{}\r", " ".repeat(warning.len()));
+        println!("{}", writer.to_string().replace("\n", replace.as_str()));
     }
 }

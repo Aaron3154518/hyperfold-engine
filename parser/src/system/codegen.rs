@@ -171,7 +171,7 @@ pub fn codegen_systems(
                 }
             }
         })
-        .record_err(&mut errs)
+        .record_errs(&mut errs);
     }
 
     systems

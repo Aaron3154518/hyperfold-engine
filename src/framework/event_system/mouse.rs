@@ -1,71 +1,41 @@
 use crate::_engine::{AddEvent, Entity};
 use crate::components;
 use crate::ecs::events::core;
+use crate::framework::{
+    physics::Position,
+    render_system::{sort_elevation, Elevation, Order},
+};
 use crate::utils::event::{self, Event, Mouse};
 
-use super::physics::Position;
-use super::render_system::{sort_elevation, Elevation, Order};
-
-pub mod inputs {
-    use crate::_engine::Entity;
-
-    use super::event;
-
-    #[macros::event]
-    struct Mouse(pub event::MouseButton);
-    #[macros::event]
-    struct Key(pub event::KeyButton);
-
-    #[macros::event]
-    struct Click {
-        pub eid: Option<Entity>,
-        pub button: event::MouseButton,
-    }
-
-    impl Click {
-        pub fn is_me(&self, eid: &Entity) -> bool {
-            self.eid.is_some_and(|id| &id == eid)
-        }
-    }
-
-    #[macros::event]
-    struct DragStart(pub Entity);
-    #[macros::event]
-    struct Drag {
-        pub eid: Entity,
-        pub mouse_x: i32,
-        pub mouse_y: i32,
-        pub mouse_dx: i32,
-        pub mouse_dy: i32,
-    }
-    #[macros::event]
-    struct DragEnd(pub Entity);
+#[macros::event]
+struct Click {
+    pub eid: Option<Entity>,
+    pub button: event::MouseButton,
 }
 
-#[macros::system]
-pub fn on_event(_ev: &core::Events, e: &event::Event, events: &mut dyn crate::_engine::AddEvent) {
-    for m in [
-        event::Mouse::Left,
-        event::Mouse::Right,
-        event::Mouse::Middle,
-    ] {
-        let mb = e.get_mouse(m);
-        if !mb.no_action() {
-            events.new_event(inputs::Mouse(mb.clone()));
-        }
-    }
-
-    for (_, kb) in e.key_buttons.iter() {
-        if !kb.no_action() {
-            events.new_event(inputs::Key(kb.clone()));
-        }
+impl Click {
+    pub fn is_me(&self, eid: &Entity) -> bool {
+        self.eid.is_some_and(|id| &id == eid)
     }
 }
+
+#[macros::event]
+struct DragStart(pub Entity);
+#[macros::event]
+struct Drag {
+    pub eid: Entity,
+    pub mouse_x: i32,
+    pub mouse_y: i32,
+    pub mouse_dx: i32,
+    pub mouse_dy: i32,
+}
+#[macros::event]
+struct DragEnd(pub Entity);
 
 // Drag components/globals
 #[macros::component]
 #[derive(Copy, Clone)]
-pub enum DragTrigger {
+enum DragTrigger {
     DelayMs(u32),
     OnMove,
 }
@@ -101,7 +71,7 @@ components!(
 
 #[macros::system]
 fn mouse_event(
-    m: &inputs::Mouse,
+    m: &super::events::Mouse,
     entities: Vec<MouseArgs>,
     events: &mut dyn AddEvent,
     drag_state: &mut DragState,
@@ -109,7 +79,7 @@ fn mouse_event(
     // Finished dragging; no more mouse events
     if m.0.up() {
         if let Some(eid) = drag_state.dragging {
-            events.new_event(inputs::DragEnd(eid));
+            events.new_event(DragEnd(eid));
             drag_state.dragging = None;
             drag_state.hold_target = None;
             return;
@@ -131,7 +101,7 @@ fn mouse_event(
             }) => {
                 // End previous drag (shouldn't be one)
                 if let Some(eid) = drag_state.dragging {
-                    events.new_event(inputs::DragEnd(eid));
+                    events.new_event(DragEnd(eid));
                     drag_state.dragging = None;
                 }
                 drag_state.hold_target = Some(DragHoldTarget {
@@ -144,7 +114,7 @@ fn mouse_event(
         }
     // Mouse click
     } else if m.0.clicked() {
-        events.new_event(inputs::Click {
+        events.new_event(Click {
             eid: target.map(|t| *t.eid),
             button: m.0,
         });
@@ -155,7 +125,7 @@ fn mouse_event(
 fn drag(_: &core::Events, event: &Event, events: &mut dyn AddEvent, drag_state: &mut DragState) {
     if let Some(eid) = drag_state.dragging {
         if event.mouse_moved() {
-            events.new_event(inputs::Drag {
+            events.new_event(Drag {
                 eid,
                 mouse_x: event.mouse.x,
                 mouse_y: event.mouse.y,
@@ -179,8 +149,8 @@ fn drag(_: &core::Events, event: &Event, events: &mut dyn AddEvent, drag_state: 
                 false
             }
         } {
-            events.new_event(inputs::DragStart(eid));
-            events.new_event(inputs::Drag {
+            events.new_event(DragStart(eid));
+            events.new_event(Drag {
                 eid,
                 mouse_x: event.mouse.x,
                 mouse_y: event.mouse.y,

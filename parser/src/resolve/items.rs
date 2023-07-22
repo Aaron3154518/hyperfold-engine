@@ -89,7 +89,7 @@ impl Items {
 
         // Insert hardcoded symbols
         for sym in HardcodedSymbol::VARIANTS {
-            AstCrate::add_hardcoded_symbol(crates, sym).record_err(&mut errs)
+            AstCrate::add_hardcoded_symbol(crates, sym).record_errs(&mut errs);
         }
 
         // Resolve components, globals, and events
@@ -220,8 +220,12 @@ impl Items {
                 })
                 .collect();
 
-            cr.add_mod(path.push_into(NAMESPACE.to_string()))
-                .record_err_or(&mut errs, |m| m.uses = uses);
+            if let Some(m) = cr
+                .add_mod(path.push_into(NAMESPACE.to_string()))
+                .record_errs(&mut errs)
+            {
+                m.uses = uses;
+            }
         }
 
         // Insert trait symbols
@@ -249,7 +253,7 @@ impl Items {
                         path: gl_path.to_vec(),
                         public: true,
                     })
-                    .record_err(&mut errs)
+                    .record_errs(&mut errs);
                 }
                 // Add traits to all crates
                 cr.add_symbol(Symbol {
@@ -257,7 +261,7 @@ impl Items {
                     path: path.to_vec(),
                     public: true,
                 })
-                .record_err(&mut errs)
+                .record_errs(&mut errs);
             }
         }
 

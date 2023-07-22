@@ -195,7 +195,7 @@ impl AstMod {
     fn visit_items(&mut self, items: Vec<syn::Item>, args: &mut VisitorArgs) -> MsgResult<()> {
         let mut errs = Vec::new();
         for item in items {
-            self.visit_item(item, args).record_err(&mut errs);
+            self.visit_item(item, args).record_errs(&mut errs);
         }
         errs.err_or(())
     }
@@ -390,7 +390,7 @@ impl AstMod {
         let mut errs = Vec::new();
         for i in i.items {
             self.visit_use_tree(i, &mut path.to_vec(), items)
-                .record_err(&mut errs);
+                .record_errs(&mut errs);
         }
         errs.err_or(())
     }

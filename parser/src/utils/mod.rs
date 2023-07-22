@@ -5,6 +5,7 @@ pub mod idents;
 mod msg;
 pub mod paths;
 pub mod syn;
+pub mod writer;
 
 pub mod constants {
     pub const NAMESPACE: &str = "_engine";

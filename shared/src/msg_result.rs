@@ -16,9 +16,7 @@ pub trait MsgTrait<T, E> {
 
     fn add_msg(self, f: impl FnOnce() -> E) -> MsgResult<T, E>;
 
-    fn record_err(self, errs: &mut Vec<E>);
-
-    fn record_err_or(self, errs: &mut Vec<E>, f: impl FnOnce(T));
+    fn record_errs(self, errs: &mut Vec<E>) -> Option<T>;
 }
 
 impl<T, E> MsgTrait<T, E> for MsgResult<T, E>
@@ -52,17 +50,13 @@ where
         self.map_err(|errs| errs.push_into(f()))
     }
 
-    fn record_err(self, errs: &mut Vec<E>) {
+    fn record_errs(self, errs: &mut Vec<E>) -> Option<T> {
         match self {
-            Ok(_) => (),
-            Err(e) => errs.extend(e),
-        }
-    }
-
-    fn record_err_or(self, errs: &mut Vec<E>, f: impl FnOnce(T)) {
-        match self {
-            Ok(t) => f(t),
-            Err(e) => errs.extend(e),
+            Ok(t) => Some(t),
+            Err(e) => {
+                errs.extend(e);
+                None
+            }
         }
     }
 }

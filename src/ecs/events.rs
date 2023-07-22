@@ -5,8 +5,6 @@ pub trait AddEvent<T> {
 }
 
 pub mod core {
-    use crate::utils::event::Event;
-
     #[macros::event]
     pub struct Update(pub u32);
     #[macros::event]

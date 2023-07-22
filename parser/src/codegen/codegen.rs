@@ -19,6 +19,7 @@ use shared::{
 
 use crate::{
     codegen::Traits,
+    parse::AstCrate,
     resolve::Items,
     utils::{
         constants::NAMESPACE,
@@ -30,7 +31,7 @@ use crate::{
 
 use super::Crates;
 
-pub fn codegen(crates: &Crates, items: &Items) -> MsgResult<()> {
+pub fn codegen(crates: &Crates, items: &Items) -> MsgResult<Vec<TokenStream>> {
     let main_cr_idx = crates.get_crate_index(Crate::Main);
     let macro_cr_idx = crates.get_crate_index(Crate::Macros);
 
@@ -90,7 +91,7 @@ pub fn codegen(crates: &Crates, items: &Items) -> MsgResult<()> {
         #[allow(unused_parens)]
         #[allow(dead_code)]
     );
-    let code = match_ok!(
+    match_ok!(
         Zip8Msgs,
         globals,
         components,
@@ -146,28 +147,14 @@ pub fn codegen(crates: &Crates, items: &Items) -> MsgResult<()> {
                     },
                 )
         }
-    );
-
-    match code {
-        Ok(code) => write_codegen(crates, code.map_vec_into(|c| c.to_string())),
-        Err(errs) => Err(errs).and_msgs(write_codegen(
-            crates,
-            crates
-                .iter_except([macro_cr_idx])
-                .map_vec_into(|_| String::new()),
-        )),
-    }
+    )
 }
 
-fn write_codegen(crates: &Crates, code: Vec<String>) -> MsgResult<()> {
+pub fn write_codegen(code: Vec<(&AstCrate, String)>) -> MsgResult<()> {
     let out = PathBuf::from(std::env::var("OUT_DIR").catch_err("No out dir specified")?);
 
     let mut index_lines = Vec::new();
-    for (i, (cr, code)) in crates
-        .iter_except([crates.get_crate_index(Crate::Macros)])
-        .zip(code)
-        .enumerate()
-    {
+    for (i, (cr, code)) in code.into_iter().enumerate() {
         // Write to file
         let file = out.join(format!("{}.rs", i));
         fs::write(file.to_owned(), code)
