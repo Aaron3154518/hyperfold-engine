@@ -126,12 +126,7 @@ pub trait RenderDataTrait {
         self.get_render_data_mut().area = area;
     }
 
-    fn animate(
-        &mut self,
-        entities: &mut dyn crate::_engine::AddComponent,
-        eid: Entity,
-        anim: Animation,
-    ) {
+    fn animate(&mut self, anim: Animation) {
         let rd = self.get_render_data_mut();
         if rd.dim.w % anim.num_frames != 0 {
             eprintln!(
@@ -147,7 +142,6 @@ pub trait RenderDataTrait {
                 h: rd.dim.h as f32,
             });
         }
-        entities.add_component(eid, anim);
     }
 }
 
@@ -190,13 +184,8 @@ where
         self
     }
 
-    fn with_animation(
-        mut self,
-        entities: &mut dyn crate::_engine::AddComponent,
-        eid: Entity,
-        anim: Animation,
-    ) -> Self {
-        self.animate(entities, eid, anim);
+    fn with_animation(mut self, anim: Animation) -> Self {
+        self.animate(anim);
         self
     }
 }
@@ -381,6 +370,7 @@ impl AssetDrawable for RenderComponent {
 }
 
 // Animation
+#[derive(Copy, Clone)]
 #[macros::component]
 struct Animation {
     num_frames: u32,

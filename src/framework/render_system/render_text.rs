@@ -1,7 +1,9 @@
-use shared::traits::{Call, SplitAround};
+use shared::traits::{Call, CollectVec, SplitAround};
 
 use crate::{
+    components,
     ecs::{entities::Entity, events::core::PreRender},
+    framework::physics::Position,
     sdl2,
     utils::{
         colors::{BLACK, GRAY},
@@ -14,7 +16,7 @@ use super::{
     drawable::{Canvas, Drawable},
     font::FontData,
     rect_to_camera_coords,
-    render_data::{RenderAsset, RenderDataTrait, RenderPos, RenderTexture},
+    render_data::{RenderAsset, RenderDataTrait, RenderTexture},
     shapes::{Rectangle, ShapeTrait},
     text::render_text,
     AssetManager, Camera, RenderComponent, Screen,
@@ -128,10 +130,16 @@ impl Drawable for RenderText {
     }
 }
 
+components!(
+    RenderTextArgs,
+    tex: &'a mut RenderComponent,
+    pos: Option<&'a Position>
+);
+
 #[macros::system]
 fn update_render_text(
     _ev: &PreRender,
-    mut rcs: Vec<RenderPos>,
+    mut rcs: Vec<RenderTextArgs>,
     r: &super::Renderer,
     am: &mut AssetManager,
     screen: &Screen,
@@ -139,7 +147,11 @@ fn update_render_text(
 ) {
     let n = rcs.len();
     for i in 0..n {
-        let (left, RenderPos { tex, pos, .. }, right) = rcs.split_around_mut(i);
+        let (left, RenderTextArgs { tex, pos, .. }, right) = rcs.split_around_mut(i);
+        let pos = match pos {
+            Some(pos) => pos,
+            None => continue,
+        };
         tex.try_mut(|rt: &mut RenderText| {
             // Render text if no existing texture
             let tex = rt.tex.get_or_insert_texture(|| {
@@ -161,7 +173,6 @@ fn update_render_text(
             });
 
             // TODO: only if needed
-            // TODO: don't require position component -> Optional components
             // Redraw images
             let mut draw = |rc: &mut RenderComponent, rect: Rect| {
                 rc.try_mut(|rt: &mut RenderTexture| rt.get_render_data_mut().set_dest_rect(rect))
@@ -177,13 +188,14 @@ fn update_render_text(
                     TextImage::Reference(eid) => {
                         for j in 0..n {
                             if i != j {
-                                let RenderPos { eid: id, tex, .. } = if j > i {
+                                let RenderTextArgs { eid: id, tex, .. } = if j > i {
                                     &mut right[j - i - 1]
                                 } else {
                                     &mut left[j]
                                 };
                                 if *id == eid {
                                     draw(*tex, rect);
+                                    break;
                                 }
                             }
                         }

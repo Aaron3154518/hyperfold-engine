@@ -3,7 +3,7 @@ use quote::{format_ident, quote};
 use shared::{
     match_ok,
     msg_result::Zip3Msgs,
-    traits::{CollectVec, CollectVecInto},
+    traits::{CollectVec, CollectVecInto, ThenNone},
 };
 
 use crate::{
@@ -232,7 +232,8 @@ impl ComponentSet {
         let k = format_ident!("k");
 
         // Unique component variables
-        let var = args.map_vec(|item| component_var(item.comp.idx));
+        let var = args.filter_map_vec(|item| item.is_opt.then_none(component_var(item.comp.idx)));
+
         // Full list of component names and variables
         let (mut arg_name, mut arg_var) = (Vec::new(), Vec::new());
         let (mut opt_arg_name, mut opt_arg_var, mut opt_arg_get) =
@@ -240,7 +241,7 @@ impl ComponentSet {
         for item in &self.args {
             let (names, vars) = match item.is_opt {
                 true => {
-                    opt_arg_get.push(get_fn_name("get", item.is_mut));
+                    opt_arg_get.push(item.get_fn());
                     (&mut opt_arg_name, &mut opt_arg_var)
                 }
                 false => (&mut arg_name, &mut arg_var),
@@ -267,18 +268,9 @@ impl ComponentSet {
             (Some(ComponentSetItem { comp, .. }), _) | (_, Some(comp))
                 if comp.args.is_singleton =>
             {
-                let get = args.map_vec(|item| {
-                    get_fn_name(
-                        if item.comp.args.is_singleton {
-                            "get_value"
-                        } else {
-                            "get"
-                        },
-                        item.is_mut,
-                    )
-                });
+                let var_get = args.filter_map_vec(|item| item.is_opt.then_none(item.get_fn()));
                 quote!(
-                    let #v = #v.and_then(|#k| match (#(#comps_var.#var.#get(#k)),*) {
+                    let #v = #v.and_then(|#k| match (#(#comps_var.#var.#var_get(#k)),*) {
                         (#(Some(#var)),*) => Some(#new),
                         _ => None
                     });
@@ -290,7 +282,7 @@ impl ComponentSet {
             }
             // Vec<(K, V)>
             _ => {
-                let value_fn = (0..args.len()).map_vec_into(|i| match i {
+                let var_fn = (0..var.len()).map_vec_into(|i| match i {
                     0 => quote!(|_, v| v),
                     i => {
                         let tmps = (0..i).map_vec_into(|i| format_ident!("v{i}"));
@@ -298,9 +290,10 @@ impl ComponentSet {
                         quote!(|(#(#tmps),*), #tmp_n| (#(#tmps,)* #tmp_n))
                     }
                 });
-                let iter = args.map_vec(|item| get_fn_name("iter", item.is_mut));
+                let var_iter = args
+                    .filter_map_vec(|item| item.is_opt.then_none(get_fn_name("iter", item.is_mut)));
                 quote!(
-                    #(let #v = #intersect(#v, #comps_var.#var.#iter(), #value_fn);)*
+                    #(let #v = #intersect(#v, #comps_var.#var.#var_iter(), #var_fn);)*
                     let #v = #v.into_iter().map(|(#k, (#(#var),*))| #new).collect();
                 )
             }

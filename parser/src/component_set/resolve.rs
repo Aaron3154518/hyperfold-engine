@@ -11,7 +11,7 @@ use super::{
 use crate::{
     parse::{resolve_path, ComponentSymbol, DiscardSymbol, ItemPath, MatchSymbol, ModInfo},
     utils::{
-        syn::{parse_tokens, ToRange},
+        syn::{get_fn_name, parse_tokens, ToRange},
         warn, Msg, MsgResult, ParseMsg, ToMsg,
     },
 };
@@ -90,6 +90,17 @@ impl ComponentSetItem {
                 is_mut,
                 is_opt,
             })
+    }
+
+    pub fn get_fn(&self) -> syn::Ident {
+        get_fn_name(
+            if self.comp.args.is_singleton {
+                "get_value"
+            } else {
+                "get"
+            },
+            self.is_mut,
+        )
     }
 }
 
