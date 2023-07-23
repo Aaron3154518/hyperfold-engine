@@ -1,7 +1,11 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 
-use shared::{match_ok, msg_result::Zip5Msgs, traits::CollectVecInto};
+use shared::{
+    match_ok,
+    msg_result::{Zip5Msgs, Zip6Msgs},
+    traits::CollectVecInto,
+};
 
 use crate::{
     component_set::ComponentSet,
@@ -100,14 +104,16 @@ pub fn manager_impl(cr_idx: usize, items: &Items, crates: &Crates) -> MsgResult<
     let component_set_fns =
         ComponentSet::codegen_get_keys_fns(cr_idx, &items.component_sets, crates);
     let global_paths = ENGINE_GLOBALS.get_global_vars(crates, cr_idx);
+    let manager_trait = crates.get_syn_path(cr_idx, &ENGINE_PATHS.manager_trait);
 
     match_ok!(
-        Zip5Msgs,
+        Zip6Msgs,
         result,
         init_events,
         path_to_engine,
         component_set_fns,
         global_paths,
+        manager_trait,
         {
             let SystemsCodegenResult {
                 init_systems,
@@ -125,19 +131,6 @@ pub fn manager_impl(cr_idx: usize, items: &Items, crates: &Crates) -> MsgResult<
             } = global_paths;
             quote!(
                 impl #manager {
-                    pub fn new() -> Self {
-                        let mut s = Self {
-                            #comps_var: #components::new(),
-                            #globals_var: #globals::new(),
-                            #events_var: #events::new(),
-                            #stack_var: Vec::new(),
-                            #services_var: std::array::from_fn(|_| Vec::new())
-                        };
-                        s.init();
-                        s.add_systems();
-                        s
-                    }
-
                     fn init(&mut self) {
                         #(#init_systems;)*
                         self.post_tick();
@@ -151,27 +144,6 @@ pub fn manager_impl(cr_idx: usize, items: &Items, crates: &Crates) -> MsgResult<
 
                     fn add_systems(&mut self) {
                         #(self.add_system(#event_enum::#system_events, Box::new(#systems));)*
-                    }
-
-                    pub fn run(&mut self) {
-                        const FPS: u32 = 60;
-                        const FRAME_TIME: u32 = 1000 / FPS;
-                        let mut t = unsafe { #path_to_engine::sdl2::SDL_GetTicks() };
-                        let mut dt;
-                        let mut tsum: u64 = 0;
-                        let mut tcnt: u64 = 0;
-                        while !self.#globals_var.#g_event.quit {
-                            dt = unsafe { #path_to_engine::sdl2::SDL_GetTicks() } - t;
-                            t += dt;
-                            self.tick(dt);
-                            dt = unsafe { #path_to_engine::sdl2::SDL_GetTicks() } - t;
-                            tsum += dt as u64;
-                            tcnt += 1;
-                            if dt < FRAME_TIME {
-                                unsafe { #path_to_engine::sdl2::SDL_Delay(FRAME_TIME - dt) };
-                            }
-                        }
-                        println!("Average Frame Time: {}ms", tsum as f64 / tcnt as f64);
                     }
 
                     fn tick(&mut self, ts: u32) {
@@ -235,6 +207,42 @@ pub fn manager_impl(cr_idx: usize, items: &Items, crates: &Crates) -> MsgResult<
                         }) {
                             self.#stack_var.pop();
                         }
+                    }
+                }
+
+                impl #manager_trait for #manager {
+                    fn new() -> Self {
+                        let mut s = Self {
+                            #comps_var: #components::new(),
+                            #globals_var: #globals::new(),
+                            #events_var: #events::new(),
+                            #stack_var: Vec::new(),
+                            #services_var: std::array::from_fn(|_| Vec::new())
+                        };
+                        s.init();
+                        s.add_systems();
+                        s
+                    }
+
+                    fn run(&mut self) {
+                        const FPS: u32 = 60;
+                        const FRAME_TIME: u32 = 1000 / FPS;
+                        let mut t = unsafe { #path_to_engine::sdl2::SDL_GetTicks() };
+                        let mut dt;
+                        let mut tsum: u64 = 0;
+                        let mut tcnt: u64 = 0;
+                        while !self.#globals_var.#g_event.quit {
+                            dt = unsafe { #path_to_engine::sdl2::SDL_GetTicks() } - t;
+                            t += dt;
+                            self.tick(dt);
+                            dt = unsafe { #path_to_engine::sdl2::SDL_GetTicks() } - t;
+                            tsum += dt as u64;
+                            tcnt += 1;
+                            if dt < FRAME_TIME {
+                                unsafe { #path_to_engine::sdl2::SDL_Delay(FRAME_TIME - dt) };
+                            }
+                        }
+                        println!("Average Frame Time: {}ms", tsum as f64 / tcnt as f64);
                     }
                 }
             )

@@ -218,10 +218,12 @@ paths!(ENGINE_PATHS = EnginePaths {
         entity_set => EntitySet,
         entity_map => EntityMap
     },
-    // Use statements
     Engine {
+        // Use statements
         sdl2 => sdl2,
-        sdl2_image => sdl2_image
+        sdl2_image => sdl2_image,
+        // Manager
+        manager_trait => ManagerTrait
     },
 });
 

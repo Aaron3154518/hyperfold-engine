@@ -17,105 +17,11 @@ pub mod framework;
 pub mod intersect;
 pub mod utils;
 
+pub use ecs::ManagerTrait;
+
 game_crate!();
 
-pub mod test {
-    use crate::ecs::entities::{Entity, NewEntity};
-
-    // Labels tests
-    pub mod A {
-        pub mod B {
-            pub struct C;
-        }
-    }
-
-    // crate::components!(AA);
-    // crate::components!(labels(), Z);
-    // crate::components!(labels((!u8)), Y);
-    // crate::components!(labels(u8), X);
-    // crate::components!(labels((u8)), W);
-    // crate::components!(labels(u8 && i8), V);
-    // crate::components!(labels((u8 || i8) && !!!u8), U);
-    // crate::components!(labels((!(u8 || !i8) && u8)), Q);
-    // crate::components!(labels(!A::B::C), S);
-    // crate::components!(labels(String || !A::B::C), R);
-
-    // crate::components!(
-    //     labels((TFoo || !A::B::C) && !A::B::C),
-    //     QuxComponents,
-    //     t: &'a TFoo,
-    //     greet: &'a String,
-    //     happy: &'a mut bool
-    // );
-
-    pub struct QuxComponents<'a> {
-        pub eid: &'a Entity,
-        pub t: &'a TFoo,
-        pub greet: &'a String,
-        pub happy: &'a mut bool,
-    }
-    impl<'a> QuxComponents<'a> {
-        pub fn new(eid: &'a Entity, t: &'a TFoo, greet: &'a String, happy: &'a mut bool) -> Self {
-            Self {
-                eid,
-                t,
-                greet,
-                happy,
-            }
-        }
-    }
-
-    trait T {
-        fn to_string(&self) -> String {
-            return "Poopy".to_string();
-        }
-    }
-
-    pub struct TFoo;
-    impl T for TFoo {}
-
-    fn qux(
-        // ev: Event<u32>,
-        components: Vec<QuxComponents>,
-        (cnt, timer, tr): (&mut u8, &u8, &dyn T),
-    ) {
-        for c in components {
-            *cnt += 1;
-            println!(
-                "({},{},{}),({cnt},{timer},{})",
-                c.t.to_string(),
-                c.greet,
-                c.happy,
-                tr.to_string(),
-            )
-        }
-    }
-
-    pub fn test() {
-        let event = 2;
-        let eid = Entity::new();
-        let greet = "Hello".to_string();
-        let mut cnt = 0;
-        let timer = 4;
-
-        let eids = [0; 5].map(|_| Entity::new());
-        let mut happies = [0, 1, 2, 3, 4].map(|i| i % 2 == 0);
-        let ints = [-1, -2, -3, -4, -5];
-        let t = TFoo;
-
-        // let k = Components::new(&eid, (&greet, &mut happy));
-        qux(
-            // &event,
-            eids.iter()
-                .zip(happies.iter_mut())
-                .map(|(eid, happy)| QuxComponents::new(eid, &t, &greet, happy))
-                .collect(),
-            (&mut cnt, &timer, &t),
-        );
-    }
-}
-
-pub fn init_sdl() {
+fn init_sdl() {
     // Initialize SDL2
     if unsafe { sdl2::SDL_Init(sdl2::SDL_INIT_EVERYTHING) } == 0 {
         println!("SDL Initialized");
@@ -140,7 +46,7 @@ pub fn init_sdl() {
     }
 }
 
-pub fn quit_sdl() {
+fn quit_sdl() {
     unsafe {
         sdl2_ttf::TTF_Quit();
         sdl2_image::IMG_Quit();
@@ -148,12 +54,15 @@ pub fn quit_sdl() {
     }
 }
 
-// fn main() {
-//     init_sdl();
+pub fn run<T>()
+where
+    T: ManagerTrait,
+{
+    init_sdl();
 
-//     let mut sfoo = _engine::SFoo::new();
-//     sfoo.run();
-//     drop(sfoo);
+    let mut t = T::new();
+    t.run();
+    drop(t);
 
-//     quit_sdl();
-// }
+    quit_sdl();
+}
