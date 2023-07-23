@@ -7,6 +7,15 @@ pub const BMASK: Uint32 = 0x0000ff00;
 pub const AMASK: Uint32 = 0x000000ff;
 
 // Colors
+pub fn gray(val: u8) -> SDL_Color {
+    SDL_Color {
+        r: val,
+        g: val,
+        b: val,
+        a: 255,
+    }
+}
+
 pub const TRANSPARENT: SDL_Color = SDL_Color {
     r: 0,
     g: 0,
@@ -29,6 +38,12 @@ pub const GRAY: SDL_Color = SDL_Color {
     r: 128,
     g: 128,
     b: 128,
+    a: 255,
+};
+pub const DGRAY: SDL_Color = SDL_Color {
+    r: 64,
+    g: 64,
+    b: 64,
     a: 255,
 };
 pub const BLACK: SDL_Color = SDL_Color {

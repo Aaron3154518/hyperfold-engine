@@ -4,15 +4,18 @@ use crate::{
     components,
     ecs::events::core::{PreRender, Update},
     framework::physics::Position,
+    sdl2::SDL_RendererFlip,
     utils::{
-        rect::{Align, Dimensions, Rect},
+        rect::{Align, Dimensions, Point, Rect},
         util::{AsType, TryAsType},
     },
 };
 
 use super::{
     drawable::{AssetDrawable, Drawable},
-    rect_to_camera_coords, Asset, AssetManager, Camera, Renderer, Screen, Texture,
+    rect_to_camera_coords,
+    renderer::RenderOptions,
+    Asset, AssetManager, Camera, Renderer, Screen, Texture,
 };
 
 // RenderData
@@ -88,6 +91,7 @@ pub struct RenderData {
     pub(super) dest: Destination,
     pub(super) dest_rect: Rect,
     pub(super) area: Option<Rect>,
+    opts: Option<RenderOptions>,
     dim: Dimensions<u32>,
 }
 
@@ -112,6 +116,7 @@ impl RenderData {
                 h: dim.h as f32,
             }),
             area: None,
+            opts: None,
             dim,
         }
     }
@@ -176,6 +181,20 @@ pub trait RenderDataTrait {
         self.get_render_data_mut().area = area;
     }
 
+    fn set_rotation(&mut self, deg: f64, center: Option<Point>) {
+        let rd = self.get_render_data_mut();
+        let opts = rd.opts.get_or_insert(RenderOptions::default());
+        opts.rotation_deg = deg;
+        opts.rotation_center = center;
+    }
+
+    fn set_flip(&mut self, flip: SDL_RendererFlip) {
+        self.get_render_data_mut()
+            .opts
+            .get_or_insert(RenderOptions::default())
+            .flip = flip;
+    }
+
     fn animate(&mut self, anim: Animation) {
         let rd = self.get_render_data_mut();
         if rd.dim.w % anim.num_frames != 0 {
@@ -192,6 +211,11 @@ pub trait RenderDataTrait {
                 h: rd.dim.h as f32,
             });
         }
+    }
+
+    fn draw_texture(&self, r: &Renderer, tex: &Texture) {
+        let rd = self.get_render_data();
+        r.draw_texture(tex, rd.area, Some(rd.dest_rect), &rd.opts);
     }
 }
 
@@ -243,6 +267,16 @@ where
 
     fn with_area(mut self, area: Option<Rect>) -> Self {
         self.set_area(area);
+        self
+    }
+
+    fn with_rotation(mut self, deg: f64, center: Option<Point>) -> Self {
+        self.set_rotation(deg, center);
+        self
+    }
+
+    fn with_flip(mut self, flip: SDL_RendererFlip) -> Self {
+        self.set_flip(flip);
         self
     }
 
@@ -321,7 +355,7 @@ impl RenderDataTrait for RenderTexture {
 impl Drawable for RenderTexture {
     fn draw(&mut self, r: &Renderer) {
         if let Some(tex) = &self.tex {
-            r.draw_texture(tex, self.data.area, Some(self.data.dest_rect))
+            self.draw_texture(r, tex);
         }
     }
 }
@@ -341,8 +375,8 @@ impl RenderAsset {
         .with_asset(asset, r, am)
     }
 
-    pub fn from_file(file: String, r: &Renderer, am: &mut AssetManager) -> Self {
-        Self::new(Asset::File(file), r, am)
+    pub fn from_file(file: &str, r: &Renderer, am: &mut AssetManager) -> Self {
+        Self::new(Asset::File(file.to_string()), r, am)
     }
 
     pub fn from_id(id: Uuid, r: &Renderer, am: &mut AssetManager) -> Self {
@@ -380,7 +414,7 @@ impl RenderDataTrait for RenderAsset {
 impl AssetDrawable for RenderAsset {
     fn draw(&mut self, r: &Renderer, am: &mut AssetManager) {
         if let Some(tex) = am.load_asset(r, &self.asset) {
-            r.draw_texture(tex, self.data.area, Some(self.data.dest_rect));
+            self.draw_texture(r, tex);
         }
     }
 }

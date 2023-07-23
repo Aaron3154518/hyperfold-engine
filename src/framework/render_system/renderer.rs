@@ -1,8 +1,9 @@
 use crate::{
-    sdl2, sdl2_image,
+    sdl2::{self, SDL_RendererFlip},
+    sdl2_image,
     utils::{
         colors::BLACK,
-        rect::{Dimensions, Rect},
+        rect::{Dimensions, Point, Rect},
     },
 };
 
@@ -13,6 +14,23 @@ use super::{surface::Surface, Renderer, Texture, Window};
 
 pub const W: u32 = 960;
 pub const H: u32 = 720;
+
+#[derive(Debug)]
+pub struct RenderOptions {
+    pub rotation_deg: f64,
+    pub rotation_center: Option<Point>,
+    pub flip: SDL_RendererFlip,
+}
+
+impl Default for RenderOptions {
+    fn default() -> Self {
+        Self {
+            rotation_deg: 0.0,
+            rotation_center: None,
+            flip: SDL_RendererFlip::SDL_FLIP_NONE,
+        }
+    }
+}
 
 // Renderer
 impl Renderer {
@@ -105,17 +123,34 @@ impl Renderer {
         unsafe { sdl2::SDL_RenderDrawLine(self.r.as_ptr(), x1, y1, x2, y2) };
     }
 
-    pub fn draw_texture(&self, tex: &Texture, src: Option<Rect>, dest: Option<Rect>) {
+    pub fn draw_texture(
+        &self,
+        tex: &Texture,
+        src: Option<Rect>,
+        dest: Option<Rect>,
+        opts: &Option<RenderOptions>,
+    ) {
         let src = src.map(|r| r.to_sdl_rect());
         let dest = dest.map(|r| r.to_sdl_rect());
 
-        unsafe {
-            sdl2::SDL_RenderCopy(
-                self.r.as_ptr(),
-                tex.tex.as_ptr(),
-                src.as_ref().map_or(null(), |r| r),
-                dest.as_ref().map_or(null(), |r| r),
-            )
+        let src_ptr = src.as_ref().map_or(null(), |r| r);
+        let dest_ptr = dest.as_ref().map_or(null(), |r| r);
+
+        match opts {
+            Some(opts) => unsafe {
+                sdl2::SDL_RenderCopyEx(
+                    self.r.as_ptr(),
+                    tex.tex.as_ptr(),
+                    src_ptr,
+                    dest_ptr,
+                    opts.rotation_deg,
+                    opts.rotation_center.as_ref().map_or(null(), |p| p),
+                    opts.flip,
+                )
+            },
+            None => unsafe {
+                sdl2::SDL_RenderCopy(self.r.as_ptr(), tex.tex.as_ptr(), src_ptr, dest_ptr)
+            },
         };
     }
 }

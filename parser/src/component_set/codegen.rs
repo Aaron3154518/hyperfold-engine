@@ -253,9 +253,9 @@ impl ComponentSet {
         // Expression to assign vars
         let new = quote!(
             #ty {
-                #eid_var: #k,
-                #(#arg_name: #arg_var),*,
-                #(#opt_arg_name: #comps_var.#opt_arg_var.#opt_arg_get(#k)),*
+                #eid_var: #k
+                #(,#arg_name: #arg_var)*
+                #(,#opt_arg_name: #comps_var.#opt_arg_var.#opt_arg_get(#k))*
             }
         );
 
@@ -304,8 +304,8 @@ impl ComponentSet {
         let eid = &CODEGEN_IDENTS.eid_var;
         let c = quote!(
             #ty {
-                #eid: #other.#eid,
-                #(#vars: #other.#vars),*
+                #eid: #other.#eid
+                #(,#vars: #other.#vars)*
             }
         );
         c

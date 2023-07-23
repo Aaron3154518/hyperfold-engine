@@ -133,6 +133,8 @@ pub fn manager_impl(cr_idx: usize, items: &Items, crates: &Crates) -> MsgResult<
                 impl #manager {
                     fn init(&mut self) {
                         #(#init_systems;)*
+                        let events = std::mem::replace(&mut self.#globals_var.#g_e_foo, #events::new());
+                        self.add_events(events);
                         self.post_tick();
                     }
 
@@ -176,8 +178,8 @@ pub fn manager_impl(cr_idx: usize, items: &Items, crates: &Crates) -> MsgResult<
                                 if i + 1 >= n {
                                     self.#events_var.pop(e);
                                 }
-                                let #events_var = std::mem::replace(&mut self.#globals_var.#g_e_foo, #events::new());
-                                self.add_events(#events_var);
+                                let events = std::mem::replace(&mut self.#globals_var.#g_e_foo, #events::new());
+                                self.add_events(events);
                             } else {
                                 self.pop();
                             }

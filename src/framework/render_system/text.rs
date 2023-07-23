@@ -1,5 +1,5 @@
-use itertools::{Itertools, PeekingNext};
-use shared::traits::{Call, CollectVecInto, FindFrom};
+use itertools::Itertools;
+use shared::traits::Call;
 
 use crate::{
     sdl2,
@@ -181,7 +181,7 @@ pub fn split_text(tokens: &Vec<TextToken>, font: &Font, max_w: Option<u32>) -> V
                         &mut lines,
                         &mut line,
                         tok_idx,
-                        text,
+                        &text,
                         font,
                         max_w,
                         space_w,
@@ -205,7 +205,7 @@ pub fn split_text(tokens: &Vec<TextToken>, font: &Font, max_w: Option<u32>) -> V
                         tok_idx,
                         start: 0,
                         end: text.len(),
-                        w: font.size_text(text).w.max(0) as u32,
+                        w: font.size_text(&text).w.max(0) as u32,
                     }),
                     TextToken::Image => line.add_image(line_h),
                     TextToken::NewLine => lines.push(std::mem::replace(&mut line, Line::new())),
