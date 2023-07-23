@@ -1,4 +1,4 @@
-use shared::traits::{Call, CollectVec, SplitAround};
+use shared::traits::{Call, SplitAround};
 
 use crate::{
     components,
@@ -16,9 +16,9 @@ use super::{
     drawable::{Canvas, Drawable},
     font::FontData,
     rect_to_camera_coords,
-    render_data::{RenderAsset, RenderDataTrait, RenderTexture},
+    render_data::{Fit, RenderAsset, RenderDataTrait, RenderTexture},
     shapes::{Rectangle, ShapeTrait},
-    text::render_text,
+    text::{parse_text, render_text, TextToken},
     AssetManager, Camera, RenderComponent, Screen,
 };
 
@@ -30,7 +30,7 @@ pub enum TextImage {
 #[macros::component]
 pub struct RenderText {
     font_data: FontData,
-    text: String,
+    tokens: Vec<TextToken>,
     imgs: Vec<TextImage>,
     img_rects: Vec<Rect>,
     tex: RenderTexture,
@@ -44,7 +44,7 @@ impl RenderText {
     pub fn new(font_data: FontData) -> Self {
         Self {
             font_data,
-            text: String::new(),
+            tokens: Vec::new(),
             imgs: Vec::new(),
             img_rects: Vec::new(),
             tex: RenderTexture::new(None),
@@ -64,13 +64,13 @@ impl RenderText {
         self.clear_texture();
     }
 
-    pub fn with_text(mut self, text: String) -> Self {
+    pub fn with_text(mut self, text: &str) -> Self {
         self.set_text(text);
         self
     }
 
-    pub fn set_text(&mut self, text: String) {
-        self.text = text;
+    pub fn set_text(&mut self, text: &str) {
+        self.tokens = parse_text(&text);
         self.clear_texture();
     }
 
@@ -153,13 +153,18 @@ fn update_render_text(
             None => continue,
         };
         tex.try_mut(|rt: &mut RenderText| {
+            let max_w = match rt.tex.get_render_data().dest.fit {
+                Fit::Fit(false, _) => None,
+                _ => Some(pos.0.w_u32()),
+            };
             // Render text if no existing texture
             let tex = rt.tex.get_or_insert_texture(|| {
                 render_text(
                     r,
                     am,
-                    &rt.text,
+                    &rt.tokens,
                     &rt.font_data,
+                    max_w,
                     pos.0,
                     rt.color,
                     rt.bkgrnd,

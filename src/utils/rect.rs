@@ -194,6 +194,15 @@ impl Rect {
             .with_y(y, ay)
     }
 
+    pub fn from_dim(w: f32, h: f32) -> Self {
+        Self {
+            x: 0.0,
+            y: 0.0,
+            w,
+            h,
+        }
+    }
+
     pub fn from_corners(x1: f32, y1: f32, x2: f32, y2: f32) -> Self {
         let (x, w) = if x1 < x2 {
             (x1, x2 - x1)
@@ -361,8 +370,16 @@ impl Rect {
         self.w.round() as i32
     }
 
+    pub fn w_u32(&self) -> u32 {
+        self.w.round().max(0.0) as u32
+    }
+
     pub fn h_i32(&self) -> i32 {
-        self.h().round() as i32
+        self.h.round() as i32
+    }
+
+    pub fn h_u32(&self) -> u32 {
+        self.h.round().max(0.0) as u32
     }
 
     pub fn dim_i32(&self) -> Dimensions<i32> {

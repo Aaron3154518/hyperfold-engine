@@ -1,4 +1,5 @@
-use shared::traits::{Call, FindFrom};
+use itertools::{Itertools, PeekingNext};
+use shared::traits::{Call, CollectVecInto, FindFrom};
 
 use crate::{
     sdl2,
@@ -8,13 +9,14 @@ use crate::{
 use super::{
     drawable::Canvas,
     font::{Font, FontData},
-    render_data::{FitMode, RectMode, RenderDataBuilderTrait, RenderTexture},
+    render_data::{Fit, RectMode, RenderDataBuilderTrait, RenderTexture},
     AssetManager, Renderer, Texture,
 };
 
 // Text
 #[derive(Debug)]
 pub struct Text {
+    tok_idx: usize,
     start: usize,
     end: usize,
     w: u32,
@@ -27,19 +29,26 @@ impl Text {
         tex: &Texture,
         rect: Rect,
         font: &Font,
-        text: &str,
+        tokens: &Vec<TextToken>,
         color: sdl2::SDL_Color,
     ) {
-        let text_tex =
-            r.create_texture_from_surface(font.render(&text[self.start..self.end], color));
-        tex.draw(
-            r,
-            &mut RenderTexture::new(Some(text_tex)).with_dest(
-                rect,
-                RectMode::Absolute,
-                FitMode::FitWithin(Align::Center, Align::Center),
-            ),
-        );
+        match tokens.get(self.tok_idx) {
+            Some(TextToken::Text(text)) => {
+                let text_tex =
+                    r.create_texture_from_surface(font.render(&text[self.start..self.end], color));
+                tex.draw(
+                    r,
+                    &mut RenderTexture::new(Some(text_tex)).with_dest(
+                        rect,
+                        RectMode::Absolute,
+                        Fit::fit_dest(),
+                        Align::Center,
+                        Align::Center,
+                    ),
+                )
+            }
+            _ => panic!("Invalid text token index"),
+        }
     }
 }
 
@@ -89,8 +98,10 @@ impl Line {
 // split text
 fn add_text(
     lines: &mut Vec<Line>,
-    font: &Font,
+    line: &mut Line,
+    tok_idx: usize,
     text: &str,
+    font: &Font,
     max_w: u32,
     space_w: u32,
     pos1: usize,
@@ -100,19 +111,15 @@ fn add_text(
         return;
     }
 
-    let last_line = match lines.last_mut() {
-        Some(l) => l,
-        None => return,
-    };
-
     let segment = &text[pos1..pos2];
     let (width, count) = font
-        .measure(segment, last_line.space(max_w))
+        .measure(segment, line.space(max_w))
         .call_into(|(w, c)| (w as u32, c as usize));
 
     if count == pos2 - pos1 {
         // Fit entire text onto line
-        last_line.add_text(Text {
+        line.add_text(Text {
+            tok_idx,
             start: pos1,
             end: pos2,
             w: width,
@@ -124,7 +131,8 @@ fn add_text(
             // Break into words
             Some(last_space) => {
                 let Dimensions { w: text_w, .. } = font.size_text(&text[..last_space]);
-                last_line.add_text(Text {
+                line.add_text(Text {
+                    tok_idx,
                     start: pos1,
                     end: pos1 + last_space,
                     w: text_w as u32,
@@ -141,7 +149,8 @@ fn add_text(
                     pos1
                 } else {
                     // It is bigger than one line, split across multiple lines
-                    last_line.add_text(Text {
+                    line.add_text(Text {
+                        tok_idx,
                         start: pos1,
                         end: pos1 + count,
                         w: width,
@@ -150,56 +159,129 @@ fn add_text(
                 }
             }
         };
-        lines.push(Line::new());
-        add_text(lines, font, text, max_w, space_w, new_start, pos2);
+        lines.push(std::mem::replace(line, Line::new()));
+        add_text(
+            lines, line, tok_idx, text, font, max_w, space_w, new_start, pos2,
+        );
     }
 }
 
-pub fn split_text(text: &str, font: &Font, max_w: u32) -> Vec<Line> {
-    let mut lines = vec![Line::new()];
-
+pub fn split_text(tokens: &Vec<TextToken>, font: &Font, max_w: Option<u32>) -> Vec<Line> {
     let (space_w, line_h) = font
         .size()
         .call_into(|Dimensions { w, h }| (w as u32, h as u32));
 
-    let delims = ['\n', '{'];
-    let mut pos = 0;
-    while let Some(mut idx) = text.find_from(delims, pos) {
-        add_text(&mut lines, font, text, max_w, space_w, pos, idx);
-        match text.chars().nth(idx) {
-            Some('\n') => lines.push(Line::new()),
-            Some('{') => {
-                pos = idx + 1;
-                idx = match text.find_from('}', pos) {
-                    Some(idx) => idx,
-                    None => panic!("split_text(): Unterminated '{{'"),
-                };
-                match &text[pos..idx] {
-                    "b" => (),
-                    "i" => {
-                        match lines.last() {
-                            Some(l) => {
-                                if line_h > l.space(max_w) {
-                                    lines.push(Line::new())
-                                }
-                            }
-                            None => lines.push(Line::new()),
+    let mut lines = Vec::new();
+    let mut line = Line::new();
+    match max_w {
+        Some(max_w) => {
+            for (tok_idx, token) in tokens.into_iter().enumerate() {
+                match token {
+                    TextToken::Text(text) => add_text(
+                        &mut lines,
+                        &mut line,
+                        tok_idx,
+                        text,
+                        font,
+                        max_w,
+                        space_w,
+                        0,
+                        text.len(),
+                    ),
+                    TextToken::Image => {
+                        if line_h > line.space(max_w) {
+                            lines.push(std::mem::replace(&mut line, Line::new()))
                         }
-                        lines
-                            .last_mut()
-                            .expect("Failed to create new line")
-                            .add_image(line_h);
+                        line.add_image(line_h);
                     }
-                    _ => panic!("Unrecognized text wrap option: {}", &text[pos..idx]),
+                    TextToken::NewLine => lines.push(std::mem::replace(&mut line, Line::new())),
                 }
             }
-            _ => (),
         }
-        pos = idx + 1;
+        None => {
+            for (tok_idx, token) in tokens.into_iter().enumerate() {
+                match token {
+                    TextToken::Text(text) => line.add_text(Text {
+                        tok_idx,
+                        start: 0,
+                        end: text.len(),
+                        w: font.size_text(text).w.max(0) as u32,
+                    }),
+                    TextToken::Image => line.add_image(line_h),
+                    TextToken::NewLine => lines.push(std::mem::replace(&mut line, Line::new())),
+                }
+            }
+        }
+    };
+
+    if lines.is_empty() || line.w > 0 {
+        lines.push(line);
     }
-    add_text(&mut lines, font, text, max_w, space_w, pos, text.len());
 
     lines
+}
+
+#[derive(Debug)]
+pub enum TextToken {
+    Text(String),
+    Image,
+    NewLine,
+}
+
+pub fn parse_text(text: &str) -> Vec<TextToken> {
+    let mut tokens = Vec::new();
+    for (i, text) in text.split("\n").enumerate() {
+        if i > 0 {
+            tokens.push(TextToken::NewLine);
+        }
+
+        let mut string = String::with_capacity(text.len());
+        let mut chars = text.chars().peekable();
+        let mut idx = 0;
+        let mut last_sep = None;
+        while let Some((i, ch)) = chars.find_position(|ch| ch == &'[' || ch == &']') {
+            string.push_str(&text[idx..idx + i]);
+            idx += i + 1;
+            match chars.peek() {
+                // Escaped ch
+                Some(ch2) if ch2 == &ch => {
+                    chars.next();
+                    string.push(ch);
+                    idx += 1;
+                }
+                _ => {
+                    // Check control sequence
+                    if (ch == '[' && last_sep.unwrap_or(']') != ']')
+                        || (ch == ']' && last_sep != Some('['))
+                    {
+                        panic!("Unexpected: '{ch}'");
+                    }
+                    if ch == ']' {
+                        match string.as_str() {
+                            "i" => tokens.push(TextToken::Image),
+                            "b" => (),
+                            str => panic!("Unexpected command sequence: [{str}]"),
+                        }
+                    } else {
+                        tokens.push(TextToken::Text(string));
+                    }
+                    last_sep = Some(ch);
+                    string = String::with_capacity(text.len() - idx);
+                }
+            }
+        }
+        // Make sure '[' is terminated
+        if last_sep == Some('[') {
+            panic!("Unterminated '['");
+        }
+        // Handle leftover string
+        string.push_str(&text[idx..]);
+        if !string.is_empty() {
+            tokens.push(TextToken::Text(string));
+        }
+    }
+
+    tokens
 }
 
 // TODO: crashes if any text is empty
@@ -207,8 +289,9 @@ pub fn split_text(text: &str, font: &Font, max_w: u32) -> Vec<Line> {
 pub fn render_text(
     r: &Renderer,
     am: &mut AssetManager,
-    text: &str,
+    tokens: &Vec<TextToken>,
     font_data: &FontData,
+    max_w: Option<u32>,
     bounds: Rect,
     color: sdl2::SDL_Color,
     bkgrnd: sdl2::SDL_Color,
@@ -217,8 +300,7 @@ pub fn render_text(
 ) -> (Texture, Vec<Rect>) {
     let font = am.get_font(font_data);
     let line_h = font.size().h as f32;
-    let lines = split_text(text, font, bounds.w_i32() as u32);
-    // println!("{lines:#?}");
+    let lines = split_text(tokens, font, max_w);
     let text_r = Rect::new()
         .with_dim(
             lines.iter().max_by_key(|l| l.w).expect("No lines").w as f32,
@@ -249,7 +331,7 @@ pub fn render_text(
                         w: t.w as f32,
                         h: line_h,
                     };
-                    t.draw(r, &tex, rect, font, text, color);
+                    t.draw(r, &tex, rect, font, tokens, color);
                     x += t.w as f32;
                 }
                 LineItem::Image => {

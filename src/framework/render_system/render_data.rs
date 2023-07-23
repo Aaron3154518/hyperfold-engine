@@ -2,10 +2,7 @@ use uuid::Uuid;
 
 use crate::{
     components,
-    ecs::{
-        entities::Entity,
-        events::core::{PreRender, Update},
-    },
+    ecs::events::core::{PreRender, Update},
     framework::physics::Position,
     utils::{
         rect::{Align, Dimensions, Rect},
@@ -27,21 +24,46 @@ pub enum RectMode {
 }
 
 #[derive(Copy, Clone, Debug)]
-pub enum FitMode {
-    Exact,
-    FitWithin(Align, Align),
+pub enum Fit {
+    // Constrain to W and/or H
+    Fit(bool, bool),
+    // Keep texture dimensions
+    None,
+}
+
+impl Fit {
+    pub fn fit_dest() -> Self {
+        Self::Fit(true, true)
+    }
+
+    pub fn fit_width() -> Self {
+        Self::Fit(true, false)
+    }
+
+    pub fn fit_height() -> Self {
+        Self::Fit(false, true)
+    }
+
+    pub fn fill_dest() -> Self {
+        Self::Fit(false, false)
+    }
+
+    pub fn keep_dim() -> Self {
+        Self::None
+    }
 }
 
 #[derive(Copy, Clone, Debug)]
 pub struct Destination {
     pub(super) rect: Rect,
     pub(super) mode: RectMode,
-    pub(super) fit: FitMode,
+    pub(super) fit: Fit,
+    pub(super) align_x: Align,
+    pub(super) align_y: Align,
 }
 
 impl Destination {
-    pub fn to_rect(&self, dim: Dimensions<u32>) -> Rect {
-        let (w, h) = (dim.w as f32, dim.h as f32);
+    pub fn to_rect(&self, Dimensions { w, h }: Dimensions<f32>) -> Rect {
         let r = match self.mode {
             RectMode::Absolute => self.rect,
             RectMode::Percent => Rect {
@@ -52,9 +74,12 @@ impl Destination {
             },
         };
         match self.fit {
-            FitMode::Exact => r,
-            FitMode::FitWithin(ax, ay) => r.fit_dim_within(w, h).with_rect_pos(r, ax, ay),
+            Fit::Fit(fit_w, fit_h) => {
+                Rect::min_rect(w, h, fit_w.then_some(r.w), fit_h.then_some(r.h))
+            }
+            Fit::None => Rect::from_dim(w, h),
         }
+        .with_rect_pos(r, self.align_x, self.align_y)
     }
 }
 
@@ -76,14 +101,26 @@ impl RenderData {
                 h: dim.h as f32,
             },
             mode: RectMode::Absolute,
-            fit: FitMode::Exact,
+            fit: Fit::fit_dest(),
+            align_x: Align::Center,
+            align_y: Align::Center,
         };
         Self {
             dest,
-            dest_rect: dest.to_rect(dim),
+            dest_rect: dest.to_rect(Dimensions {
+                w: dim.w as f32,
+                h: dim.h as f32,
+            }),
             area: None,
             dim,
         }
+    }
+
+    pub fn get_tex_dim(&self) -> Dimensions<f32> {
+        self.area.as_ref().map(|r| r.dim()).unwrap_or(Dimensions {
+            w: self.dim.w as f32,
+            h: self.dim.h as f32,
+        })
     }
 }
 
@@ -95,31 +132,44 @@ pub trait RenderDataTrait {
     fn set_dim(&mut self, dim: Dimensions<u32>) {
         let rd = self.get_render_data_mut();
         rd.dim = dim;
-        rd.dest_rect = rd.dest.to_rect(dim);
+        rd.dest_rect = rd.dest.to_rect(rd.get_tex_dim());
     }
 
-    fn set_dest(&mut self, rect: Rect, mode: RectMode, fit: FitMode) {
+    fn set_dest(&mut self, rect: Rect, mode: RectMode, fit: Fit, align_x: Align, align_y: Align) {
         let rd = self.get_render_data_mut();
-        rd.dest = Destination { rect, mode, fit };
-        rd.dest_rect = rd.dest.to_rect(rd.dim);
+        rd.dest = Destination {
+            rect,
+            mode,
+            fit,
+            align_x,
+            align_y,
+        };
+        rd.dest_rect = rd.dest.to_rect(rd.get_tex_dim());
     }
 
     fn set_dest_rect(&mut self, rect: Rect) {
         let rd = self.get_render_data_mut();
         rd.dest.rect = rect;
-        rd.dest_rect = rd.dest.to_rect(rd.dim);
+        rd.dest_rect = rd.dest.to_rect(rd.get_tex_dim());
     }
 
     fn set_dest_mode(&mut self, mode: RectMode) {
         let rd = self.get_render_data_mut();
         rd.dest.mode = mode;
-        rd.dest_rect = rd.dest.to_rect(rd.dim);
+        rd.dest_rect = rd.dest.to_rect(rd.get_tex_dim());
     }
 
-    fn set_dest_fit(&mut self, fit: FitMode) {
+    fn set_dest_fit(&mut self, fit: Fit) {
         let rd = self.get_render_data_mut();
         rd.dest.fit = fit;
-        rd.dest_rect = rd.dest.to_rect(rd.dim);
+        rd.dest_rect = rd.dest.to_rect(rd.get_tex_dim());
+    }
+
+    fn set_dest_align(&mut self, align_x: Align, align_y: Align) {
+        let rd = self.get_render_data_mut();
+        rd.dest.align_x = align_x;
+        rd.dest.align_y = align_y;
+        rd.dest_rect = rd.dest.to_rect(rd.get_tex_dim());
     }
 
     fn set_area(&mut self, area: Option<Rect>) {
@@ -159,8 +209,15 @@ where
         .with_dest_mode(RectMode::Percent)
     }
 
-    fn with_dest(mut self, rect: Rect, mode: RectMode, fit: FitMode) -> Self {
-        self.set_dest(rect, mode, fit);
+    fn with_dest(
+        mut self,
+        rect: Rect,
+        mode: RectMode,
+        fit: Fit,
+        align_x: Align,
+        align_y: Align,
+    ) -> Self {
+        self.set_dest(rect, mode, fit, align_x, align_y);
         self
     }
 
@@ -174,8 +231,13 @@ where
         self
     }
 
-    fn with_dest_fit(mut self, fit: FitMode) -> Self {
+    fn with_dest_fit(mut self, fit: Fit) -> Self {
         self.set_dest_fit(fit);
+        self
+    }
+
+    fn with_dest_align(mut self, align_x: Align, align_y: Align) -> Self {
+        self.set_dest_align(align_x, align_y);
         self
     }
 
