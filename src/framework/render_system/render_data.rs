@@ -4,7 +4,7 @@ use crate::{
     components,
     ecs::events::core::{PreRender, Update},
     framework::physics::Position,
-    sdl2::SDL_RendererFlip,
+    sdl2::{self, SDL_RendererFlip},
     utils::{
         rect::{Align, Dimensions, Point, Rect},
         util::{AsType, TryAsType},
@@ -93,6 +93,7 @@ pub struct RenderData {
     pub(super) area: Option<Rect>,
     opts: Option<RenderOptions>,
     dim: Dimensions<u32>,
+    alpha: u8,
 }
 
 impl RenderData {
@@ -118,6 +119,7 @@ impl RenderData {
             area: None,
             opts: None,
             dim,
+            alpha: 255,
         }
     }
 
@@ -133,6 +135,11 @@ pub trait RenderDataTrait {
     fn get_render_data<'a>(&'a self) -> &'a RenderData;
 
     fn get_render_data_mut<'a>(&'a mut self) -> &'a mut RenderData;
+
+    fn set_alpha(&mut self, alpha: u8) {
+        let rd = self.get_render_data_mut();
+        rd.alpha = alpha;
+    }
 
     fn set_dim(&mut self, dim: Dimensions<u32>) {
         let rd = self.get_render_data_mut();
@@ -215,7 +222,7 @@ pub trait RenderDataTrait {
 
     fn draw_texture(&self, r: &Renderer, tex: &Texture) {
         let rd = self.get_render_data();
-        r.draw_texture(tex, rd.area, Some(rd.dest_rect), &rd.opts);
+        r.draw_texture(tex, rd.area, Some(rd.dest_rect), &rd.opts, rd.alpha);
     }
 }
 
@@ -223,6 +230,11 @@ pub trait RenderDataBuilderTrait
 where
     Self: Sized + RenderDataTrait,
 {
+    fn with_alpha(mut self, alpha: u8) -> Self {
+        self.set_alpha(alpha);
+        self
+    }
+
     fn fill_dest(self) -> Self {
         self.with_dest_rect(Rect {
             x: 0.0,

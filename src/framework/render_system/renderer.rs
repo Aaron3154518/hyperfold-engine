@@ -129,12 +129,15 @@ impl Renderer {
         src: Option<Rect>,
         dest: Option<Rect>,
         opts: &Option<RenderOptions>,
+        alpha: u8,
     ) {
         let src = src.map(|r| r.to_sdl_rect());
         let dest = dest.map(|r| r.to_sdl_rect());
 
         let src_ptr = src.as_ref().map_or(null(), |r| r);
         let dest_ptr = dest.as_ref().map_or(null(), |r| r);
+
+        unsafe { sdl2::SDL_SetTextureAlphaMod(tex.tex.as_ptr(), alpha) };
 
         match opts {
             Some(opts) => unsafe {
