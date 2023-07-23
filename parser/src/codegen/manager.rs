@@ -135,7 +135,7 @@ pub fn manager_impl(cr_idx: usize, items: &Items, crates: &Crates) -> MsgResult<
                         #(#init_systems;)*
                         let events = std::mem::replace(&mut self.#globals_var.#g_e_foo, #events::new());
                         self.add_events(events);
-                        self.post_tick();
+                        self.update_entities();
                     }
 
                     fn add_system(&mut self, e: #event_enum, f: Box<dyn Fn(&mut #components, &mut #globals, &mut #events)>) {
@@ -180,15 +180,15 @@ pub fn manager_impl(cr_idx: usize, items: &Items, crates: &Crates) -> MsgResult<
                                 }
                                 let events = std::mem::replace(&mut self.#globals_var.#g_e_foo, #events::new());
                                 self.add_events(events);
+                                self.update_entities();
                             } else {
                                 self.pop();
                             }
                         }
                         self.#globals_var.#g_renderer.present();
-                        self.post_tick();
                     }
 
-                    fn post_tick(&mut self) {
+                    fn update_entities(&mut self) {
                         self.#comps_var.remove(&mut self.#globals_var.#g_entity_trash);
                         self.#comps_var.append(&mut self.#globals_var.#g_c_foo);
                     }

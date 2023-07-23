@@ -2,10 +2,11 @@
 pub trait TimerTrait {
     fn new(length: u32) -> Self;
 
-    fn get_timer(&mut self) -> &mut Timer;
+    fn get_timer(&self) -> &Timer;
+    fn get_timer_mut(&mut self) -> &mut Timer;
 
     fn add_time(&mut self, dt: u32) -> u32 {
-        let timer = self.get_timer();
+        let timer = self.get_timer_mut();
         match timer.length {
             0 => 1,
             length => {
@@ -15,6 +16,20 @@ pub trait TimerTrait {
                 n
             }
         }
+    }
+
+    fn time_passed(&self) -> u32 {
+        self.get_timer().time
+    }
+
+    fn time_left(&self) -> u32 {
+        let t = self.get_timer();
+        t.length - t.time
+    }
+
+    fn progress(&self) -> f32 {
+        let t = self.get_timer();
+        t.time as f32 / t.length as f32
     }
 }
 
@@ -29,7 +44,11 @@ impl TimerTrait for Timer {
         Self { length, time: 0 }
     }
 
-    fn get_timer(&mut self) -> &mut Timer {
+    fn get_timer(&self) -> &Timer {
+        self
+    }
+
+    fn get_timer_mut(&mut self) -> &mut Timer {
         self
     }
 }

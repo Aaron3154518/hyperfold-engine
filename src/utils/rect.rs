@@ -102,6 +102,12 @@ impl Div<i32> for Point {
     }
 }
 
+impl PartialEq for Point {
+    fn eq(&self, other: &Self) -> bool {
+        self.x == other.x && self.y == other.y
+    }
+}
+
 impl PointF {
     pub fn new() -> Self {
         Self { x: 0.0, y: 0.0 }
@@ -157,6 +163,12 @@ impl Div<f32> for PointF {
             x: self.x / rhs,
             y: self.y / rhs,
         }
+    }
+}
+
+impl PartialEq for PointF {
+    fn eq(&self, other: &Self) -> bool {
+        (self.x - other.x).abs() <= 1e-10 && (self.y - other.y).abs() <= 1e-10
     }
 }
 
