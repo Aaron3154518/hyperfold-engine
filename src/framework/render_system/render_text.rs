@@ -70,8 +70,11 @@ impl RenderText {
     }
 
     pub fn set_text(&mut self, text: &str) {
-        self.tokens = parse_text(&text);
-        self.clear_texture();
+        let tokens = parse_text(&text);
+        if tokens != self.tokens {
+            self.tokens = tokens;
+            self.clear_texture();
+        }
     }
 
     pub fn with_text_color(mut self, color: sdl2::SDL_Color) -> Self {

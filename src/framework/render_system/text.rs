@@ -95,7 +95,7 @@ impl Line {
     }
 }
 
-// split text
+// Split text into fixed-width lines
 fn add_text(
     lines: &mut Vec<Line>,
     line: &mut Line,
@@ -221,7 +221,8 @@ pub fn split_text(tokens: &Vec<TextToken>, font: &Font, max_w: Option<u32>) -> V
     lines
 }
 
-#[derive(Debug)]
+// Parse text into tokens
+#[derive(Debug, Eq, PartialEq)]
 pub enum TextToken {
     Text(String),
     Image,
