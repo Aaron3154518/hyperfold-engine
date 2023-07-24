@@ -4,7 +4,7 @@ use crate::{
     components,
     ecs::events::core::{PreRender, Update},
     framework::physics::Position,
-    sdl2::{self, SDL_RendererFlip},
+    sdl2::SDL_RendererFlip,
     utils::{
         rect::{Align, Dimensions, Point, Rect},
         util::{AsType, TryAsType},
