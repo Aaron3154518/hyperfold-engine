@@ -36,7 +36,7 @@ impl<V> Singleton<V> {
         self.get_key().is_some_and(|e| e == key)
     }
 
-    pub fn get_key<'a>(&'a self) -> Option<&'a Entity> {
+    pub fn get_key(&self) -> Option<&Entity> {
         match self {
             Singleton::Some { e, .. } => Some(e),
             Singleton::None => None,
@@ -57,17 +57,31 @@ impl<V> Singleton<V> {
         }
     }
 
-    pub fn get<'a>(&'a self) -> Option<(&'a Entity, &'a V)> {
+    pub fn get(&self) -> Option<(&Entity, &V)> {
         match self {
             Singleton::Some { e, v } => Some((e, v)),
             Singleton::None => None,
         }
     }
 
-    pub fn get_mut<'a>(&'a mut self) -> Option<(&'a Entity, &'a mut V)> {
+    pub fn get_mut(&mut self) -> Option<(&Entity, &mut V)> {
         match self {
             Singleton::Some { e, v } => Some((e, v)),
             Singleton::None => None,
+        }
+    }
+
+    pub fn get_vec(&self) -> Vec<(&Entity, &V)> {
+        match self {
+            Singleton::Some { e, v } => vec![(e, v)],
+            Singleton::None => vec![],
+        }
+    }
+
+    pub fn get_vec_mut(&mut self) -> Vec<(&mut Entity, &mut V)> {
+        match self {
+            Singleton::Some { e, v } => vec![(e, v)],
+            Singleton::None => vec![],
         }
     }
 }

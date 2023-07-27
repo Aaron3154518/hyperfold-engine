@@ -2,7 +2,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use shared::{
     match_ok,
-    msg_result::{CombineMsgs, MsgTrait, ToMsgs, Zip4Msgs},
+    msg_result::{CombineMsgs, MsgTrait, ToMsgs, Zip5Msgs},
     traits::{CollectVec, CollectVecInto},
 };
 
@@ -35,6 +35,7 @@ pub struct CodegenArgs<'a> {
     func_name: syn::Path,
     event_trait: &'a syn::Path,
     intersect: &'a syn::Path,
+    intersect_opt: &'a syn::Path,
     event: EventFnArg,
     globals: Vec<GlobalFnArg>,
     component_sets: Vec<BuildSetsArg<'a>>,
@@ -45,6 +46,7 @@ fn codegen_system(
         func_name,
         event_trait,
         intersect,
+        intersect_opt,
         event: event_arg,
         globals: global_args,
         component_sets,
@@ -76,7 +78,7 @@ fn codegen_system(
         build_sets_code,
         func_args: cs_func_args,
         singletons,
-    } = ComponentSet::codegen_build_sets(&component_sets, intersect);
+    } = ComponentSet::codegen_build_sets(&component_sets, intersect, intersect_opt);
     for (cs, tok) in component_sets.iter().zip(cs_func_args) {
         func_args[cs.fn_arg.arg_idx] = tok;
     }
@@ -116,6 +118,7 @@ pub fn codegen_systems(
 ) -> MsgResult<SystemsCodegenResult> {
     let event_trait = crates.get_syn_path(cr_idx, &ENGINE_TRAITS.add_event);
     let intersect = crates.get_syn_path(cr_idx, &ENGINE_PATHS.intersect);
+    let intersect_opt = crates.get_syn_path(cr_idx, &ENGINE_PATHS.intersect_opt);
 
     let mut init_systems = Vec::new();
     let mut systems = Vec::new();
@@ -126,51 +129,61 @@ pub fn codegen_systems(
     for system in &items.systems {
         let event_trait = event_trait.get_ref();
         let intersect = intersect.get_ref();
+        let intersect_opt = intersect_opt.get_ref();
 
         let func_name = crates.get_item_syn_path(cr_idx, &system.path);
         let args = system.validate(items);
-        match_ok!(Zip4Msgs, func_name, args, event_trait, intersect, {
-            match args {
-                FnArgs::Init { globals } => {
-                    init_systems.push(codegen_init_system(globals, func_name))
-                }
-                FnArgs::System {
-                    event,
-                    globals,
-                    component_sets,
-                } => {
-                    let component_sets = component_sets
-                        .map_vec_into(|fn_arg| {
-                            items
-                                .component_sets
-                                .get(fn_arg.idx)
-                                .ok_or(vec![Msg::String(format!(
-                                    "Invalid component set index: {}",
-                                    fn_arg.idx
-                                ))])
-                                .and_then(|cs| {
-                                    crates
-                                        .get_item_syn_path(cr_idx, &cs.path)
-                                        .map(|ty| BuildSetsArg { cs, fn_arg, ty })
-                                })
-                        })
-                        .combine_msgs();
+        match_ok!(
+            Zip5Msgs,
+            func_name,
+            args,
+            event_trait,
+            intersect,
+            intersect_opt,
+            {
+                match args {
+                    FnArgs::Init { globals } => {
+                        init_systems.push(codegen_init_system(globals, func_name))
+                    }
+                    FnArgs::System {
+                        event,
+                        globals,
+                        component_sets,
+                    } => {
+                        let component_sets = component_sets
+                            .map_vec_into(|fn_arg| {
+                                items
+                                    .component_sets
+                                    .get(fn_arg.idx)
+                                    .ok_or(vec![Msg::String(format!(
+                                        "Invalid component set index: {}",
+                                        fn_arg.idx
+                                    ))])
+                                    .and_then(|cs| {
+                                        crates
+                                            .get_item_syn_path(cr_idx, &cs.path)
+                                            .map(|ty| BuildSetsArg { cs, fn_arg, ty })
+                                    })
+                            })
+                            .combine_msgs();
 
-                    system_events.push(event_variant(event.idx));
+                        system_events.push(event_variant(event.idx));
 
-                    systems.push(component_sets.map(|component_sets| {
-                        codegen_system(CodegenArgs {
-                            func_name,
-                            event_trait,
-                            intersect,
-                            event,
-                            globals,
-                            component_sets,
-                        })
-                    }));
+                        systems.push(component_sets.map(|component_sets| {
+                            codegen_system(CodegenArgs {
+                                func_name,
+                                event_trait,
+                                intersect,
+                                intersect_opt,
+                                event,
+                                globals,
+                                component_sets,
+                            })
+                        }));
+                    }
                 }
             }
-        })
+        )
         .record_errs(&mut errs);
     }
 

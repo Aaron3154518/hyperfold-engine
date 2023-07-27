@@ -214,9 +214,11 @@ impl ComponentSet {
     // Generates inline code to construct values from keys
     fn codegen_get_vals(
         &self,
+        arg: &ComponentSetFnArg,
         v: syn::Ident,
         ty: &syn::Path,
         intersect: &syn::Path,
+        intersect_opt: &syn::Path,
     ) -> TokenStream {
         // Remove duplicate arguments
         let mut args = self.args.to_vec();
@@ -231,71 +233,107 @@ impl ComponentSet {
 
         let k = format_ident!("k");
 
-        // Unique component variables
-        let var = args.filter_map_vec(|item| item.is_opt.then_none(component_var(item.comp.idx)));
-
-        // Full list of component names and variables
-        let (mut arg_name, mut arg_var) = (Vec::new(), Vec::new());
-        let (mut opt_arg_name, mut opt_arg_var, mut opt_arg_get) =
-            (Vec::new(), Vec::new(), Vec::new());
-        for item in &self.args {
-            let (names, vars) = match item.is_opt {
-                true => {
-                    opt_arg_get.push(item.get_fn());
-                    (&mut opt_arg_name, &mut opt_arg_var)
-                }
-                false => (&mut arg_name, &mut arg_var),
-            };
-            names.push(format_ident!("{}", item.var));
-            vars.push(component_var(item.comp.idx));
-        }
-
-        // Expression to assign vars
-        let new = quote!(
-            #ty {
-                #eid_var: #k
-                #(,#arg_name: #arg_var)*
-                #(,#opt_arg_name: #comps_var.#opt_arg_var.#opt_arg_get(#k))*
-            }
-        );
-
         match (first_arg, first_label) {
-            // Option<K>, No args
-            (None, Some(comp)) if comp.args.is_singleton => {
-                quote!(let #v = #v.map(|#k| #new);)
-            }
             // Option<K>
             (Some(ComponentSetItem { comp, .. }), _) | (_, Some(comp))
-                if comp.args.is_singleton =>
+                if comp.args.is_singleton && !arg.is_vec =>
             {
-                let var_get = args.filter_map_vec(|item| item.is_opt.then_none(item.get_fn()));
-                quote!(
-                    let #v = #v.and_then(|#k| match (#(#comps_var.#var.#var_get(#k)),*) {
-                        (#(Some(#var)),*) => Some(#new),
-                        _ => None
-                    });
-                )
-            }
-            // Vec<(K, V)>, No args
-            (None, _) => {
-                quote!(let #v = #v.into_iter().map(|(#k, _)| #new).collect();)
+                // Unique args
+                let var =
+                    args.filter_map_vec(|item| item.is_opt.then_none(component_var(item.comp.idx)));
+
+                let (mut arg_name, mut arg_var) = (Vec::new(), Vec::new());
+                let (mut opt_arg_name, mut opt_arg_var, mut opt_arg_get) =
+                    (Vec::new(), Vec::new(), Vec::new());
+                for item in &self.args {
+                    let (names, vars) = match item.is_opt {
+                        true => {
+                            opt_arg_get.push(item.get_fn());
+                            (&mut opt_arg_name, &mut opt_arg_var)
+                        }
+                        false => (&mut arg_name, &mut arg_var),
+                    };
+                    names.push(format_ident!("{}", item.var));
+                    vars.push(component_var(item.comp.idx));
+                }
+
+                // Expression to assign vars
+                let new = quote!(
+                    #ty {
+                        #eid_var: #k
+                        #(,#arg_name: #arg_var)*
+                        #(,#opt_arg_name: #comps_var.#opt_arg_var.#opt_arg_get(#k))*
+                    }
+                );
+
+                match first_arg {
+                    Some(_) => {
+                        let var_get =
+                            args.filter_map_vec(|item| item.is_opt.then_none(item.get_fn()));
+                        quote!(
+                            let #v = #v.and_then(|#k| match (#(#comps_var.#var.#var_get(#k)),*) {
+                                (#(Some(#var)),*) => Some(#new),
+                                _ => None
+                            });
+                        )
+                    }
+                    // No args
+                    None => quote!(let #v = #v.map(|#k| #new);),
+                }
             }
             // Vec<(K, V)>
             _ => {
-                let var_fn = (0..var.len()).map_vec_into(|i| match i {
-                    0 => quote!(|_, v| v),
-                    i => {
-                        let tmps = (0..i).map_vec_into(|i| format_ident!("v{i}"));
-                        let tmp_n = format_ident!("v{}", i);
-                        quote!(|(#(#tmps),*), #tmp_n| (#(#tmps,)* #tmp_n))
+                // Unique args
+                let (mut var, mut var_intersect) = (Vec::new(), Vec::new());
+                for item in &args {
+                    var.push(component_var(item.comp.idx));
+                    var_intersect.push(match item.is_opt {
+                        true => intersect_opt,
+                        false => intersect,
+                    });
+                }
+
+                let (mut arg_name, mut arg_var) = (Vec::new(), Vec::new());
+                for item in &self.args {
+                    arg_name.push(format_ident!("{}", item.var));
+                    arg_var.push(component_var(item.comp.idx));
+                }
+
+                // Expression to assign vars
+                let new = quote!(
+                    #ty {
+                        #eid_var: #k
+                        #(,#arg_name: #arg_var)*
                     }
-                });
-                let var_iter = args
-                    .filter_map_vec(|item| item.is_opt.then_none(get_fn_name("iter", item.is_mut)));
-                quote!(
-                    #(let #v = #intersect(#v, #comps_var.#var.#var_iter(), #var_fn);)*
-                    let #v = #v.into_iter().map(|(#k, (#(#var),*))| #new).collect();
-                )
+                );
+
+                match first_arg {
+                    Some(_) => {
+                        let var_fn = (0..var.len()).map_vec_into(|i| match i {
+                            0 => quote!(|_, v| v),
+                            i => {
+                                let tmps = (0..i).map_vec_into(|i| format_ident!("v{i}"));
+                                let tmp_n = format_ident!("v{}", i);
+                                quote!(|(#(#tmps),*), #tmp_n| (#(#tmps,)* #tmp_n))
+                            }
+                        });
+                        let var_iter = args.map_vec(|item| {
+                            get_fn_name(
+                                match item.comp.args.is_singleton {
+                                    true => "get_vec",
+                                    false => "iter",
+                                },
+                                item.is_mut,
+                            )
+                        });
+                        quote!(
+                            #(let #v = #var_intersect(#v.into_iter(), #comps_var.#var.#var_iter(), #var_fn);)*
+                            let #v = #v.into_iter().map(|(#k, (#(#var),*))| #new).collect();
+                        )
+                    }
+                    // No args
+                    None => quote!(let #v = #v.into_iter().map(|(#k, _)| #new).collect();),
+                }
             }
         }
     }
@@ -322,6 +360,7 @@ impl ComponentSet {
     pub fn codegen_build_sets(
         component_sets: &Vec<BuildSetsArg>,
         intersect: &syn::Path,
+        intersect_opt: &syn::Path,
     ) -> BuildSetsResult {
         let CodegenIdents {
             eids_var,
@@ -343,10 +382,10 @@ impl ComponentSet {
         });
 
         // Build sets
-        let get_vals = c_sets
-            .iter()
-            .zip(var.iter())
-            .map_vec_into(|(cs, v)| cs.cs.codegen_get_vals(v.clone(), &cs.ty, intersect));
+        let get_vals = c_sets.iter().zip(var.iter()).map_vec_into(|(cs, v)| {
+            cs.cs
+                .codegen_get_vals(&cs.fn_arg, v.clone(), &cs.ty, intersect, intersect_opt)
+        });
 
         BuildSetsResult {
             build_sets_code: quote!(
@@ -377,9 +416,11 @@ impl ComponentSet {
                     _ => var.quote(),
                 }
             }),
-            singletons: c_sets.filter_map_vec(|cs| match cs.cs.has_singleton() {
-                true => Some(component_set_var(cs.fn_arg.idx).quote()),
-                false => None,
+            singletons: c_sets.filter_map_vec(|cs| {
+                match cs.cs.has_singleton() && !cs.fn_arg.is_vec {
+                    true => Some(component_set_var(cs.fn_arg.idx).quote()),
+                    false => None,
+                }
             }),
         }
     }

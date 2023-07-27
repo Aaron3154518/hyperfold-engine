@@ -203,7 +203,8 @@ paths!(ENGINE_PATHS = EnginePaths {
     // Functions
     Engine::intersect {
         filter => filter,
-        intersect => intersect
+        intersect => intersect,
+        intersect_opt => intersect_opt
     },
     // Events
     Engine::ecs::events::core {
