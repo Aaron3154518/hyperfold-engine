@@ -55,8 +55,9 @@ fn update_physics(up: &core::Update, entities: Vec<UpdatePhysics>, events: &mut 
         pd.v.x += pd.a.x * s;
         pd.v.y += pd.a.y * s;
         if let Some(b) = pd.boundary {
-            pos.0.move_within(&b);
-            events.new_event(BoundaryCollision(*eid));
+            if pos.0.move_within(&b) {
+                events.new_event(BoundaryCollision(*eid));
+            }
         }
         if let Some(hit_box) = hit_box {
             hit_box.0.copy_rect_pos(pos.0, Align::Center, Align::Center);

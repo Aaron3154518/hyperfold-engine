@@ -51,7 +51,8 @@ fn codegen<'a>(
             adds.push(quote!(self.#var = #singleton::new(e, t)));
             appends.push(quote!(
                 if !self.#var.set(&mut cm.#var) {
-                    panic!("Cannot set Singleton component more than once")
+                    panic!("Cannot set '{}' component more than once as it is marked Singleton",
+                        self.#var.typename())
                 }
             ));
             removes.push(quote!(self.#var.remove(&eid);));

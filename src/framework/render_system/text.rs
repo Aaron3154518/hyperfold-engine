@@ -3,7 +3,7 @@ use shared::traits::Call;
 
 use crate::{
     sdl2,
-    utils::rect::{Align, Dimensions, Rect},
+    utils::rect::{Align, Dimensions, PointF, Rect},
 };
 
 use super::{
@@ -293,7 +293,7 @@ pub fn render_text(
     tokens: &Vec<TextToken>,
     font_data: &FontData,
     max_w: Option<u32>,
-    bounds: Rect,
+    pos: PointF,
     color: sdl2::SDL_Color,
     bkgrnd: sdl2::SDL_Color,
     ax: Align,
@@ -309,7 +309,7 @@ pub fn render_text(
             Align::TopLeft,
             Align::TopLeft,
         )
-        .with_rect_pos(bounds, ax, ay);
+        .with_pos(pos.x, pos.y, ax, ay);
     let tex = Texture::new(r, text_r.w_i32() as u32, text_r.h_i32() as u32, bkgrnd);
 
     let mut imgs = Vec::new();

@@ -565,9 +565,11 @@ impl Rect {
         self.set_dim(self.w + dw, self.h + dh, ax, ay);
     }
 
-    pub fn move_within(&mut self, r: &Rect) {
+    pub fn move_within(&mut self, r: &Rect) -> bool {
+        let (prev_x, prev_y) = (self.x, self.y);
         self.set_x(self.x.min(r.x2() - self.w).max(r.x()), Align::TopLeft);
         self.set_y(self.y.min(r.y2() - self.h).max(r.y()), Align::TopLeft);
+        (prev_x - self.x).abs() > 1e-10 || (prev_y - self.y).abs() > 1e-10
     }
 
     pub fn min_rect(w: f32, h: f32, max_w: Option<f32>, max_h: Option<f32>) -> Self {

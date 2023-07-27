@@ -1,3 +1,5 @@
+use std::any::type_name;
+
 use super::entities::Entity;
 
 #[derive(Debug)]
@@ -9,6 +11,10 @@ pub enum Singleton<V> {
 impl<V> Singleton<V> {
     pub fn new(e: Entity, v: V) -> Self {
         Self::Some { e, v }
+    }
+
+    pub fn typename(&self) -> &'static str {
+        type_name::<V>()
     }
 
     // Returns true if successfully set (no existing value)

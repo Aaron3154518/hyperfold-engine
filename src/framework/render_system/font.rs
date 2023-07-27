@@ -30,7 +30,8 @@ impl Font {
         let cstr = CString::new(file).expect("Failed to create CString");
         let f_ptr = unsafe { sdl2_ttf::TTF_OpenFont(cstr.as_ptr(), size as i32) };
         Self {
-            font: NonNull::new(f_ptr).expect("Failed to create Font"),
+            font: NonNull::new(f_ptr)
+                .expect(format!("Failed to create Font with size: {size}. This could mean the font files were not found").as_str()),
         }
     }
 

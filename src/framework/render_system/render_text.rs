@@ -7,7 +7,7 @@ use crate::{
     sdl2,
     utils::{
         colors::{BLACK, GRAY},
-        rect::{Align, Rect},
+        rect::{Align, PointF, Rect},
         util::{AsType, TryAsType},
     },
 };
@@ -19,7 +19,7 @@ use super::{
     render_data::{Fit, RenderAsset, RenderDataTrait, RenderTexture},
     shapes::{Rectangle, ShapeTrait},
     text::{parse_text, render_text, TextToken},
-    AssetManager, Camera, RenderComponent, Screen,
+    AssetManager, Camera, RenderComponent, Renderer, Screen, Texture,
 };
 
 pub enum TextImage {
@@ -55,6 +55,15 @@ impl RenderText {
         }
     }
 
+    pub fn render_text<'a>(
+        &'a mut self,
+        rect: Rect,
+        r: &Renderer,
+        am: &mut AssetManager,
+    ) -> &'a Texture {
+        crate::render_text!(self, rect, r, am)
+    }
+
     fn clear_texture(&mut self) {
         self.tex.set_texture(None);
     }
@@ -62,6 +71,11 @@ impl RenderText {
     pub fn set_font_data(&mut self, font_data: FontData) {
         self.font_data = font_data;
         self.clear_texture();
+    }
+
+    pub fn with_font_data(mut self, font_data: FontData) -> Self {
+        self.set_font_data(font_data);
+        self
     }
 
     pub fn with_text(mut self, text: &str) -> Self {
@@ -117,6 +131,37 @@ impl RenderText {
     }
 }
 
+// Macro to update the texture of a RenderText
+// This is needed to tie lifetimes to specific RenderText members
+#[macro_export]
+macro_rules! render_text {
+    ($rt: ident, $rect: ident, $r: ident, $am: ident) => {{
+        let max_w = match $rt.tex.get_render_data().dest.fit {
+            Fit::None | Fit::Fit(false, _) => None,
+            _ => Some($rect.w_u32()),
+        };
+        // Render text if no existing texture
+        $rt.tex.get_or_insert_texture(|| {
+            render_text(
+                $r,
+                $am,
+                &$rt.tokens,
+                &$rt.font_data,
+                max_w,
+                $rect.center(),
+                $rt.color,
+                $rt.bkgrnd,
+                $rt.align_x,
+                $rt.align_y,
+            )
+            .call_into(|(t, rects)| {
+                $rt.img_rects = rects;
+                t
+            })
+        })
+    }};
+}
+
 impl RenderDataTrait for RenderText {
     fn get_render_data<'a>(&'a self) -> &'a super::render_data::RenderData {
         self.tex.get_render_data()
@@ -143,7 +188,7 @@ components!(
 fn update_render_text(
     _ev: &PreRender,
     mut rcs: Vec<RenderTextArgs>,
-    r: &super::Renderer,
+    r: &Renderer,
     am: &mut AssetManager,
     screen: &Screen,
     camera: &Camera,
@@ -156,29 +201,8 @@ fn update_render_text(
             None => continue,
         };
         tex.try_mut(|rt: &mut RenderText| {
-            let max_w = match rt.tex.get_render_data().dest.fit {
-                Fit::Fit(false, _) => None,
-                _ => Some(pos.0.w_u32()),
-            };
-            // Render text if no existing texture
-            let tex = rt.tex.get_or_insert_texture(|| {
-                render_text(
-                    r,
-                    am,
-                    &rt.tokens,
-                    &rt.font_data,
-                    max_w,
-                    pos.0,
-                    rt.color,
-                    rt.bkgrnd,
-                    rt.align_x,
-                    rt.align_y,
-                )
-                .call_into(|(t, rects)| {
-                    rt.img_rects = rects;
-                    t
-                })
-            });
+            let rect = rect_to_camera_coords(&pos.0, screen, camera);
+            let tex = render_text!(rt, rect, r, am);
 
             // TODO: only if needed
             // Redraw images
