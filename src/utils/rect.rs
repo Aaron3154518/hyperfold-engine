@@ -198,6 +198,14 @@ impl Rect {
         }
     }
 
+    pub fn from_center(cx: f32, cy: f32, w: f32, h: f32) -> Self {
+        Self::from(cx, cy, w, h, Align::Center, Align::Center)
+    }
+
+    pub fn from_topleft(x: f32, y: f32, w: f32, h: f32) -> Self {
+        Self::from(x, y, w, h, Align::TopLeft, Align::TopLeft)
+    }
+
     // Don't force normalize (e.g. intersect needs negative widths)
     pub fn from(x: f32, y: f32, w: f32, h: f32, ax: Align, ay: Align) -> Self {
         Self::new()
