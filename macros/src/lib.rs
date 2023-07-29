@@ -5,9 +5,9 @@ use std::{
 };
 
 use proc_macro::TokenStream;
-use quote::quote;
+use quote::{format_ident, quote};
 use shared::{
-    constants::{INDEX, INDEX_SEP},
+    constants::{INDEX, INDEX_SEP, STATE_DATA, STATE_ENTER_EVENT, STATE_EXIT_EVENT, STATE_LABEL},
     parsing::{ComponentMacroArgs, GlobalMacroArgs},
     traits::Catch,
 };
@@ -57,6 +57,30 @@ pub fn event(_input: TokenStream, item: TokenStream) -> TokenStream {
     ev.vis = parse_quote!(pub);
 
     quote!(#ev).into()
+}
+
+#[proc_macro_attribute]
+pub fn state(_input: TokenStream, item: TokenStream) -> TokenStream {
+    let mut data_strct = parse_macro_input!(item as syn::ItemStruct);
+
+    data_strct.vis = parse_quote!(pub);
+    let name = std::mem::replace(&mut data_strct.ident, format_ident!("{STATE_DATA}"));
+
+    let enter_event = format_ident!("{STATE_ENTER_EVENT}");
+    let exit_event = format_ident!("{STATE_EXIT_EVENT}");
+    let label = format_ident!("{STATE_LABEL}");
+
+    quote!(
+        #[allow(non_snake_case)]
+        pub mod #name {
+            #[warn(non_snake_case)]
+            #data_strct
+            pub struct #enter_event;
+            pub struct #exit_event;
+            pub struct #label;
+        }
+    )
+    .into()
 }
 
 #[proc_macro]

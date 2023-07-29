@@ -11,7 +11,7 @@ pub use sdl2_image_bindings::sdl2_image;
 mod sdl2_ttf_bindings;
 pub use sdl2_ttf_bindings::sdl2_ttf;
 
-pub use macros::{component, event, game_crate, global, system};
+pub use macros::{component, event, game_crate, global, state, system};
 pub mod ecs;
 pub mod framework;
 pub mod intersect;
