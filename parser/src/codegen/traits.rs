@@ -18,7 +18,7 @@ use crate::{
 
 use super::Crates;
 
-pub trait GetPaths {
+pub trait GetTraitTypes {
     fn get_paths(&self) -> Vec<&ItemPath>;
 }
 
@@ -26,7 +26,7 @@ pub fn trait_defs<const N: usize>(
     cr_idx: usize,
     crates: &Crates,
     trait_ident: &syn::Ident,
-    item_traits: [(&CratePath, &dyn GetPaths); N],
+    item_traits: [(&CratePath, &dyn GetTraitTypes); N],
 ) -> MsgResult<TokenStream> {
     let macro_cr_idx = crates.get_crate_index(Crate::Macros);
 

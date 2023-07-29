@@ -20,7 +20,7 @@ use crate::{
 };
 
 use super::{
-    traits::{trait_defs, GetPaths},
+    traits::{trait_defs, GetTraitTypes},
     Crates,
 };
 
@@ -135,7 +135,7 @@ pub fn components(
     )
 }
 
-impl GetPaths for Vec<ItemComponent> {
+impl GetTraitTypes for Vec<ItemComponent> {
     fn get_paths(&self) -> Vec<&ItemPath> {
         self.map_vec(|c| &c.path)
     }

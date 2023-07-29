@@ -54,6 +54,7 @@ pub struct ItemTrait {
 #[derive(Debug)]
 pub struct ItemEvent {
     pub path: ItemPath,
+    pub state: Option<usize>,
 }
 
 #[derive(Debug)]
@@ -134,12 +135,13 @@ impl Items {
         }
     }
 
-    fn add_event(&mut self, cr_idx: usize, path: Vec<String>) -> Symbol {
+    fn add_event(&mut self, cr_idx: usize, path: Vec<String>, state: Option<usize>) -> Symbol {
         self.events.push(ItemEvent {
             path: ItemPath {
                 cr_idx,
                 path: path.to_vec(),
             },
+            state,
         });
         Symbol {
             kind: SymbolType::Event(self.events.len() - 1),
@@ -149,16 +151,19 @@ impl Items {
     }
 
     fn add_state(&mut self, cr_idx: usize, name: String, path: Vec<String>) -> NewMod {
+        let state_idx = self.states.len();
         let symbols = vec![
             // OnEnter
             self.add_event(
                 cr_idx,
                 path.to_vec().push_into(STATE_ENTER_EVENT.to_string()),
+                Some(state_idx),
             ),
             // OnExit
             self.add_event(
                 cr_idx,
                 path.to_vec().push_into(STATE_EXIT_EVENT.to_string()),
+                Some(state_idx),
             ),
             // Label
             self.add_component(
@@ -178,7 +183,7 @@ impl Items {
                     label: self.components.len() - 1,
                 });
                 Symbol {
-                    kind: SymbolType::State(self.states.len() - 1),
+                    kind: SymbolType::State(state_idx),
                     path,
                     public: true,
                 }
@@ -298,7 +303,11 @@ impl Items {
                             break;
                         }
                         Ok(HardcodedSymbol::EventMacro) => {
-                            symbols.push(NewSymbol::Symbol(items.add_event(cr.idx, path.to_vec())));
+                            symbols.push(NewSymbol::Symbol(items.add_event(
+                                cr.idx,
+                                path.to_vec(),
+                                None,
+                            )));
                             break;
                         }
                         Ok(HardcodedSymbol::StateMacro) => {

@@ -3,7 +3,7 @@ use quote::{format_ident, quote};
 use shared::{
     match_ok,
     msg_result::{CombineMsgs, Zip3Msgs},
-    traits::{CollectVec, CollectVecInto},
+    traits::{CollectVec, CollectVecInto, MapNone},
 };
 
 use crate::{
@@ -18,7 +18,7 @@ use crate::{
 };
 
 use super::{
-    traits::{trait_defs, GetPaths},
+    traits::{trait_defs, GetTraitTypes},
     Crates,
 };
 
@@ -101,13 +101,13 @@ pub fn events(cr_idx: usize, events: &Vec<ItemEvent>, crates: &Crates) -> MsgRes
     })
 }
 
-impl GetPaths for Vec<ItemEvent> {
+impl GetTraitTypes for Vec<ItemEvent> {
     fn get_paths(&self) -> Vec<&ItemPath> {
-        self.map_vec(|e| &e.path)
+        self.filter_map_vec(|e| e.state.map_none(&e.path))
     }
 }
 
-impl GetPaths for Vec<ItemState> {
+impl GetTraitTypes for Vec<ItemState> {
     fn get_paths(&self) -> Vec<&ItemPath> {
         self.map_vec(|s| &s.path)
     }
