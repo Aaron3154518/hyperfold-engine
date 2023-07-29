@@ -19,12 +19,18 @@ pub struct ComponentMacroArgs {
     pub is_singleton: bool,
 }
 
-impl From<&Vec<String>> for ComponentMacroArgs {
-    fn from(vals: &Vec<String>) -> Self {
-        let mut c = Self {
+impl Default for ComponentMacroArgs {
+    fn default() -> Self {
+        Self {
             is_dummy: false,
             is_singleton: false,
-        };
+        }
+    }
+}
+
+impl From<&Vec<String>> for ComponentMacroArgs {
+    fn from(vals: &Vec<String>) -> Self {
+        let mut c = Self::default();
         for v in vals {
             match v.as_str() {
                 "Dummy" => c.is_dummy = true,
@@ -53,12 +59,18 @@ pub struct GlobalMacroArgs {
     pub is_const: bool,
 }
 
-impl From<&Vec<String>> for GlobalMacroArgs {
-    fn from(vals: &Vec<String>) -> Self {
-        let mut g = Self {
+impl Default for GlobalMacroArgs {
+    fn default() -> Self {
+        Self {
             is_dummy: false,
             is_const: false,
-        };
+        }
+    }
+}
+
+impl From<&Vec<String>> for GlobalMacroArgs {
+    fn from(vals: &Vec<String>) -> Self {
+        let mut g = Self::default();
         for v in vals {
             match v.as_str() {
                 "Dummy" => g.is_dummy = true,
@@ -82,9 +94,15 @@ pub struct SystemMacroArgs {
     pub is_init: bool,
 }
 
+impl Default for SystemMacroArgs {
+    fn default() -> Self {
+        Self { is_init: false }
+    }
+}
+
 impl From<&Vec<String>> for SystemMacroArgs {
     fn from(vals: &Vec<String>) -> Self {
-        let mut s = Self { is_init: false };
+        let mut s = Self::default();
         for v in vals {
             match v.as_str() {
                 "Init" => s.is_init = true,

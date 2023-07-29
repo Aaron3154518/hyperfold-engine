@@ -20,6 +20,7 @@ pub enum HardcodedSymbol {
     ComponentMacro,
     GlobalMacro,
     EventMacro,
+    StateMacro,
     SystemMacro,
     // Engine crate
     ComponentsMacro,
@@ -31,6 +32,7 @@ impl HardcodedSymbol {
             HardcodedSymbol::ComponentMacro => &MACRO_PATHS.component,
             HardcodedSymbol::GlobalMacro => &MACRO_PATHS.global,
             HardcodedSymbol::EventMacro => &MACRO_PATHS.event,
+            HardcodedSymbol::StateMacro => &MACRO_PATHS.state,
             HardcodedSymbol::SystemMacro => &MACRO_PATHS.system,
             HardcodedSymbol::ComponentsMacro => &MACRO_PATHS.components,
         }
@@ -55,6 +57,7 @@ pub enum SymbolType {
     Global(GlobalSymbol),
     Trait(GlobalSymbol),
     Event(usize),
+    State(usize),
     System(usize, Span),
     ComponentSet(usize),
     Hardcoded(HardcodedSymbol),
@@ -67,6 +70,7 @@ impl std::fmt::Display for SymbolType {
             SymbolType::Global { .. } => "Global",
             SymbolType::Trait { .. } => "Trait",
             SymbolType::Event(..) => "Event",
+            SymbolType::State(..) => "State",
             SymbolType::System(..) => "System",
             SymbolType::ComponentSet(..) => "ComponentSet",
             SymbolType::Hardcoded(..) => "Hardcoded Path",
@@ -176,6 +180,16 @@ mod match_symbol {
                 |arg| match arg.kind {
                     SymbolType::Event(i) => Ok((arg, i)),
                     _ => Err(vec![arg.error_msg("Event", l)]),
+                },
+                l,
+            )
+        }
+
+        fn expect_state_impl(self, l: Option<Location>) -> MsgResult<(&'a Symbol, usize)> {
+            self.and_then_impl(
+                |arg| match arg.kind {
+                    SymbolType::State(i) => Ok((arg, i)),
+                    _ => Err(vec![arg.error_msg("State", l)]),
                 },
                 l,
             )
@@ -295,6 +309,18 @@ where
         span: &impl Spanned,
     ) -> MsgResult<(&'a Symbol, usize)> {
         self.expect_event_impl(Some((m, span)))
+    }
+
+    fn expect_state(self) -> MsgResult<(&'a Symbol, usize)> {
+        self.expect_state_impl(None)
+    }
+
+    fn expect_state_in_mod(
+        self,
+        m: &AstMod,
+        span: &impl Spanned,
+    ) -> MsgResult<(&'a Symbol, usize)> {
+        self.expect_state_impl(Some((m, span)))
     }
 
     fn expect_system(self) -> MsgResult<(&'a Symbol, (usize, Span))> {

@@ -51,7 +51,9 @@ pub struct AstMacroCall {
 #[derive(Debug)]
 pub struct AstItem<Data> {
     pub data: Data,
+    // Includes ident
     pub path: Vec<String>,
+    pub ident: String,
 }
 
 // Use statement
@@ -84,6 +86,17 @@ pub struct AstItems {
     pub macro_calls: Vec<AstItem<AstMacroCall>>,
 }
 
+impl AstItems {
+    pub fn new() -> Self {
+        Self {
+            structs: Vec::new(),
+            enums: Vec::new(),
+            functions: Vec::new(),
+            macro_calls: Vec::new(),
+        }
+    }
+}
+
 // Type of module
 #[derive(Debug)]
 pub enum AstModType {
@@ -97,6 +110,13 @@ pub enum AstModType {
 // Module
 struct VisitorArgs<'a> {
     span_files: &'a mut SpanFiles,
+}
+
+pub struct NewMod {
+    pub name: String,
+    pub mods: Vec<NewMod>,
+    pub uses: Vec<AstUse>,
+    pub symbols: Vec<Symbol>,
 }
 
 #[derive(Debug)]
@@ -131,12 +151,7 @@ impl AstMod {
             mods: Vec::new(),
             uses: Vec::new(),
             symbols: Vec::new(),
-            items: AstItems {
-                structs: Vec::new(),
-                enums: Vec::new(),
-                functions: Vec::new(),
-                macro_calls: Vec::new(),
-            },
+            items: AstItems::new(),
         }
     }
 
@@ -167,6 +182,22 @@ impl AstMod {
         s.resolve_local_use_paths()?;
 
         Ok(s)
+    }
+
+    pub fn add_mod(&mut self, data: NewMod) {
+        let mut new_mod = AstMod::new(
+            self.dir.clone(),
+            self.path.to_vec().push_into(data.name),
+            AstModType::Internal,
+            self.span_file,
+            self.span_start,
+        );
+        new_mod.symbols = data.symbols;
+        new_mod.uses = data.uses;
+        for m in data.mods {
+            new_mod.add_mod(m);
+        }
+        self.mods.push(new_mod);
     }
 
     // E.g. mod Foo; use Foo::Bar;
@@ -248,6 +279,7 @@ impl AstMod {
                 self.items.structs.push(AstItem {
                     data: AstStruct { attrs },
                     path: self.path.to_vec().push_into(i.ident.to_string()),
+                    ident: i.ident.to_string(),
                 });
             }
         }
@@ -260,6 +292,7 @@ impl AstMod {
                 self.items.enums.push(AstItem {
                     data: AstEnum { attrs },
                     path: self.path.to_vec().push_into(i.ident.to_string()),
+                    ident: i.ident.to_string(),
                 });
             }
         }
@@ -272,6 +305,7 @@ impl AstMod {
             if !attrs.is_empty() {
                 self.items.functions.push(AstItem {
                     path: self.path.to_vec().push_into(i.sig.ident.to_string()),
+                    ident: i.sig.ident.to_string(),
                     data: AstFunction { sig: i.sig, attrs },
                 });
             }
@@ -284,8 +318,10 @@ impl AstMod {
         if let Some(_) = get_attributes_if_active(&i.attrs, &self.path, &Vec::new())? {
             // Some is for macro_rules!
             if i.ident.is_none() {
+                let path = use_path_from_syn(&self.path, &i.mac.path);
                 self.items.macro_calls.push(AstItem {
-                    path: use_path_from_syn(&self.path, &i.mac.path),
+                    ident: path.last().catch_err("Empty macro path")?.to_string(),
+                    path,
                     data: AstMacroCall {
                         span: i.mac.span(),
                         args: i.mac.tokens,

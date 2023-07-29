@@ -104,6 +104,7 @@ paths!(MACRO_PATHS = MacroPaths {
         global => global,
         event => event,
         system => system,
+        state => state,
     },
     Engine { components => components }
 });

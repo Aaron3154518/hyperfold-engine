@@ -1,35 +1,31 @@
 use proc_macro2::{token_stream::IntoIter, TokenStream, TokenTree};
-use quote::quote;
-use quote::ToTokens;
-use shared::msg_result::MsgResult;
-use shared::msg_result::MsgTrait;
-use shared::msg_result::Zip8Msgs;
+use quote::{quote, ToTokens};
 use std::{collections::VecDeque, env::temp_dir, fs, path::PathBuf};
 use syn::{
     parenthesized, parse_macro_input, spanned::Spanned, token::Trait, Error, PatType, Token,
 };
 
-use crate::utils::CatchErr;
 use crate::{
     codegen::{self as codegen, Crates, Traits},
     component_set::ComponentSet,
     parse::{
-        resolve_path, AstCrate, AstMod, AstUse, ComponentSymbol, DiscardSymbol, GlobalSymbol,
-        HardcodedSymbol, ItemPath, MatchSymbol, Symbol, SymbolType,
+        resolve_path, AstCrate, AstFunction, AstItem, AstItems, AstMod, AstModType, AstUse,
+        ComponentSymbol, DiscardSymbol, GlobalSymbol, HardcodedSymbol, ItemPath, MatchSymbol,
+        ModInfo, NewMod, Symbol, SymbolType,
     },
     system::ItemSystem,
     utils::{
         constants::NAMESPACE,
         paths::{Crate, EnginePaths, NAMESPACE_USE_STMTS, TRAITS},
-        Msg,
+        CatchErr, Msg, MsgResult,
     },
 };
 
 use shared::{
-    constants::{INDEX, INDEX_SEP},
+    constants::{INDEX, INDEX_SEP, STATE_DATA, STATE_ENTER_EVENT, STATE_EXIT_EVENT, STATE_LABEL},
     macros::ExpandEnum,
     match_ok,
-    msg_result::{CombineMsgs, Zip2Msgs},
+    msg_result::{CombineMsgs, MsgTrait, Zip2Msgs, Zip8Msgs},
     parsing::{ComponentMacroArgs, GlobalMacroArgs, SystemMacroArgs},
     traits::{
         Call, Catch, CollectVec, CollectVecInto, FindFrom, GetResult, HandleErr, Increment,
@@ -61,10 +57,26 @@ pub struct ItemEvent {
 }
 
 #[derive(Debug)]
+pub struct ItemState {
+    pub path: ItemPath,
+    pub enter_event: usize,
+    pub exit_event: usize,
+    pub label: usize,
+}
+
+// Struct for adding symbols
+
+enum NewSymbol {
+    Symbol(Symbol),
+    Mod(NewMod),
+}
+
+#[derive(Debug)]
 pub struct Items {
     pub components: Vec<ItemComponent>,
     pub globals: Vec<ItemGlobal>,
     pub events: Vec<ItemEvent>,
+    pub states: Vec<ItemState>,
     pub component_sets: Vec<ComponentSet>,
     pub systems: Vec<ItemSystem>,
 }
@@ -75,136 +87,245 @@ impl Items {
             components: Vec::new(),
             globals: Vec::new(),
             events: Vec::new(),
+            states: Vec::new(),
             component_sets: Vec::new(),
             systems: Vec::new(),
         }
+    }
+
+    fn add_component(
+        &mut self,
+        cr_idx: usize,
+        path: Vec<String>,
+        args: ComponentMacroArgs,
+    ) -> Symbol {
+        self.components.push(ItemComponent {
+            path: ItemPath {
+                cr_idx,
+                path: path.to_vec(),
+            },
+            args,
+        });
+        Symbol {
+            kind: SymbolType::Component(ComponentSymbol {
+                idx: self.components.len() - 1,
+                args,
+            }),
+            path,
+            public: true,
+        }
+    }
+
+    fn add_global(&mut self, cr_idx: usize, path: Vec<String>, args: GlobalMacroArgs) -> Symbol {
+        self.globals.push(ItemGlobal {
+            path: ItemPath {
+                cr_idx,
+                path: path.to_vec(),
+            },
+            args,
+        });
+        Symbol {
+            kind: SymbolType::Global(GlobalSymbol {
+                idx: self.globals.len() - 1,
+                args,
+            }),
+            path,
+            public: true,
+        }
+    }
+
+    fn add_event(&mut self, cr_idx: usize, path: Vec<String>) -> Symbol {
+        self.events.push(ItemEvent {
+            path: ItemPath {
+                cr_idx,
+                path: path.to_vec(),
+            },
+        });
+        Symbol {
+            kind: SymbolType::Event(self.events.len() - 1),
+            path,
+            public: true,
+        }
+    }
+
+    fn add_state(&mut self, cr_idx: usize, name: String, path: Vec<String>) -> NewMod {
+        let symbols = vec![
+            // OnEnter
+            self.add_event(
+                cr_idx,
+                path.to_vec().push_into(STATE_ENTER_EVENT.to_string()),
+            ),
+            // OnExit
+            self.add_event(
+                cr_idx,
+                path.to_vec().push_into(STATE_EXIT_EVENT.to_string()),
+            ),
+            // Label
+            self.add_component(
+                cr_idx,
+                path.to_vec().push_into(STATE_LABEL.to_string()),
+                ComponentMacroArgs::default(),
+            ),
+            {
+                let path = path.to_vec().push_into(STATE_DATA.to_string());
+                self.states.push(ItemState {
+                    path: ItemPath {
+                        cr_idx,
+                        path: path.to_vec(),
+                    },
+                    enter_event: self.events.len() - 2,
+                    exit_event: self.events.len() - 1,
+                    label: self.components.len() - 1,
+                });
+                Symbol {
+                    kind: SymbolType::State(self.states.len() - 1),
+                    path,
+                    public: true,
+                }
+            },
+        ];
+        NewMod {
+            name,
+            mods: Vec::new(),
+            uses: Vec::new(),
+            symbols,
+        }
+    }
+
+    fn add_component_set(&mut self, cs: ComponentSet) -> Symbol {
+        let sym = Symbol {
+            kind: SymbolType::ComponentSet(self.component_sets.len()),
+            path: cs.path.path.to_vec(),
+            public: true,
+        };
+        self.component_sets.push(cs);
+        sym
+    }
+
+    fn add_system(&mut self, sys: ItemSystem, fun: &AstItem<AstFunction>) -> Symbol {
+        let sym = Symbol {
+            kind: SymbolType::System(self.systems.len(), fun.data.sig.span()),
+            path: sys.path.path.to_vec(),
+            public: true,
+        };
+        self.systems.push(sys);
+        sym
     }
 
     pub fn resolve(crates: &mut Crates) -> (Self, Vec<Msg>) {
         let mut errs = Vec::new();
         let mut items = Items::new();
 
-        let main_cr_idx = crates.get_crate_index(Crate::Main);
         let macro_cr_idx = crates.get_crate_index(Crate::Macros);
+
+        let add_symbols =
+            |errs: &mut Vec<Msg>,
+             items: &mut Items,
+             crates: &mut Crates,
+             f: &dyn Fn(&mut Vec<Msg>, &mut Items, ModInfo) -> Vec<NewSymbol>| {
+                // Get symbols
+                let all_crates = crates.get_crates();
+                let symbols = crates.iter_except([macro_cr_idx]).map_vec_into(|cr| {
+                    cr.iter_mods()
+                        .map_vec_into(|m| f(errs, items, (m, cr, all_crates)))
+                });
+
+                // Add symbols
+                for (cr, crate_symbols) in crates.iter_except_mut([macro_cr_idx]).zip(symbols) {
+                    let mut mods = cr.iter_mods_mut();
+                    for mod_symbols in crate_symbols {
+                        if let Some(m) = mods.next(cr) {
+                            let mod_symbols = mod_symbols.filter_map_vec_into(|s| match s {
+                                NewSymbol::Symbol(s) => Some(s),
+                                // Mod iteration order is locked, so adding new mods is safe
+                                NewSymbol::Mod(new_mod) => {
+                                    m.add_mod(new_mod);
+                                    None
+                                }
+                            });
+                            m.symbols.extend(mod_symbols);
+                        }
+                    }
+                }
+            };
 
         // Insert hardcoded symbols
         for sym in HardcodedSymbol::VARIANTS {
             AstCrate::add_hardcoded_symbol(crates, sym).record_errs(&mut errs);
         }
 
-        // Resolve components, globals, and events
-        let symbols = crates.iter_except([macro_cr_idx]).map_vec_into(|cr| {
-            cr.iter_mods().map_vec_into(|m| {
-                m.items
-                    .structs
-                    .iter()
-                    .map(|s| (&s.path, &s.data.attrs))
-                    .chain(m.items.enums.iter().map(|e| (&e.path, &e.data.attrs)))
-                    .filter_map_vec_into(|(path, attrs)| {
-                        // Search through attributes
-                        attrs
-                            .iter()
-                            .find_map(|attr| {
-                                resolve_path(attr.path.to_vec(), (m, cr, crates.get_crates()))
-                                    .expect_any_hardcoded()
-                                    .discard_symbol()
-                                    .ok()
-                                    .and_then(|hard_sym| match hard_sym {
-                                        HardcodedSymbol::ComponentMacro => {
-                                            let args = ComponentMacroArgs::from(&attr.args);
-                                            items.components.push(ItemComponent {
-                                                path: ItemPath {
-                                                    cr_idx: cr.idx,
-                                                    path: path.to_vec(),
-                                                },
-                                                args,
-                                            });
-                                            Some(SymbolType::Component(ComponentSymbol {
-                                                idx: items.components.len() - 1,
-                                                args,
-                                            }))
-                                        }
-                                        HardcodedSymbol::GlobalMacro => {
-                                            let args = GlobalMacroArgs::from(&attr.args);
-                                            items.globals.push(ItemGlobal {
-                                                path: ItemPath {
-                                                    cr_idx: cr.idx,
-                                                    path: path.to_vec(),
-                                                },
-                                                args,
-                                            });
-                                            Some(SymbolType::Global(GlobalSymbol {
-                                                idx: items.globals.len() - 1,
-                                                args,
-                                            }))
-                                        }
-                                        HardcodedSymbol::EventMacro => {
-                                            items.events.push(ItemEvent {
-                                                path: ItemPath {
-                                                    cr_idx: cr.idx,
-                                                    path: path.to_vec(),
-                                                },
-                                            });
-                                            Some(SymbolType::Event(items.events.len() - 1))
-                                        }
-                                        _ => None,
-                                    })
-                            })
-                            .map(|kind| Symbol {
-                                kind,
-                                path: path.to_vec(),
-                                public: true,
-                            })
+        // Resolve components, globals, events, and states
+        add_symbols(&mut errs, &mut items, crates, &|_, items, mod_info| {
+            let (m, cr, crates) = mod_info;
+            let mut symbols = Vec::new();
+            for (ident, path, attrs) in m
+                .items
+                .structs
+                .iter()
+                .map(|s| (&s.ident, &s.path, &s.data.attrs))
+                .chain(
+                    m.items
+                        .enums
+                        .iter()
+                        .map(|e| (&e.ident, &e.path, &e.data.attrs)),
+                )
+            {
+                // Search through attributes
+                for attr in attrs {
+                    match resolve_path(attr.path.to_vec(), mod_info)
+                        .expect_any_hardcoded()
+                        .discard_symbol()
+                    {
+                        Ok(HardcodedSymbol::ComponentMacro) => {
+                            let args = ComponentMacroArgs::from(&attr.args);
+                            symbols.push(NewSymbol::Symbol(items.add_component(
+                                cr.idx,
+                                path.to_vec(),
+                                args,
+                            )));
+                            break;
+                        }
+                        Ok(HardcodedSymbol::GlobalMacro) => {
+                            let args = GlobalMacroArgs::from(&attr.args);
+                            symbols.push(NewSymbol::Symbol(items.add_global(
+                                cr.idx,
+                                path.to_vec(),
+                                args,
+                            )));
+                            break;
+                        }
+                        Ok(HardcodedSymbol::EventMacro) => {
+                            symbols.push(NewSymbol::Symbol(items.add_event(cr.idx, path.to_vec())));
+                            break;
+                        }
+                        Ok(HardcodedSymbol::StateMacro) => {
+                            symbols.push(NewSymbol::Mod(items.add_state(
+                                cr.idx,
+                                ident.to_string(),
+                                path.to_vec(),
+                            )));
+                            break;
+                        }
+                        _ => (),
+                    }
+                }
+            }
+            symbols
+        });
+
+        // Resolve component sets
+        add_symbols(&mut errs, &mut items, crates, &|errs, items, mod_info| {
+            mod_info.0.items.macro_calls.filter_map_vec(|call| {
+                resolve_path(call.path.to_vec(), mod_info)
+                    .expect_hardcoded(HardcodedSymbol::ComponentsMacro)
+                    .ok()
+                    .and_then(|_| {
+                        ComponentSet::parse(call.data.args.clone(), mod_info)
+                            .handle_err(|es| errs.extend(es))
+                            .map(|cs| NewSymbol::Symbol(items.add_component_set(cs)))
                     })
             })
         });
-
-        // Insert components, globals, and events
-        for (cr, crate_symbols) in crates.iter_except_mut([macro_cr_idx]).zip(symbols) {
-            let mut mods = cr.iter_mods_mut();
-            for mod_symbols in crate_symbols {
-                if let Some(m) = mods.next(cr) {
-                    m.symbols.extend(mod_symbols)
-                }
-            }
-        }
-
-        // Resolve component sets
-        let symbols = crates.iter_except([macro_cr_idx]).map_vec_into(|cr| {
-            cr.iter_mods().map_vec_into(|m| {
-                m.items.macro_calls.filter_map_vec(|call| {
-                    resolve_path(call.path.to_vec(), (m, cr, crates.get_crates()))
-                        .expect_hardcoded(HardcodedSymbol::ComponentsMacro)
-                        .ok()
-                        .and_then(|_| {
-                            ComponentSet::parse(
-                                call.data.args.clone(),
-                                (m, cr, crates.get_crates()),
-                            )
-                            .handle_err(|es| errs.extend(es))
-                            .map(|cs| {
-                                let sym = Symbol {
-                                    kind: SymbolType::ComponentSet(items.component_sets.len()),
-                                    path: cs.path.path.to_vec(),
-                                    public: true,
-                                };
-                                items.component_sets.push(cs);
-                                sym
-                            })
-                        })
-                })
-            })
-        });
-
-        // Insert component set symbols
-        for (cr, crate_symbols) in crates.iter_except_mut([macro_cr_idx]).zip(symbols) {
-            let mut mods = cr.iter_mods_mut();
-            for mod_symbols in crate_symbols {
-                if let Some(m) = mods.next(cr) {
-                    m.symbols.extend(mod_symbols);
-                }
-            }
-        }
 
         // Insert namespace mod
         for cr in crates.iter_except_mut([macro_cr_idx]) {
@@ -220,12 +341,16 @@ impl Items {
                 })
                 .collect();
 
-            if let Some(m) = cr
-                .add_mod(path.push_into(NAMESPACE.to_string()))
-                .record_errs(&mut errs)
-            {
-                m.uses = uses;
-            }
+            cr.add_mod(
+                path,
+                NewMod {
+                    name: NAMESPACE.to_string(),
+                    mods: Vec::new(),
+                    uses,
+                    symbols: Vec::new(),
+                },
+            )
+            .record_errs(&mut errs);
         }
 
         // Insert trait symbols
@@ -238,14 +363,14 @@ impl Items {
                     cr_idx: 0,
                     path: gl_path.to_vec(),
                 },
-                args: GlobalMacroArgs::from(&Vec::new()),
+                args: GlobalMacroArgs::default(),
             });
             for cr in crates.iter_except_mut([macro_cr_idx]) {
                 let idx = items.globals.len() - 1;
                 // Add globals to entry crates
                 let g_sym = GlobalSymbol {
                     idx,
-                    args: GlobalMacroArgs::from(&Vec::new()),
+                    args: GlobalMacroArgs::default(),
                 };
                 if cr.idx == 0 {
                     cr.add_symbol(Symbol {
@@ -266,43 +391,21 @@ impl Items {
         }
 
         // Resolve systems
-        let symbols = crates.iter_except([macro_cr_idx]).map_vec_into(|cr| {
-            cr.iter_mods().map_vec_into(|m| {
-                m.items.functions.iter().filter_map_vec_into(|fun| {
-                    fun.data.attrs.iter().find_map(|attr| {
-                        resolve_path(attr.path.to_vec(), (m, cr, crates.get_crates()))
-                            .expect_hardcoded(HardcodedSymbol::SystemMacro)
-                            .ok()
-                            .and_then(|sym| {
-                                ItemSystem::parse(fun, attr, &items, (m, cr, crates.get_crates()))
-                                    .handle_err(|es| errs.extend(es))
-                                    .map(|sys| {
-                                        let sym = Symbol {
-                                            kind: SymbolType::System(
-                                                items.systems.len(),
-                                                fun.data.sig.span(),
-                                            ),
-                                            path: sys.path.path.to_vec(),
-                                            public: true,
-                                        };
-                                        items.systems.push(sys);
-                                        sym
-                                    })
-                            })
-                    })
+        add_symbols(&mut errs, &mut items, crates, &|errs, items, mod_info| {
+            let (m, cr, crates) = mod_info;
+            m.items.functions.iter().filter_map_vec_into(|fun| {
+                fun.data.attrs.iter().find_map(|attr| {
+                    resolve_path(attr.path.to_vec(), mod_info)
+                        .expect_hardcoded(HardcodedSymbol::SystemMacro)
+                        .ok()
+                        .and_then(|sym| {
+                            ItemSystem::parse(fun, attr, &items, mod_info)
+                                .handle_err(|es| errs.extend(es))
+                                .map(|sys| NewSymbol::Symbol(items.add_system(sys, fun)))
+                        })
                 })
             })
         });
-
-        // Insert system symbols
-        for (cr, crate_symbols) in crates.iter_except_mut([macro_cr_idx]).zip(symbols) {
-            let mut mods = cr.iter_mods_mut();
-            for mod_symbols in crate_symbols {
-                if let Some(m) = mods.next(cr) {
-                    m.symbols.extend(mod_symbols)
-                }
-            }
-        }
 
         (items, errs)
     }

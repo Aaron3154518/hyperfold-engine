@@ -13,7 +13,7 @@ use shared::traits::{Call, Catch, CollectVec, CollectVecInto, ExpandEnum, GetSli
 use super::{
     ast_file::DirType,
     ast_mod::{AstMod, AstModType},
-    HardcodedSymbol, Symbol, SymbolType,
+    HardcodedSymbol, NewMod, Symbol, SymbolType,
 };
 use crate::{
     codegen::Crates,
@@ -223,18 +223,8 @@ impl AstCrate {
         Ok(())
     }
 
-    pub fn add_mod<'a>(&'a mut self, path: Vec<String>) -> MsgResult<&'a mut AstMod> {
-        let m = self.get_mod_from_path(path.slice_to(-1))?;
-        m.mods.push(AstMod::new(
-            m.dir.to_owned(),
-            path.to_vec(),
-            AstModType::Internal,
-            m.span_file,
-            m.span_start,
-        ));
-        m.mods
-            .last_mut()
-            .catch_err(&format!("Mod not added: {path:#?}"))
+    pub fn add_mod<'a>(&'a mut self, path: Vec<String>, mut data: NewMod) -> MsgResult<()> {
+        Ok(self.get_mod_from_path(&path)?.add_mod(data))
     }
 
     pub fn add_hardcoded_symbol(crates: &mut Crates, sym: HardcodedSymbol) -> MsgResult<()> {

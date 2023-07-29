@@ -77,13 +77,13 @@ fn label_var(not: bool, idx: usize) -> LabelItem {
         not,
         comp: ComponentSymbol {
             idx,
-            args: ComponentMacroArgs::from(&Vec::new()),
+            args: ComponentMacroArgs::default(),
         },
     }
 }
 
 pub fn test_labels() {
-    let args = ComponentMacroArgs::from(&Vec::new());
+    let args = ComponentMacroArgs::default();
     // (1 && (0 || !1 || !0))
     let labels = LabelItem::Expression {
         op: LabelOp::And,
@@ -121,7 +121,7 @@ pub fn test_labels() {
 }
 
 fn test_labels2() {
-    let args = ComponentMacroArgs::from(&Vec::new());
+    let args = ComponentMacroArgs::default();
     // 0 && ((1) || !0 || !1) && 1
     let labels = LabelItem::Expression {
         op: LabelOp::And,

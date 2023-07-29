@@ -6,7 +6,7 @@ mod find_path;
 mod symbol;
 
 pub use ast_crate::AstCrate;
-pub use ast_mod::{AstEnum, AstFunction, AstItem, AstMod, AstUse};
+pub use ast_mod::{AstEnum, AstFunction, AstItem, AstItems, AstMod, AstModType, AstUse, NewMod};
 pub use attributes::AstAttribute;
 pub use symbol::{
     ComponentSymbol, DiscardSymbol, GlobalSymbol, HardcodedSymbol, MatchSymbol, Symbol, SymbolType,
