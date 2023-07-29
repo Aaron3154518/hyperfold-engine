@@ -2,7 +2,7 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use shared::{
     match_ok,
-    msg_result::{CombineMsgs, Zip3Msgs},
+    msg_result::{CombineMsgs, Zip2Msgs, Zip3Msgs},
     traits::{CollectVec, CollectVecInto},
 };
 
@@ -18,32 +18,34 @@ use crate::{
 
 use super::Crates;
 
-pub fn trait_defs<T, F>(
+pub trait GetPaths {
+    fn get_paths(&self) -> Vec<&ItemPath>;
+}
+
+pub fn trait_defs<const N: usize>(
     cr_idx: usize,
     crates: &Crates,
-    items: &Vec<T>,
-    get_item_path: F,
     trait_ident: &syn::Ident,
-    trait_source: &CratePath,
-) -> MsgResult<TokenStream>
-where
-    F: for<'a> Fn(&'a T) -> &'a ItemPath,
-{
+    item_traits: [(&CratePath, &dyn GetPaths); N],
+) -> MsgResult<TokenStream> {
     let macro_cr_idx = crates.get_crate_index(Crate::Macros);
 
     let CodegenIdents { namespace, .. } = &*CODEGEN_IDENTS;
-    let trait_source = crates.get_syn_path(cr_idx, trait_source);
-
-    // Events for this crate
-    let types = items
-        .filter_map_vec(|t| {
-            let path = get_item_path(t);
-            (cr_idx == path.cr_idx).then(|| vec_to_path(path.path.to_vec()))
+    let item_traits = item_traits
+        .map_vec_into(|(tr, items)| {
+            let tr = crates.get_syn_path(cr_idx, tr);
+            let paths = items
+                .get_paths()
+                .filter_map_vec_into(|p| (cr_idx == p.cr_idx).then(|| vec_to_path(p.path.to_vec())))
+                .combine_msgs();
+            match_ok!(Zip2Msgs, tr, paths, {
+                paths.map_vec_into(|p| quote!(#tr<#p>))
+            })
         })
         .combine_msgs();
     // Event traits for dependency crates
     let macro_cr_idx = crates.get_crate_index(Crate::Macros);
-    let dep_traits = crates
+    let mut dep_traits = crates
         .get(cr_idx)
         .ok_or(vec![Msg::String(format!("Invalid crate index: {cr_idx}"))])
         .map(|cr| {
@@ -56,12 +58,14 @@ where
                 })
         });
 
-    match_ok!(Zip3Msgs, trait_source, dep_traits, types, {
-        let traits = [dep_traits, types.map_vec(|ty| quote!(#trait_source<#ty>))].concat();
-        match traits.split_first() {
-            Some((first, tail)) => {
+    match_ok!(Zip2Msgs, dep_traits, item_traits, {
+        let mut traits = dep_traits
+            .into_iter()
+            .chain(item_traits.into_iter().flatten());
+        match traits.next() {
+            Some(first) => {
                 quote!(
-                    pub trait #trait_ident: #first #(+#tail)* {}
+                    pub trait #trait_ident: #first #(+#traits)* {}
                 )
             }
             None => quote!(pub trait #trait_ident {}),

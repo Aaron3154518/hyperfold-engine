@@ -1,5 +1,5 @@
 use crate::{
-    _engine::AddEvent,
+    _engine::Events,
     components,
     ecs::{entities::Entity, events::core},
     utils::rect::{Align, PointF, Rect},
@@ -40,7 +40,7 @@ components!(
 );
 
 #[macros::system]
-fn update_physics(up: &core::Update, entities: Vec<UpdatePhysics>, events: &mut dyn AddEvent) {
+fn update_physics(up: &core::Update, entities: Vec<UpdatePhysics>, events: &mut dyn Events) {
     for UpdatePhysics {
         eid,
         pos,

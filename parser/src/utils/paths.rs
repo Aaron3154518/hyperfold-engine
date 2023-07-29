@@ -116,10 +116,11 @@ paths!(ENGINE_TRAITS = EngineTraits {
     },
     Engine::ecs::events {
         add_event => AddEvent,
+        set_state => SetState,
     },
     Main::{NAMESPACE} {
-        main_add_component => AddComponent,
-        main_add_event => AddEvent,
+        components => Components,
+        events => Events,
     }
 });
 
@@ -131,11 +132,11 @@ pub struct TraitPath<'a> {
 pub const TRAITS: Lazy<[TraitPath; 2]> = Lazy::new(|| {
     [
         TraitPath {
-            main_trait: &ENGINE_TRAITS.main_add_component,
+            main_trait: &ENGINE_TRAITS.components,
             global: &ENGINE_GLOBALS.c_foo,
         },
         TraitPath {
-            main_trait: &ENGINE_TRAITS.main_add_event,
+            main_trait: &ENGINE_TRAITS.events,
             global: &ENGINE_GLOBALS.e_foo,
         },
     ]

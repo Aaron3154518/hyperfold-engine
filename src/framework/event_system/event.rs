@@ -7,7 +7,7 @@ struct Mouse(pub event::MouseButton);
 struct Key(pub event::KeyButton);
 
 #[macros::system]
-fn on_event(_ev: &core::Events, e: &event::Event, events: &mut dyn crate::_engine::AddEvent) {
+fn on_event(_ev: &core::Events, e: &event::Event, events: &mut dyn crate::_engine::Events) {
     for m in [
         event::Mouse::Left,
         event::Mouse::Right,

@@ -9,6 +9,7 @@ use shared::{
 };
 
 use crate::{
+    parse::ItemPath,
     resolve::ItemComponent,
     utils::{
         idents::{component_var, CodegenIdents, CODEGEN_IDENTS},
@@ -18,7 +19,10 @@ use crate::{
     },
 };
 
-use super::{traits::trait_defs, Crates};
+use super::{
+    traits::{trait_defs, GetPaths},
+    Crates,
+};
 
 struct CodegenArgs<'a> {
     struct_name: &'a syn::Ident,
@@ -131,6 +135,12 @@ pub fn components(
     )
 }
 
+impl GetPaths for Vec<ItemComponent> {
+    fn get_paths(&self) -> Vec<&ItemPath> {
+        self.map_vec(|c| &c.path)
+    }
+}
+
 pub fn component_trait_defs(
     cr_idx: usize,
     components: &Vec<ItemComponent>,
@@ -139,10 +149,8 @@ pub fn component_trait_defs(
     trait_defs(
         cr_idx,
         crates,
-        components,
-        |c| &c.path,
         &CODEGEN_IDENTS.add_component,
-        &ENGINE_TRAITS.add_component,
+        [(&ENGINE_TRAITS.add_component, components)],
     )
 }
 

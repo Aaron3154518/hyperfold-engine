@@ -7,7 +7,8 @@ use shared::{
 };
 
 use crate::{
-    resolve::ItemEvent,
+    parse::ItemPath,
+    resolve::{ItemEvent, ItemState},
     utils::{
         idents::{event_var, event_variant, CodegenIdents, CODEGEN_IDENTS},
         paths::{Crate, ENGINE_TRAITS},
@@ -16,7 +17,10 @@ use crate::{
     },
 };
 
-use super::{traits::trait_defs, Crates};
+use super::{
+    traits::{trait_defs, GetPaths},
+    Crates,
+};
 
 pub fn events_enum(events: &Vec<ItemEvent>) -> TokenStream {
     let CodegenIdents {
@@ -97,18 +101,32 @@ pub fn events(cr_idx: usize, events: &Vec<ItemEvent>, crates: &Crates) -> MsgRes
     })
 }
 
+impl GetPaths for Vec<ItemEvent> {
+    fn get_paths(&self) -> Vec<&ItemPath> {
+        self.map_vec(|e| &e.path)
+    }
+}
+
+impl GetPaths for Vec<ItemState> {
+    fn get_paths(&self) -> Vec<&ItemPath> {
+        self.map_vec(|s| &s.path)
+    }
+}
+
 pub fn event_trait_defs(
     cr_idx: usize,
     events: &Vec<ItemEvent>,
+    states: &Vec<ItemState>,
     crates: &Crates,
 ) -> MsgResult<TokenStream> {
     trait_defs(
         cr_idx,
         crates,
-        events,
-        |e| &e.path,
         &CODEGEN_IDENTS.add_event,
-        &ENGINE_TRAITS.add_event,
+        [
+            (&ENGINE_TRAITS.add_event, events),
+            (&ENGINE_TRAITS.set_state, states),
+        ],
     )
 }
 

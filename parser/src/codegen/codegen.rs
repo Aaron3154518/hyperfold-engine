@@ -57,7 +57,7 @@ pub fn codegen(crates: &Crates, items: &Items) -> MsgResult<Vec<TokenStream>> {
     let trait_defs = crates
         .iter_except([macro_cr_idx])
         .map_vec_into(|cr| {
-            let add_event = super::event_trait_defs(cr.idx, &items.events, crates);
+            let add_event = super::event_trait_defs(cr.idx, &items.events, &items.states, crates);
             let add_component = super::component_trait_defs(cr.idx, &items.components, crates);
             match_ok!(Zip2Msgs, add_event, add_component, {
                 Traits {

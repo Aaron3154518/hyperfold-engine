@@ -1,4 +1,4 @@
-use crate::_engine::{AddEvent, Entity};
+use crate::_engine::{Entity, Events};
 use crate::components;
 use crate::ecs::events::core;
 use crate::framework::{
@@ -73,7 +73,7 @@ components!(
 fn mouse_event(
     m: &super::events::Mouse,
     entities: Vec<MouseArgs>,
-    events: &mut dyn AddEvent,
+    events: &mut dyn Events,
     drag_state: &mut DragState,
 ) {
     // Finished dragging; no more mouse events
@@ -122,7 +122,7 @@ fn mouse_event(
 }
 
 #[macros::system]
-fn drag(_: &core::Events, event: &Event, events: &mut dyn AddEvent, drag_state: &mut DragState) {
+fn drag(_: &core::Events, event: &Event, events: &mut dyn Events, drag_state: &mut DragState) {
     if let Some(eid) = drag_state.dragging {
         if event.mouse_moved() {
             events.new_event(Drag {

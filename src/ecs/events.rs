@@ -4,13 +4,17 @@ pub trait AddEvent<T> {
     fn get_event<'a>(&'a self) -> Option<&'a T>;
 }
 
+pub trait SetState<T> {
+    fn set_state(&mut self, t: T);
+}
+
 pub mod core {
     #[macros::event]
-    pub struct Update(pub u32);
+    struct Update(pub u32);
     #[macros::event]
-    pub struct Events;
+    struct Events;
     #[macros::event]
-    pub struct PreRender;
+    struct PreRender;
     #[macros::event]
-    pub struct Render;
+    struct Render;
 }
