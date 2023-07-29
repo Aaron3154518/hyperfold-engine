@@ -212,42 +212,45 @@ impl Items {
         sym
     }
 
+    fn add_symbols(
+        &mut self,
+        errs: &mut Vec<Msg>,
+        crates: &mut Crates,
+        f: impl Fn(&mut Vec<Msg>, &mut Self, ModInfo) -> Vec<NewSymbol>,
+    ) {
+        let macro_cr_idx = crates.get_crate_index(Crate::Macros);
+
+        // Get symbols
+        let all_crates = crates.get_crates();
+        let symbols = crates.iter_except([macro_cr_idx]).map_vec_into(|cr| {
+            cr.iter_mods()
+                .map_vec_into(|m| f(errs, self, (m, cr, all_crates)))
+        });
+
+        // Add symbols
+        for (cr, crate_symbols) in crates.iter_except_mut([macro_cr_idx]).zip(symbols) {
+            let mut mods = cr.iter_mods_mut();
+            for mod_symbols in crate_symbols {
+                if let Some(m) = mods.next(cr) {
+                    let mod_symbols = mod_symbols.filter_map_vec_into(|s| match s {
+                        NewSymbol::Symbol(s) => Some(s),
+                        // Mod iteration order is locked, so adding new mods is safe
+                        NewSymbol::Mod(new_mod) => {
+                            m.add_mod(new_mod);
+                            None
+                        }
+                    });
+                    m.symbols.extend(mod_symbols);
+                }
+            }
+        }
+    }
+
     pub fn resolve(crates: &mut Crates) -> (Self, Vec<Msg>) {
         let mut errs = Vec::new();
         let mut items = Items::new();
 
         let macro_cr_idx = crates.get_crate_index(Crate::Macros);
-
-        let add_symbols =
-            |errs: &mut Vec<Msg>,
-             items: &mut Items,
-             crates: &mut Crates,
-             f: &dyn Fn(&mut Vec<Msg>, &mut Items, ModInfo) -> Vec<NewSymbol>| {
-                // Get symbols
-                let all_crates = crates.get_crates();
-                let symbols = crates.iter_except([macro_cr_idx]).map_vec_into(|cr| {
-                    cr.iter_mods()
-                        .map_vec_into(|m| f(errs, items, (m, cr, all_crates)))
-                });
-
-                // Add symbols
-                for (cr, crate_symbols) in crates.iter_except_mut([macro_cr_idx]).zip(symbols) {
-                    let mut mods = cr.iter_mods_mut();
-                    for mod_symbols in crate_symbols {
-                        if let Some(m) = mods.next(cr) {
-                            let mod_symbols = mod_symbols.filter_map_vec_into(|s| match s {
-                                NewSymbol::Symbol(s) => Some(s),
-                                // Mod iteration order is locked, so adding new mods is safe
-                                NewSymbol::Mod(new_mod) => {
-                                    m.add_mod(new_mod);
-                                    None
-                                }
-                            });
-                            m.symbols.extend(mod_symbols);
-                        }
-                    }
-                }
-            };
 
         // Insert hardcoded symbols
         for sym in HardcodedSymbol::VARIANTS {
@@ -255,7 +258,7 @@ impl Items {
         }
 
         // Resolve components, globals, events, and states
-        add_symbols(&mut errs, &mut items, crates, &|_, items, mod_info| {
+        items.add_symbols(&mut errs, crates, |_, items, mod_info| {
             let (m, cr, crates) = mod_info;
             let mut symbols = Vec::new();
             for (ident, path, attrs) in m
@@ -314,7 +317,7 @@ impl Items {
         });
 
         // Resolve component sets
-        add_symbols(&mut errs, &mut items, crates, &|errs, items, mod_info| {
+        items.add_symbols(&mut errs, crates, |errs, items, mod_info| {
             mod_info.0.items.macro_calls.filter_map_vec(|call| {
                 resolve_path(call.path.to_vec(), mod_info)
                     .expect_hardcoded(HardcodedSymbol::ComponentsMacro)
@@ -391,7 +394,7 @@ impl Items {
         }
 
         // Resolve systems
-        add_symbols(&mut errs, &mut items, crates, &|errs, items, mod_info| {
+        items.add_symbols(&mut errs, crates, |errs, items, mod_info| {
             let (m, cr, crates) = mod_info;
             m.items.functions.iter().filter_map_vec_into(|fun| {
                 fun.data.attrs.iter().find_map(|attr| {
