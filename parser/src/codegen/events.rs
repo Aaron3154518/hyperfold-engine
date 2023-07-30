@@ -78,7 +78,7 @@ pub fn events(
 
     match_ok!(Zip2Msgs, e_types, s_types, {
         quote!(
-            pub struct #events_type {
+            struct #events_type {
                 #(#e_vars: Vec<#e_types>,)*
                 #events_var: std::collections::VecDeque<(#event_enum, usize)>,
                 #(#s_vars: Vec<#s_types::#s_data>,)*

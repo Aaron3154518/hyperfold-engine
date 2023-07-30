@@ -71,7 +71,7 @@ fn codegen<'a>(
     }
 
     quote!(
-        pub struct #struct_name {
+        struct #struct_name {
             eids: #entity_set,
             #(#vars: #tys),*
         }
