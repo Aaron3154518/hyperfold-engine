@@ -12,6 +12,10 @@ where
 {
     fn get_iter_into(self) -> I;
 
+    fn enumer_iter_into(self) -> Enumerate<I> {
+        self.get_iter_into().enumerate()
+    }
+
     fn filter_vec_into<F>(self, f: F) -> Vec<T>
     where
         F: FnMut(&T) -> bool,
@@ -45,6 +49,13 @@ where
         F: FnMut(T) -> (U, V),
     {
         self.get_iter_into().map(f).unzip()
+    }
+
+    fn unzipn_vec_into<U, V, F>(self, f: F, g: impl FnOnce(std::iter::Map<I, F>) -> V) -> V
+    where
+        F: FnMut(T) -> U,
+    {
+        g(self.get_iter_into().map(f))
     }
 
     fn flatten_map_vec_into<U, V, F>(self, f: F) -> Vec<V>
@@ -89,7 +100,7 @@ where
 {
     fn get_iter(&'a self) -> I;
 
-    fn get_enumerate(&'a self) -> Enumerate<I> {
+    fn enumer_iter(&'a self) -> Enumerate<I> {
         self.get_iter().enumerate()
     }
 
@@ -100,11 +111,11 @@ where
         self.get_iter().map_vec_into(f)
     }
 
-    fn enumerate_map_vec<U, F>(&'a self, f: F) -> Vec<U>
+    fn enumer_map_vec<U, F>(&'a self, f: F) -> Vec<U>
     where
         F: FnMut((usize, T)) -> U,
     {
-        self.get_enumerate().map_vec_into(f)
+        self.enumer_iter().map_vec_into(f)
     }
 
     fn filter_map_vec<U, F>(&'a self, f: F) -> Vec<U>
@@ -114,11 +125,11 @@ where
         self.get_iter().filter_map_vec_into(f)
     }
 
-    fn enumerate_filter_map_vec<U, F>(&'a self, f: F) -> Vec<U>
+    fn enumer_filter_map_vec<U, F>(&'a self, f: F) -> Vec<U>
     where
         F: FnMut((usize, T)) -> Option<U>,
     {
-        self.get_enumerate().filter_map_vec_into(f)
+        self.enumer_iter().filter_map_vec_into(f)
     }
 
     fn join_map<F>(&'a self, f: F, sep: &str) -> String
@@ -128,11 +139,11 @@ where
         self.map_vec(f).join(sep)
     }
 
-    fn enumerate_join_map<F>(&'a self, f: F, sep: &str) -> String
+    fn enumer_join_map<F>(&'a self, f: F, sep: &str) -> String
     where
         F: FnMut((usize, T)) -> String,
     {
-        self.enumerate_map_vec(f).join(sep)
+        self.enumer_map_vec(f).join(sep)
     }
 
     fn unzip_vec<U, V, F>(&'a self, f: F) -> (Vec<U>, Vec<V>)
@@ -142,11 +153,29 @@ where
         self.get_iter().unzip_vec_into(f)
     }
 
-    fn enumerate_unzip_vec<U, V, F>(&'a self, f: F) -> (Vec<U>, Vec<V>)
+    fn enumer_unzip_vec<U, V, F>(&'a self, f: F) -> (Vec<U>, Vec<V>)
     where
         F: FnMut((usize, T)) -> (U, V),
     {
-        self.get_enumerate().unzip_vec_into(f)
+        self.enumer_iter().unzip_vec_into(f)
+    }
+
+    fn unzipn_vec<U, V, F>(&'a self, f: F, g: impl FnOnce(std::iter::Map<I, F>) -> V) -> V
+    where
+        F: FnMut(T) -> U,
+    {
+        self.get_iter().unzipn_vec_into(f, g)
+    }
+
+    fn enumer_unzipn_vec<U, V, F>(
+        &'a self,
+        f: F,
+        g: impl FnOnce(std::iter::Map<Enumerate<I>, F>) -> V,
+    ) -> V
+    where
+        F: FnMut((usize, T)) -> U,
+    {
+        self.enumer_iter().unzipn_vec_into(f, g)
     }
 
     fn flatten_map_vec<U, V, F>(&'a self, f: F) -> Vec<V>

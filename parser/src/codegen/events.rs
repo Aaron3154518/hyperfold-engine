@@ -1,17 +1,19 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use shared::{
-    constants::{STATE_DATA, STATE_ENTER_EVENT},
+    constants::{STATE_DATA, STATE_ENTER_EVENT, STATE_EXIT_EVENT},
     match_ok,
-    msg_result::{CombineMsgs, Zip5Msgs},
-    traits::{CollectVec, CollectVecInto, MapNone},
+    msg_result::{CombineMsgs, Zip2Msgs, Zip5Msgs},
+    traits::{unzip::Unzip3, CollectVec, CollectVecInto, MapNone},
 };
 
 use crate::{
     parse::ItemPath,
     resolve::{ItemEvent, ItemState},
     utils::{
-        idents::{event_var, event_variant, state_var, CodegenIdents, CODEGEN_IDENTS},
+        idents::{
+            event_var, event_variant, state_var, state_variant, CodegenIdents, CODEGEN_IDENTS,
+        },
         paths::{Crate, ENGINE_TRAITS},
         syn::vec_to_path,
         Msg, MsgResult,
@@ -42,60 +44,116 @@ pub fn events_enum(events: &Vec<ItemEvent>) -> TokenStream {
     )
 }
 
-pub fn events(cr_idx: usize, events: &Vec<ItemEvent>, crates: &Crates) -> MsgResult<TokenStream> {
+pub fn events(
+    cr_idx: usize,
+    events: &Vec<ItemEvent>,
+    states: &Vec<ItemState>,
+    crates: &Crates,
+) -> MsgResult<TokenStream> {
     let CodegenIdents {
         events: events_type,
+        events_var,
         event_enum,
+        state_enum,
+        state_var: state,
+        exiting_state_var: exiting_state,
         ..
     } = &*CODEGEN_IDENTS;
 
-    let (vars, variants) = (0..events.len()).unzip_vec_into(|i| (event_var(i), event_variant(i)));
-    let types = events
+    let (e_vars, e_variants) =
+        (0..events.len()).unzip_vec_into(|i| (event_var(i), event_variant(i)));
+    let e_types = events
         .map_vec(|e| crates.get_item_syn_path(cr_idx, &e.path))
         .combine_msgs();
 
-    types.map(|types| {
+    let (s_vars, s_variants, s_exit_events) = states.enumer_unzipn_vec(
+        |(i, s)| (state_var(i), state_variant(i), event_variant(s.exit_event)),
+        Unzip3::unzip3_vec,
+    );
+    let s_types = states
+        .map_vec(|s| crates.get_item_syn_path(cr_idx, &s.path))
+        .combine_msgs();
+    let s_data = format_ident!("{STATE_DATA}");
+    let s_on_exit = format_ident!("{STATE_EXIT_EVENT}");
+
+    match_ok!(Zip2Msgs, e_types, s_types, {
         quote!(
             pub struct #events_type {
-                #(#vars: Vec<#types>),*,
-                events: std::collections::VecDeque<(#event_enum, usize)>
+                #(#e_vars: Vec<#e_types>,)*
+                #events_var: std::collections::VecDeque<(#event_enum, usize)>,
+                #(#s_vars: Vec<#s_types::#s_data>,)*
+                #state: Option<#state_enum>,
+                #exiting_state: bool
             }
 
             impl #events_type {
                 fn new() -> Self {
                     Self {
-                        #(#vars: Vec::new()),*,
-                        events: std::collections::VecDeque::new()
+                        #(#e_vars: Vec::new(),)*
+                        #events_var: std::collections::VecDeque::new(),
+                        #(#s_vars: Vec::new(),)*
+                        #state: None,
+                        #exiting_state: false
                     }
                 }
 
                 fn has_events(&self) -> bool {
-                    !self.events.is_empty()
+                    !self.#events_var.is_empty()
                 }
 
                 fn add_event(&mut self, e: #event_enum) {
-                    self.events.push_back((e, 0));
+                    self.#events_var.push_back((e, 0));
                 }
 
                 fn get_events(&mut self) -> std::collections::VecDeque<(#event_enum, usize)> {
-                    std::mem::replace(&mut self.events, std::collections::VecDeque::new())
+                    std::mem::replace(&mut self.#events_var, std::collections::VecDeque::new())
                 }
 
                 fn append(&mut self, other: &mut Self) {
                     #(
-                        other.#vars.reverse();
-                        self.#vars.append(&mut other.#vars);
+                        other.#e_vars.reverse();
+                        self.#e_vars.append(&mut other.#e_vars);
+                    )*
+                    #(
+                        other.#s_vars.reverse();
+                        self.#s_vars.append(&mut other.#s_vars);
                     )*
                 }
 
                 fn pop(&mut self, e: #event_enum) {
                     match e {
                         #(
-                            #event_enum::#variants => {
-                                self.#vars.pop();
+                            #event_enum::#e_variants => {
+                                self.#e_vars.pop();
                             }
                         )*
                     }
+                }
+
+                fn start_state_change(&mut self) -> Option<#event_enum> {
+                    self.#exiting_state = true;
+                    self.#state.map(|s| match s {
+                        #(
+                            #state_enum::#s_variants => {
+                                self.new_event(#s_types::#s_on_exit);
+                                #event_enum::#s_exit_events
+                            }
+                        )*
+                    })
+                }
+
+                fn finish_state_change(&mut self, s: S) {
+                    self.#exiting_state = false;
+                    if let Some(s) = self.#state {
+                        match s {
+                            #(
+                                #state_enum::#s_variants => {
+                                    self.#s_vars.pop();
+                                }
+                            )*
+                        }
+                    }
+                    self.#state = Some(s);
                 }
             }
         )

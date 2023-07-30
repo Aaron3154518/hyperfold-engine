@@ -37,15 +37,19 @@ idents!(CODEGEN_IDENTS = CodegenIdents {
     add_event => ENGINE_TRAITS.events.get_ident(),
     event_enum => "E",
     event_enum_len => "E_LEN",
+    state_enum => "S",
     e_var => "e",
     v_var => "v",
     eid_var => "eid",
     eids_var => "eids",
     stack_var => "stack",
     services_var => "services",
-    comps_var => "cfoo",
-    globals_var => "gfoo",
-    events_var => "efoo",
+    cfoo_var => "cfoo",
+    gfoo_var => "gfoo",
+    efoo_var => "efoo",
+    events_var => "events",
+    state_var => "state",
+    exiting_state_var => "exiting_state"
 });
 
 // Returns names of codegen items
@@ -79,4 +83,8 @@ pub fn component_set_keys_fn(cs_idx: usize, ret_vec: bool) -> syn::Ident {
 
 pub fn state_var(s_idx: usize) -> syn::Ident {
     format_ident!("s{s_idx}")
+}
+
+pub fn state_variant(s_idx: usize) -> syn::Ident {
+    format_ident!("S{s_idx}")
 }

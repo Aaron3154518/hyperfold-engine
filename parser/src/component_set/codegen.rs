@@ -72,9 +72,8 @@ impl ComponentSet {
         let entity = crates.get_syn_path(cr_idx, &ENGINE_PATHS.entity);
 
         match_ok!(Zip3Msgs, filter_fn, entity, entity_set, {
-            component_sets.enumerate_map_vec(|(i, cs)| {
-                cs.codegen_get_keys(i, &filter_fn, &entity, &entity_set)
-            })
+            component_sets
+                .enumer_map_vec(|(i, cs)| cs.codegen_get_keys(i, &filter_fn, &entity, &entity_set))
         })
     }
 
@@ -99,7 +98,7 @@ impl ComponentSet {
         let CodegenIdents {
             components,
             eids_var,
-            comps_var,
+            cfoo_var: comps_var,
             ..
         } = &*CODEGEN_IDENTS;
 
@@ -228,7 +227,9 @@ impl ComponentSet {
         let (first_arg, first_label) = (self.first_arg(), self.first_label());
 
         let CodegenIdents {
-            eid_var, comps_var, ..
+            eid_var,
+            cfoo_var: comps_var,
+            ..
         } = &*CODEGEN_IDENTS;
 
         let k = format_ident!("k");
@@ -364,7 +365,7 @@ impl ComponentSet {
     ) -> BuildSetsResult {
         let CodegenIdents {
             eids_var,
-            comps_var,
+            cfoo_var: comps_var,
             ..
         } = &*CODEGEN_IDENTS;
 

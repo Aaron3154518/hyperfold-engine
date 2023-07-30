@@ -28,9 +28,9 @@ pub fn manager_def() -> TokenStream {
         events,
         event_enum,
         event_enum_len,
-        comps_var,
-        globals_var,
-        events_var,
+        cfoo_var: comps_var,
+        gfoo_var: globals_var,
+        efoo_var: events_var,
         stack_var,
         services_var,
         ..
@@ -50,7 +50,9 @@ pub fn manager_def() -> TokenStream {
 // Function to set initial events on each tick
 fn init_events_fn(cr_idx: usize, items: &Items, crates: &Crates) -> MsgResult<TokenStream> {
     let CodegenIdents {
-        events, events_var, ..
+        events,
+        efoo_var: events_var,
+        ..
     } = &*CODEGEN_IDENTS;
 
     let add_event = crates.get_syn_path(cr_idx, &ENGINE_TRAITS.add_event);
@@ -90,9 +92,9 @@ pub fn manager_impl(cr_idx: usize, items: &Items, crates: &Crates) -> MsgResult<
         events,
         event_enum,
         event_enum_len,
-        comps_var,
-        globals_var,
-        events_var,
+        cfoo_var: comps_var,
+        gfoo_var: globals_var,
+        efoo_var: events_var,
         stack_var,
         services_var,
         ..

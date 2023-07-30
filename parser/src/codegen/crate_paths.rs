@@ -78,7 +78,7 @@ impl Crates {
         block_crates: [usize; N],
     ) -> MsgResult<Vec<(usize, Vec<String>)>> {
         self.paths.try_get(cr_idx).map(|v| {
-            v.enumerate_filter_map_vec(|(i, path)| {
+            v.enumer_filter_map_vec(|(i, path)| {
                 (!block_crates.contains(&i))
                     .and_then(|| path.as_ref().map(|path| (i, path.to_vec())))
             })

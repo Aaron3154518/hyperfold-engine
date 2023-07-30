@@ -48,7 +48,7 @@ pub fn codegen(crates: &Crates, items: &Items) -> MsgResult<Vec<TokenStream>> {
     let events_enum = super::events_enum(&items.events);
 
     // Generate events struct
-    let events = super::events(main_cr_idx, &items.events, crates);
+    let events = super::events(main_cr_idx, &items.events, &items.states, crates);
 
     // Generate event trait implementations
     let event_traits = super::event_trait_impls(main_cr_idx, &items.events, &items.states, crates);

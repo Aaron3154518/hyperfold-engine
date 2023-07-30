@@ -21,7 +21,10 @@ use crate::{
 use super::resolve::{EventFnArg, FnArgs, GlobalFnArg};
 
 fn codegen_init_system(mut global_args: Vec<GlobalFnArg>, func_name: syn::Path) -> TokenStream {
-    let CodegenIdents { globals_var, .. } = &*CODEGEN_IDENTS;
+    let CodegenIdents {
+        gfoo_var: globals_var,
+        ..
+    } = &*CODEGEN_IDENTS;
     global_args.sort_by_key(|g| g.arg_idx);
     let func_args = global_args.map_vec(|g| {
         let mut_tok = if g.is_mut { quote!(mut) } else { quote!() };
@@ -57,9 +60,9 @@ fn codegen_system(
         components,
         events,
         e_var,
-        comps_var,
-        globals_var,
-        events_var,
+        cfoo_var: comps_var,
+        gfoo_var: globals_var,
+        efoo_var: events_var,
         ..
     } = &*CODEGEN_IDENTS;
 

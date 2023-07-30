@@ -107,7 +107,7 @@ impl ItemSystem {
 
         if self.attr_args.is_init {
             self.args
-                .enumerate_map_vec(|(arg_idx, arg)| match &arg.ty {
+                .enumer_map_vec(|(arg_idx, arg)| match &arg.ty {
                     FnArgType::Global(idx) => self
                         .validate_global(arg, *idx, &mut global_idxs, items)
                         .map(|_| GlobalFnArg {
@@ -128,7 +128,7 @@ impl ItemSystem {
             let mut globals = Vec::new();
             let mut component_sets = Vec::new();
             self.args
-                .enumerate_map_vec(|(arg_idx, arg)| match &arg.ty {
+                .enumer_map_vec(|(arg_idx, arg)| match &arg.ty {
                     FnArgType::Event(idx) => match event {
                         Some(_) => Err(vec![self.new_msg("Event already specified", &arg.span)]),
                         None => self
