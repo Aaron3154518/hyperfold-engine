@@ -9,7 +9,7 @@ mod traits;
 pub use codegen::{codegen, write_codegen};
 pub use components::{component_trait_defs, component_trait_impls, components};
 pub use crate_paths::Crates;
-pub use events::{event_trait_defs, event_trait_impls, events, events_enum};
+pub use events::{event_trait_defs, event_trait_impls, events, events_enums};
 pub use globals::globals;
 pub use manager::{manager_def, manager_impl};
 pub use traits::Traits;

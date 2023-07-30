@@ -25,7 +25,7 @@ use super::{
     Crates,
 };
 
-pub fn events_enum(events: &Vec<ItemEvent>, states: &Vec<ItemState>) -> TokenStream {
+pub fn events_enums(events: &Vec<ItemEvent>, states: &Vec<ItemState>) -> TokenStream {
     let CodegenIdents {
         event_enum,
         event_enum_len,
@@ -34,7 +34,7 @@ pub fn events_enum(events: &Vec<ItemEvent>, states: &Vec<ItemState>) -> TokenStr
     } = &*CODEGEN_IDENTS;
 
     let num_variants = events.len();
-    let variants = (0..events.len()).map_vec_into(|i| event_variant(i));
+    let e_variants = (0..events.len()).map_vec_into(|i| event_variant(i));
 
     let (s_variants, s_enter_events, s_exit_events) = states.enumer_unzipn_vec(
         |(i, s)| {
@@ -49,8 +49,13 @@ pub fn events_enum(events: &Vec<ItemEvent>, states: &Vec<ItemState>) -> TokenStr
 
     quote!(
         #[derive(Hash, Clone, Copy, Eq, PartialEq, Debug)]
+        enum #state_enum {
+            #(#s_variants),*
+        }
+
+        #[derive(Hash, Clone, Copy, Eq, PartialEq, Debug)]
         enum #event_enum {
-            #(#variants),*
+            #(#e_variants),*
         }
 
         const #event_enum_len: usize = #num_variants;

@@ -92,11 +92,12 @@ pub fn manager_impl(cr_idx: usize, items: &Items, crates: &Crates) -> MsgResult<
         events,
         event_enum,
         event_enum_len,
-        cfoo_var: comps_var,
-        gfoo_var: globals_var,
-        efoo_var: events_var,
+        cfoo_var,
+        gfoo_var,
+        efoo_var,
         stack_var,
         services_var,
+        exiting_state_var,
         ..
     } = &*CODEGEN_IDENTS;
 
@@ -133,30 +134,33 @@ pub fn manager_impl(cr_idx: usize, items: &Items, crates: &Crates) -> MsgResult<
             } = global_paths;
             quote!(
                 impl #manager {
-                    fn init(&mut self) {
-                        #(#init_systems;)*
-                        let events = std::mem::replace(&mut self.#globals_var.#g_e_foo, #events::new());
-                        self.add_events(events);
-                        self.update_entities();
-                    }
+                    #(#component_set_fns)*
 
                     fn add_system(&mut self, e: #event_enum, f: Box<dyn Fn(&mut #components, &mut #globals, &mut #events)>) {
                         self.#services_var[e as usize].push(f);
                     }
 
-                    #(#component_set_fns)*
-
                     fn add_systems(&mut self) {
                         #(self.add_system(#event_enum::#system_events, Box::new(#systems));)*
                     }
+                }
+
+                impl #manager {
+                    fn init(&mut self) {
+                        #(#init_systems;)*
+                        let events = std::mem::replace(&mut self.#gfoo_var.#g_e_foo, #events::new());
+                        self.add_events(events);
+                        self.update_entities();
+                    }
 
                     fn tick(&mut self, ts: u32) {
-                        self.#globals_var
+                        self.#gfoo_var
                             .#g_event
-                            .update(ts, &self.#globals_var.#g_camera.0, &self.#globals_var.#g_screen.0);
-                        self.#globals_var.#g_renderer.clear();
+                            .update(ts, &self.#gfoo_var.#g_camera.0, &self.#gfoo_var.#g_screen.0);
+                        self.#gfoo_var.#g_renderer.clear();
                         self.add_events(self.init_events(ts));
                         while !self.#stack_var.is_empty() {
+                            self.process_next_event();
                             if let Some((e, i, n)) = self
                                 .#stack_var
                                 .last_mut()
@@ -170,46 +174,58 @@ pub fn manager_impl(cr_idx: usize, items: &Items, crates: &Crates) -> MsgResult<
                                     })
                                 })
                             {
+                                self.#gfoo_var.#g_e_foo = #events::new();
+                                if let Some(s) = self.#services_var[e as usize].get(i) {
+                                    (s)(&mut self.#cfoo_var, &mut self.#gfoo_var, &mut self.#efoo_var);
+                                }
                                 if i + 1 >= n {
                                     self.pop();
                                 }
-                                self.#globals_var.#g_e_foo = #events::new();
-                                if let Some(s) = self.#services_var[e as usize].get(i) {
-                                    (s)(&mut self.#comps_var, &mut self.#globals_var, &mut self.#events_var);
-                                }
-                                if i + 1 >= n {
-                                    self.#events_var.pop(e);
-                                }
-                                let events = std::mem::replace(&mut self.#globals_var.#g_e_foo, #events::new());
+                                let events = std::mem::replace(&mut self.#gfoo_var.#g_e_foo, #events::new());
                                 self.add_events(events);
                                 self.update_entities();
                             } else {
                                 self.pop();
                             }
                         }
-                        self.#globals_var.#g_renderer.present();
+                        self.#gfoo_var.#g_renderer.present();
                     }
 
                     fn update_entities(&mut self) {
-                        self.#comps_var.remove(&mut self.#globals_var.#g_entity_trash);
-                        self.#comps_var.append(&mut self.#globals_var.#g_c_foo);
+                        self.#cfoo_var.remove(&mut self.#gfoo_var.#g_entity_trash);
+                        self.#cfoo_var.append(&mut self.#gfoo_var.#g_c_foo);
                     }
 
                     #init_events
 
                     fn add_events(&mut self, mut em: #events) {
                         if em.has_events() {
-                            self.#events_var.append(&mut em);
+                            self.#efoo_var.append(&mut em);
                             self.#stack_var.push(em.get_events());
                         }
                     }
 
                     fn pop(&mut self) {
-                        if self.#stack_var.last_mut().is_some_and(|queue| {
-                            queue.pop_front();
-                            queue.is_empty()
-                        }) {
+                        if let Some((e, _)) = self.#stack_var.last_mut().and_then(|queue| queue.pop_front()) {
+                            self.#efoo_var.pop(e);
+                        };
+                        if self.#stack_var.last_mut().is_some_and(|queue| queue.is_empty()) {
                             self.#stack_var.pop();
+                        }
+                    }
+
+                    fn process_next_event(&mut self) {
+                        if let Some(queue) = self.#stack_var.last_mut() {
+                            match queue.front().map(|(e, i)| (e.enters_state(), i)) {
+                                Some((Some(s), i)) if *i == 0 => match self.#efoo_var.#exiting_state_var {
+                                    true => self.#efoo_var.finish_state_change(s),
+                                    false => match self.#efoo_var.start_state_change() {
+                                        Some(e) => queue.push_front((e, 0)),
+                                        None => self.#efoo_var.finish_state_change(s),
+                                    },
+                                },
+                                _ => (),
+                            }
                         }
                     }
                 }
@@ -217,9 +233,9 @@ pub fn manager_impl(cr_idx: usize, items: &Items, crates: &Crates) -> MsgResult<
                 impl #manager_trait for #manager {
                     fn new() -> Self {
                         let mut s = Self {
-                            #comps_var: #components::new(),
-                            #globals_var: #globals::new(),
-                            #events_var: #events::new(),
+                            #cfoo_var: #components::new(),
+                            #gfoo_var: #globals::new(),
+                            #efoo_var: #events::new(),
                             #stack_var: Vec::new(),
                             #services_var: std::array::from_fn(|_| Vec::new())
                         };
@@ -235,7 +251,7 @@ pub fn manager_impl(cr_idx: usize, items: &Items, crates: &Crates) -> MsgResult<
                         let mut dt;
                         let mut tsum: u64 = 0;
                         let mut tcnt: u64 = 0;
-                        while !self.#globals_var.#g_event.quit {
+                        while !self.#gfoo_var.#g_event.quit {
                             dt = unsafe { #path_to_engine::sdl2::SDL_GetTicks() } - t;
                             t += dt;
                             self.tick(dt);
