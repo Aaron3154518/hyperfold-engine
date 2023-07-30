@@ -1,6 +1,6 @@
 use quote::ToTokens;
 
-use crate::utils::{CatchErr, MsgResult};
+use crate::syn::{CatchErr, MsgResult};
 
 // To type
 pub fn type_to_type(ty: &syn::Type, r: bool, m: bool) -> MsgResult<syn::Type> {

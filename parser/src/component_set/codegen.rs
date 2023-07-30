@@ -3,6 +3,7 @@ use quote::{format_ident, quote};
 use shared::{
     match_ok,
     msg_result::Zip3Msgs,
+    syn::{get_fn_name, MsgResult, Quote},
     traits::{CollectVec, CollectVecInto, ThenNone},
 };
 
@@ -15,8 +16,6 @@ use crate::{
             component_set_keys_fn, component_set_var, component_var, CodegenIdents, CODEGEN_IDENTS,
         },
         paths::ENGINE_PATHS,
-        syn::{get_fn_name, Quote},
-        MsgResult,
     },
 };
 

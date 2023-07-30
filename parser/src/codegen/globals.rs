@@ -3,16 +3,13 @@ use quote::quote;
 use shared::{
     match_ok,
     msg_result::CombineMsgs,
+    syn::{vec_to_path, MsgResult},
     traits::{CollectVec, CollectVecInto},
 };
 
 use crate::{
     resolve::ItemGlobal,
-    utils::{
-        idents::{global_var, CODEGEN_IDENTS},
-        syn::vec_to_path,
-        MsgResult,
-    },
+    utils::idents::{global_var, CODEGEN_IDENTS},
 };
 
 use super::Crates;

@@ -14,6 +14,7 @@ use shared::{
     constants::{INDEX, INDEX_SEP},
     match_ok,
     msg_result::{CombineMsgs, MsgTrait, Zip2Msgs, Zip9Msgs},
+    syn::{CatchErr, Msg, MsgResult, ToRange},
     traits::{Catch, CollectVec, CollectVecInto, ThenOk},
 };
 
@@ -24,8 +25,6 @@ use crate::{
     utils::{
         constants::NAMESPACE,
         paths::{Crate, MAIN_USE_STMTS, NAMESPACE_USE_STMTS},
-        syn::ToRange,
-        CatchErr, Msg, MsgResult,
     },
 };
 

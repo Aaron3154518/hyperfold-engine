@@ -1,16 +1,18 @@
+use proc_macro2::Span;
 use std::collections::{HashMap, HashSet};
 
-use proc_macro2::Span;
 use shared::{
     constants::TAB,
     msg_result::{CombineMsgs, MsgTrait},
+    parsing::SystemMacroArgs,
+    syn::{Msg, MsgResult},
     traits::{CollectVec, CollectVecInto, PushInto, ThenOk},
 };
 
 use crate::{
     component_set::{ComponentSet, ComponentSetLabels},
     resolve::{ItemEvent, ItemGlobal, Items},
-    utils::{paths::ENGINE_PATHS, Msg, MsgResult},
+    utils::paths::ENGINE_PATHS,
 };
 
 use super::{
@@ -105,8 +107,9 @@ impl ItemSystem {
     pub fn validate(&self, items: &Items) -> MsgResult<FnArgs> {
         let mut global_idxs = HashSet::new();
 
-        if self.attr_args.is_init {
-            self.args
+        match self.attr_args {
+            SystemMacroArgs::Init() => self
+                .args
                 .enumer_map_vec(|(arg_idx, arg)| match &arg.ty {
                     FnArgType::Global(idx) => self
                         .validate_global(arg, *idx, &mut global_idxs, items)
@@ -120,55 +123,58 @@ impl ItemSystem {
                     ]),
                 })
                 .combine_msgs()
-                .map(|globals| FnArgs::Init { globals })
-        } else {
-            let mut component_refs = HashMap::new();
+                .map(|globals| FnArgs::Init { globals }),
+            SystemMacroArgs::System { .. } => {
+                let mut component_refs = HashMap::new();
 
-            let mut event = None;
-            let mut globals = Vec::new();
-            let mut component_sets = Vec::new();
-            self.args
-                .enumer_map_vec(|(arg_idx, arg)| match &arg.ty {
-                    FnArgType::Event(idx) => match event {
-                        Some(_) => Err(vec![self.new_msg("Event already specified", &arg.span)]),
-                        None => self
-                            .validate_event(arg, *idx, items)
-                            .map(|_| event = Some(EventFnArg { arg_idx, idx: *idx })),
-                    },
-                    FnArgType::Global(idx) => self
-                        .validate_global(arg, *idx, &mut global_idxs, items)
-                        .map(|_| {
-                            globals.push(GlobalFnArg {
-                                arg_idx,
-                                idx: *idx,
-                                is_mut: arg.is_mut,
-                            });
-                        }),
-                    FnArgType::Entities { idx, is_vec } => self
-                        .validate_component_set(arg, *idx, *is_vec, &mut component_refs, items)
-                        .map(|_| {
-                            component_sets.push(ComponentSetFnArg {
-                                arg_idx,
-                                idx: *idx,
-                                is_vec: *is_vec,
-                            });
-                        }),
-                })
-                .combine_msgs()
-                // Require event
-                .then_msgs(event.ok_or(vec![self.msg("System must specify an event")]))
-                // Check component reference mutability
-                .and_msgs(
-                    component_refs
-                        .into_iter()
-                        .map_vec_into(|(i, refs)| refs.validate(self))
-                        .combine_msgs(),
-                )
-                .map(|event| FnArgs::System {
-                    event,
-                    globals,
-                    component_sets,
-                })
+                let mut event = None;
+                let mut globals = Vec::new();
+                let mut component_sets = Vec::new();
+                self.args
+                    .enumer_map_vec(|(arg_idx, arg)| match &arg.ty {
+                        FnArgType::Event(idx) => match event {
+                            Some(_) => {
+                                Err(vec![self.new_msg("Event already specified", &arg.span)])
+                            }
+                            None => self
+                                .validate_event(arg, *idx, items)
+                                .map(|_| event = Some(EventFnArg { arg_idx, idx: *idx })),
+                        },
+                        FnArgType::Global(idx) => self
+                            .validate_global(arg, *idx, &mut global_idxs, items)
+                            .map(|_| {
+                                globals.push(GlobalFnArg {
+                                    arg_idx,
+                                    idx: *idx,
+                                    is_mut: arg.is_mut,
+                                });
+                            }),
+                        FnArgType::Entities { idx, is_vec } => self
+                            .validate_component_set(arg, *idx, *is_vec, &mut component_refs, items)
+                            .map(|_| {
+                                component_sets.push(ComponentSetFnArg {
+                                    arg_idx,
+                                    idx: *idx,
+                                    is_vec: *is_vec,
+                                });
+                            }),
+                    })
+                    .combine_msgs()
+                    // Require event
+                    .then_msgs(event.ok_or(vec![self.msg("System must specify an event")]))
+                    // Check component reference mutability
+                    .and_msgs(
+                        component_refs
+                            .into_iter()
+                            .map_vec_into(|(i, refs)| refs.validate(self))
+                            .combine_msgs(),
+                    )
+                    .map(|event| FnArgs::System {
+                        event,
+                        globals,
+                        component_sets,
+                    })
+            }
         }
     }
 

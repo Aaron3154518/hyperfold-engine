@@ -1,16 +1,16 @@
 use proc_macro2::Span;
+
+use syn::spanned::Spanned;
+
+use crate::utils::paths::{CratePath, ENGINE_PATHS, MACRO_PATHS};
+
+use super::AstMod;
+
 use shared::{
     macros::{expand_enum, ExpandEnum},
     parsing::{ComponentMacroArgs, GlobalMacroArgs},
+    syn::{Msg, MsgResult},
 };
-use syn::spanned::Spanned;
-
-use crate::utils::{
-    paths::{CratePath, ENGINE_PATHS, MACRO_PATHS},
-    Msg, MsgResult,
-};
-
-use super::AstMod;
 
 // Symbol with path - Edit this to add new engine items
 #[derive(Eq, PartialEq)]

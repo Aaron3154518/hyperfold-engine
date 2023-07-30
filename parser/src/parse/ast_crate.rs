@@ -8,7 +8,10 @@ use std::{
     path::PathBuf,
 };
 
-use shared::traits::{Call, Catch, CollectVec, CollectVecInto, ExpandEnum, GetSlice, PushInto};
+use shared::{
+    syn::{CatchErr, GetVec, Msg, MsgResult},
+    traits::{Call, Catch, CollectVec, CollectVecInto, ExpandEnum, GetSlice, PushInto},
+};
 
 use super::{
     ast_file::DirType,
@@ -18,7 +21,7 @@ use super::{
 use crate::{
     codegen::Crates,
     parse::ItemPath,
-    utils::{constants::NAMESPACE, paths::Crate, CatchErr, GetVec, Msg, MsgResult, SpanFiles},
+    utils::{constants::NAMESPACE, paths::Crate, SpanFiles},
 };
 
 // TODO: hardcoded

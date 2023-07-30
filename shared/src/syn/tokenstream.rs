@@ -1,5 +1,6 @@
 use regex::Regex;
-use shared::traits::SplitCollect;
+
+use crate::traits::SplitCollect;
 
 // Minimal code formatting for token streams
 pub fn format_code(s: String) -> String {

@@ -10,13 +10,11 @@ use super::{
 };
 use crate::{
     parse::{resolve_path, ComponentSymbol, DiscardSymbol, ItemPath, MatchSymbol, ModInfo},
-    utils::{
-        syn::{get_fn_name, parse_tokens, ToRange},
-        warn, Msg, MsgResult, ParseMsg, ToMsg,
-    },
+    utils::warn,
 };
 use shared::{
     msg_result::{CombineMsgs, MsgTrait, Zip2Msgs},
+    syn::{get_fn_name, parse_tokens, Msg, MsgResult, ParseMsg, ToMsg, ToRange},
     traits::{Call, CollectVec, CollectVecInto, PushInto, ThenNone},
 };
 

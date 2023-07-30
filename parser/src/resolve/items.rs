@@ -17,7 +17,6 @@ use crate::{
     utils::{
         constants::NAMESPACE,
         paths::{Crate, EnginePaths, NAMESPACE_USE_STMTS, TRAITS},
-        CatchErr, Msg, MsgResult,
     },
 };
 
@@ -27,6 +26,7 @@ use shared::{
     match_ok,
     msg_result::{CombineMsgs, MsgTrait, Zip2Msgs, Zip8Msgs},
     parsing::{ComponentMacroArgs, GlobalMacroArgs, SystemMacroArgs},
+    syn::{parse_tokens, CatchErr, Msg, MsgResult, ToMsg},
     traits::{
         Call, Catch, CollectVec, CollectVecInto, FindFrom, GetResult, HandleErr, Increment,
         PushInto, SplitAround,
@@ -268,7 +268,7 @@ impl Items {
         }
 
         // Resolve components, globals, events, and states
-        items.add_symbols(&mut errs, crates, |_, items, mod_info| {
+        items.add_symbols(&mut errs, crates, |errs, items, mod_info| {
             let (m, cr, crates) = mod_info;
             let mut symbols = Vec::new();
             for (ident, path, attrs) in m
@@ -290,21 +290,27 @@ impl Items {
                         .discard_symbol()
                     {
                         Ok(HardcodedSymbol::ComponentMacro) => {
-                            let args = ComponentMacroArgs::from(&attr.args);
-                            symbols.push(NewSymbol::Symbol(items.add_component(
-                                cr.idx,
-                                path.to_vec(),
-                                args,
-                            )));
+                            if let Some(args) =
+                                parse_tokens(attr.args.clone()).for_mod(m).record_errs(errs)
+                            {
+                                symbols.push(NewSymbol::Symbol(items.add_component(
+                                    cr.idx,
+                                    path.to_vec(),
+                                    args,
+                                )));
+                            }
                             break;
                         }
                         Ok(HardcodedSymbol::GlobalMacro) => {
-                            let args = GlobalMacroArgs::from(&attr.args);
-                            symbols.push(NewSymbol::Symbol(items.add_global(
-                                cr.idx,
-                                path.to_vec(),
-                                args,
-                            )));
+                            if let Some(args) =
+                                parse_tokens(attr.args.clone()).for_mod(m).record_errs(errs)
+                            {
+                                symbols.push(NewSymbol::Symbol(items.add_global(
+                                    cr.idx,
+                                    path.to_vec(),
+                                    args,
+                                )));
+                            }
                             break;
                         }
                         Ok(HardcodedSymbol::EventMacro) => {

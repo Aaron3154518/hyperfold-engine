@@ -12,8 +12,7 @@ use crate::{
     parse::ItemPath,
     utils::{
         paths::{CratePath, ENGINE_PATHS, MACRO_PATHS},
-        syn::{add_use_item, use_path_from_syn, ToRange},
-        CatchErr, Msg, MsgResult, SpanFiles,
+        SpanFiles,
     },
 };
 
@@ -23,6 +22,7 @@ use shared::{
     macros::{expand_enum, ExpandEnum},
     msg_result::{MsgTrait, ToMsgs},
     parsing::{ComponentMacroArgs, GlobalMacroArgs},
+    syn::{add_use_item, use_path_from_syn, CatchErr, Msg, MsgResult, SpanFile, ToRange},
     traits::{Catch, HandleErr, PushInto},
 };
 
@@ -429,5 +429,15 @@ impl AstMod {
                 .record_errs(&mut errs);
         }
         errs.err_or(())
+    }
+}
+
+impl SpanFile for AstMod {
+    fn span_file(&self) -> usize {
+        self.span_file
+    }
+
+    fn span_start(&self) -> Option<usize> {
+        self.span_start
     }
 }

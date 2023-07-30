@@ -1,4 +1,4 @@
-use shared::traits::{End, GetSlice};
+use crate::traits::GetSlice;
 
 // Manage use statements
 pub fn add_use_item(parent_path: &Vec<String>, path: &mut Vec<String>, item: String) {

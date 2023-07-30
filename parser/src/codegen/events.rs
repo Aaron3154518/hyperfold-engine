@@ -4,6 +4,7 @@ use shared::{
     constants::{STATE_DATA, STATE_ENTER_EVENT, STATE_EXIT_EVENT},
     match_ok,
     msg_result::{CombineMsgs, Zip2Msgs, Zip5Msgs},
+    syn::{vec_to_path, Msg, MsgResult},
     traits::{unzip::Unzip3, CollectVec, CollectVecInto, MapNone},
 };
 
@@ -15,8 +16,6 @@ use crate::{
             event_var, event_variant, state_var, state_variant, CodegenIdents, CODEGEN_IDENTS,
         },
         paths::{Crate, ENGINE_TRAITS},
-        syn::vec_to_path,
-        Msg, MsgResult,
     },
 };
 

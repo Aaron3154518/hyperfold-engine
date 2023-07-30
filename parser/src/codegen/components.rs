@@ -5,6 +5,7 @@ use std::array;
 use shared::{
     match_ok,
     msg_result::{CombineMsgs, Zip5Msgs},
+    syn::{vec_to_path, Msg, MsgResult},
     traits::{AndThen, CollectVec, CollectVecInto, ThenOk},
 };
 
@@ -14,8 +15,6 @@ use crate::{
     utils::{
         idents::{component_var, CodegenIdents, CODEGEN_IDENTS},
         paths::{Crate, ENGINE_GLOBALS, ENGINE_PATHS, ENGINE_TRAITS},
-        syn::vec_to_path,
-        Msg, MsgResult,
     },
 };
 

@@ -7,7 +7,7 @@ use crate::{
     sdl2,
     utils::{
         colors::{BLACK, GRAY},
-        rect::{Align, PointF, Rect},
+        rect::{Align, Rect},
         util::{AsType, TryAsType},
     },
 };

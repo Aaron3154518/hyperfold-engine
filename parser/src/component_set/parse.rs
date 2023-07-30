@@ -6,16 +6,14 @@ use syn::{
     Error, Token,
 };
 
-use crate::{
-    parse::ItemPath,
-    utils::{
-        syn::{get_type_generics, parse_tokens, use_path_from_syn, Parse, StreamParse},
-        CatchSpanErr, ParseMsg, ParseMsgResult,
-    },
-};
+use crate::parse::ItemPath;
 
 use shared::{
     msg_result::MsgTrait,
+    syn::{
+        get_type_generics, parse_tokens, use_path_from_syn, CatchSpanErr, Parse, ParseMsg,
+        ParseMsgResult, StreamParse,
+    },
     traits::{CollectVec, PushInto},
 };
 

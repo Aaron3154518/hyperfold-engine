@@ -1,49 +1,52 @@
+use proc_macro2::{Span, TokenStream};
+use quote::quote;
 use std::ops::Range;
-
-use codespan_reporting::{
-    diagnostic::Diagnostic,
-    term::{
-        self,
-        termcolor::{ColorChoice, StandardStream},
-        Config,
-    },
-};
-use proc_macro2::Span;
-use shared::{
-    msg_result,
-    traits::{CollectVec, CollectVecInto, RangeTrait},
-};
 use syn::spanned::Spanned;
 
-use crate::parse::AstMod;
+use super::ToRange;
+use crate::{
+    msg_result,
+    traits::{CollectVecInto, RangeTrait},
+};
 
-use super::{syn::ToRange, SpanFiles};
+pub trait SpanFile {
+    fn span_file(&self) -> usize;
 
-pub fn warn(msg: &str) {
-    let writer = StandardStream::stderr(ColorChoice::Always);
-    term::emit(
-        &mut writer.lock(),
-        &Config::default(),
-        &SpanFiles::new(),
-        &Diagnostic::warning().with_message(msg),
-    );
+    fn span_start(&self) -> Option<usize>;
+}
+
+// Convert span to error
+pub trait NewError {
+    fn msg(&self, msg: &str) -> ParseMsg;
+
+    fn error<T>(&self, msg: &str) -> ParseMsgResult<T>;
+}
+
+impl<S> NewError for S
+where
+    S: Spanned,
+{
+    fn msg(&self, msg: &str) -> ParseMsg {
+        ParseMsg::from_span(msg, self.span())
+    }
+
+    fn error<T>(&self, msg: &str) -> ParseMsgResult<T> {
+        Err(vec![self.msg(msg)])
+    }
 }
 
 // Message with span but no file
 #[derive(Debug, Clone)]
 pub enum ParseMsg {
-    Diagnostic { msg: String, span: Range<usize> },
+    Diagnostic { msg: String, span: Span },
     String(String),
 }
 
 impl ParseMsg {
     pub fn from_span(msg: &str, span: Span) -> Self {
-        match span.to_range() {
-            Ok(span) => Self::Diagnostic {
-                msg: msg.to_string(),
-                span,
-            },
-            Err(e) => Self::String(format!("{e}\n{msg}")),
+        Self::Diagnostic {
+            msg: msg.to_string(),
+            span,
         }
     }
 
@@ -58,19 +61,22 @@ pub type ParseMsgResult<T> = msg_result::MsgResult<T, ParseMsg>;
 pub trait ToMsg<T> {
     fn for_file(self, file: usize, mod_start: Option<usize>) -> T;
 
-    fn for_mod(self, m: &AstMod) -> T;
+    fn for_mod(self, m: &impl SpanFile) -> T;
 }
 
 impl ToMsg<Msg> for ParseMsg {
     fn for_file(self, file: usize, mod_start: Option<usize>) -> Msg {
         match self {
-            ParseMsg::Diagnostic { msg, span } => Msg::from_range(msg, file, span, mod_start),
+            ParseMsg::Diagnostic { msg, span } => match span.to_range() {
+                Ok(range) => Msg::from_range(msg, file, range, mod_start),
+                Err(_) => Msg::String(msg),
+            },
             ParseMsg::String(msg) => Msg::String(msg),
         }
     }
 
-    fn for_mod(self, m: &AstMod) -> Msg {
-        self.for_file(m.span_file, m.span_start)
+    fn for_mod(self, m: &impl SpanFile) -> Msg {
+        self.for_file(m.span_file(), m.span_start())
     }
 }
 
@@ -79,7 +85,7 @@ impl ToMsg<Vec<Msg>> for Vec<ParseMsg> {
         self.map_vec_into(|msg| msg.for_file(file, mod_start))
     }
 
-    fn for_mod(self, m: &AstMod) -> Vec<Msg> {
+    fn for_mod(self, m: &impl SpanFile) -> Vec<Msg> {
         self.map_vec_into(|msg| msg.for_mod(m))
     }
 }
@@ -89,7 +95,7 @@ impl<T> ToMsg<MsgResult<T>> for ParseMsgResult<T> {
         self.map_err(|e| e.for_file(file, mod_start))
     }
 
-    fn for_mod(self, m: &AstMod) -> MsgResult<T> {
+    fn for_mod(self, m: &impl SpanFile) -> MsgResult<T> {
         self.map_err(|e| e.for_mod(m))
     }
 }
@@ -123,8 +129,8 @@ pub enum Msg {
 }
 
 impl Msg {
-    pub fn for_mod(msg: &str, m: &AstMod, span: &(impl Spanned + ?Sized)) -> Self {
-        Self::from_span(msg.to_string(), m.span_file, span.span(), m.span_start)
+    pub fn for_mod(msg: &str, m: &impl SpanFile, span: &(impl Spanned + ?Sized)) -> Self {
+        Self::from_span(msg.to_string(), m.span_file(), span.span(), m.span_start())
     }
 
     pub fn for_file(
@@ -160,14 +166,14 @@ pub type MsgResult<T> = msg_result::MsgResult<T, Msg>;
 
 // Inject span into string messages
 pub trait InjectSpan {
-    fn in_mod(self, m: &AstMod, span: &(impl Spanned + ?Sized)) -> Self;
+    fn in_mod(self, m: &impl SpanFile, span: &(impl Spanned + ?Sized)) -> Self;
 
     fn in_file(self, f: usize, span: &(impl Spanned + ?Sized), start: Option<usize>) -> Self;
 }
 
 impl InjectSpan for Msg {
-    fn in_mod(self, m: &AstMod, span: &(impl Spanned + ?Sized)) -> Self {
-        self.in_file(m.span_file, span, m.span_start)
+    fn in_mod(self, m: &impl SpanFile, span: &(impl Spanned + ?Sized)) -> Self {
+        self.in_file(m.span_file(), span, m.span_start())
     }
 
     fn in_file(self, f: usize, span: &(impl Spanned + ?Sized), start: Option<usize>) -> Self {
@@ -179,7 +185,7 @@ impl InjectSpan for Msg {
 }
 
 impl InjectSpan for Vec<Msg> {
-    fn in_mod(self, m: &AstMod, span: &(impl Spanned + ?Sized)) -> Self {
+    fn in_mod(self, m: &impl SpanFile, span: &(impl Spanned + ?Sized)) -> Self {
         self.map_vec_into(|msg| msg.in_mod(m, span))
     }
 
@@ -189,7 +195,7 @@ impl InjectSpan for Vec<Msg> {
 }
 
 impl<T> InjectSpan for MsgResult<T> {
-    fn in_mod(mut self, m: &AstMod, span: &(impl Spanned + ?Sized)) -> Self {
+    fn in_mod(self, m: &impl SpanFile, span: &(impl Spanned + ?Sized)) -> Self {
         self.map_err(|msgs| msgs.in_mod(m, span))
     }
 
@@ -229,5 +235,28 @@ impl<T> GetVec<T> for Vec<T> {
 
     fn try_get_mut<'a>(&'a mut self, i: usize) -> MsgResult<&'a mut T> {
         self.get_mut(i).catch_err(&format!("Invalid index: {i}"))
+    }
+}
+
+// Convert errors to compile_error!()
+pub trait ToCompileErr<T> {
+    fn to_compile_errors(self, span: Span) -> Result<T, TokenStream>;
+}
+
+impl<T> ToCompileErr<T> for MsgResult<T> {
+    fn to_compile_errors(self, span: Span) -> Result<T, TokenStream> {
+        self.map_err(|errs| {
+            let errs = errs.map_vec_into(|err| {
+                syn::Error::new(
+                    span,
+                    match err {
+                        Msg::Diagnostic { msg, .. } => msg,
+                        Msg::String(msg) => msg,
+                    },
+                )
+                .into_compile_error()
+            });
+            quote!(#(#errs)*)
+        })
     }
 }

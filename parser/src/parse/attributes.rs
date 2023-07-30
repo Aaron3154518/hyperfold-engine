@@ -1,18 +1,18 @@
 use parse_cfg::Cfg;
-use proc_macro2::Span;
-use quote::ToTokens;
+use proc_macro2::{Span, TokenStream};
+use quote::{quote, ToTokens};
 use syn::spanned::Spanned;
 
-use crate::utils::{syn::use_path_from_vec, CatchErr, MsgResult};
 use shared::{
     msg_result::{MsgTrait, ToMsgs},
+    syn::{use_path_from_vec, CatchErr, MsgResult},
     traits::NoneOr,
 };
 
 #[derive(Clone, Debug)]
 pub struct AstAttribute {
     pub path: Vec<String>,
-    pub args: Vec<String>,
+    pub args: TokenStream,
     pub span: Span,
 }
 
@@ -49,7 +49,7 @@ impl Attribute {
             "cfg" => Self::Cfg(Cfg::Is(String::new())),
             s => Self::Ecs(AstAttribute {
                 path: attr,
-                args: Vec::new(),
+                args: quote!(),
                 span,
             }),
         }
@@ -143,14 +143,7 @@ fn parse_attr_args(mut attr_type: Attribute, attr: &syn::Attribute) -> MsgResult
                 for t in l.to_token_stream() {
                     match t {
                         proc_macro2::TokenTree::Group(g) => {
-                            ast_attr.args = g
-                                .stream()
-                                .into_iter()
-                                .filter_map(|tt| match tt {
-                                    proc_macro2::TokenTree::Ident(i) => Some(i.to_string()),
-                                    _ => None,
-                                })
-                                .collect();
+                            ast_attr.args = g.stream();
                         }
                         _ => (),
                     }

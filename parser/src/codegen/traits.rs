@@ -3,6 +3,7 @@ use quote::{format_ident, quote};
 use shared::{
     match_ok,
     msg_result::{CombineMsgs, Zip2Msgs, Zip3Msgs},
+    syn::{vec_to_path, Msg, MsgResult},
     traits::{CollectVec, CollectVecInto},
 };
 
@@ -11,8 +12,6 @@ use crate::{
     utils::{
         idents::{CodegenIdents, CODEGEN_IDENTS},
         paths::{Crate, CratePath},
-        syn::vec_to_path,
-        Msg, MsgResult,
     },
 };
 

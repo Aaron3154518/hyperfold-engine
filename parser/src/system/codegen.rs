@@ -1,8 +1,10 @@
 use proc_macro2::TokenStream;
 use quote::quote;
+
 use shared::{
     match_ok,
     msg_result::{CombineMsgs, MsgTrait, ToMsgs, Zip5Msgs},
+    syn::{Msg, MsgResult, Quote},
     traits::{CollectVec, CollectVecInto},
 };
 
@@ -13,8 +15,6 @@ use crate::{
     utils::{
         idents::{component_var, event_variant, global_var, CodegenIdents, CODEGEN_IDENTS},
         paths::{ENGINE_PATHS, ENGINE_TRAITS},
-        syn::Quote,
-        Msg, MsgResult,
     },
 };
 

@@ -1,15 +1,32 @@
+use proc_macro2::Span;
+use syn::spanned::Spanned;
+
+use crate::{
+    msg_result::CombineMsgs,
+    syn::{path_to_vec, NewError, Parse, ParseMsg, ParseMsgResult},
+    traits::CollectVec,
+};
+
 // Parsing macro args
-fn parse<T>(input: syn::parse::ParseStream) -> syn::Result<T>
+pub trait ParseFrom<T>
 where
-    T: for<'a> From<&'a Vec<String>>,
+    Self: Sized,
+{
+    fn parse_from(vals: &T) -> ParseMsgResult<Self>;
+}
+
+fn parse<T, U>(input: syn::parse::ParseStream) -> ParseMsgResult<T>
+where
+    T: ParseFrom<Vec<U>>,
+    U: syn::parse::Parse,
 {
     let mut args = Vec::new();
-    while input.parse::<syn::Ident>().is_ok_and(|i| {
-        args.push(i.to_string());
+    while input.parse::<U>().is_ok_and(|u| {
+        args.push(u);
         true
     }) && input.parse::<syn::Token![,]>().is_ok()
     {}
-    Ok(T::from(&args))
+    T::parse_from(&args)
 }
 
 // Component args
@@ -28,26 +45,24 @@ impl Default for ComponentMacroArgs {
     }
 }
 
-impl From<&Vec<String>> for ComponentMacroArgs {
-    fn from(vals: &Vec<String>) -> Self {
+impl ParseFrom<Vec<syn::Ident>> for ComponentMacroArgs {
+    fn parse_from(vals: &Vec<syn::Ident>) -> ParseMsgResult<Self> {
         let mut c = Self::default();
-        for v in vals {
-            match v.as_str() {
-                "Dummy" => c.is_dummy = true,
-                "Singleton" => c.is_singleton = true,
-                "Const" => panic!(
-                    "{}\n{}",
-                    "Component cannot be Const", "Perhaps you meant to declare this as \"global\"?"
-                ),
-                _ => panic!("Unknown macro argument for component: {}", v),
+        vals.map_vec(|i| match i.to_string().as_str() {
+            "Dummy" => Ok(c.is_dummy = true),
+            "Singleton" => Ok(c.is_singleton = true),
+            "Const" => {
+                i.error("Component cannot be Const\nPerhaps you meant to declare this as 'global'?")
             }
-        }
-        c
+            _ => i.error(&format!("Unknown macro argument for component: {i}")),
+        })
+        .combine_msgs()?;
+        Ok(c)
     }
 }
 
-impl syn::parse::Parse for ComponentMacroArgs {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+impl Parse for ComponentMacroArgs {
+    fn parse(input: syn::parse::ParseStream) -> ParseMsgResult<Self> {
         parse(input)
     }
 }
@@ -68,53 +83,72 @@ impl Default for GlobalMacroArgs {
     }
 }
 
-impl From<&Vec<String>> for GlobalMacroArgs {
-    fn from(vals: &Vec<String>) -> Self {
+impl ParseFrom<Vec<syn::Ident>> for GlobalMacroArgs {
+    fn parse_from(vals: &Vec<syn::Ident>) -> ParseMsgResult<Self> {
         let mut g = Self::default();
-        for v in vals {
-            match v.as_str() {
-                "Dummy" => g.is_dummy = true,
-                "Const" => g.is_const = true,
-                _ => panic!("Unknown macro argument for global: {}", v),
-            }
-        }
-        g
+        vals.map_vec(|i| match i.to_string().as_str() {
+            "Dummy" => Ok(g.is_dummy = true),
+            "Const" => Ok(g.is_const = true),
+            "Singleton" => i.error(
+                "Global cannot be a Singleton\nPerhaps you meant to declare this as 'component'?",
+            ),
+            _ => i.error(&format!("Unknown macro argument for global: {i}")),
+        })
+        .combine_msgs()?;
+        Ok(g)
     }
 }
 
-impl syn::parse::Parse for GlobalMacroArgs {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+impl Parse for GlobalMacroArgs {
+    fn parse(input: syn::parse::ParseStream) -> ParseMsgResult<Self> {
         parse(input)
     }
 }
 
 // System args
-#[derive(Debug, Copy, Clone)]
-pub struct SystemMacroArgs {
-    pub is_init: bool,
+#[derive(Debug, Clone)]
+pub enum SystemMacroArgs {
+    Init(),
+    System { states: Vec<(Vec<String>, Span)> },
 }
 
 impl Default for SystemMacroArgs {
     fn default() -> Self {
-        Self { is_init: false }
+        Self::System { states: Vec::new() }
     }
 }
 
-impl From<&Vec<String>> for SystemMacroArgs {
-    fn from(vals: &Vec<String>) -> Self {
-        let mut s = Self::default();
-        for v in vals {
-            match v.as_str() {
-                "Init" => s.is_init = true,
-                _ => panic!("Unknown macro argument for system: {}", v),
+impl ParseFrom<Vec<syn::Path>> for SystemMacroArgs {
+    fn parse_from(vals: &Vec<syn::Path>) -> ParseMsgResult<Self> {
+        let mut is_init = false;
+        let states = vals.filter_map_vec(|p| {
+            if p.get_ident().is_some_and(|i| i == "Init") {
+                is_init = true;
+                None
+            } else {
+                Some((path_to_vec(p), p.span()))
             }
+        });
+        match is_init {
+            true => match &states[..] {
+                [] => Ok(Self::Init()),
+                slice => Err(slice.map_vec(|(path, span)| {
+                    ParseMsg::from_span(
+                        &format!(
+                            "Unknown macro argument for init system: {}",
+                            path.join("::")
+                        ),
+                        span.span(),
+                    )
+                })),
+            },
+            false => Ok(Self::System { states }),
         }
-        s
     }
 }
 
-impl syn::parse::Parse for SystemMacroArgs {
-    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+impl Parse for SystemMacroArgs {
+    fn parse(input: syn::parse::ParseStream) -> ParseMsgResult<Self> {
         parse(input)
     }
 }

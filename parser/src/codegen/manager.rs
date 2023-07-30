@@ -4,6 +4,7 @@ use quote::quote;
 use shared::{
     match_ok,
     msg_result::{Zip5Msgs, Zip6Msgs},
+    syn::MsgResult,
     traits::CollectVecInto,
 };
 
@@ -14,7 +15,6 @@ use crate::{
     utils::{
         idents::{component_var, event_variant, CodegenIdents, CODEGEN_IDENTS},
         paths::{Crate, EngineGlobalPaths, ENGINE_GLOBALS, ENGINE_PATHS, ENGINE_TRAITS},
-        MsgResult,
     },
 };
 

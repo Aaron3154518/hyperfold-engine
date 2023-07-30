@@ -1,5 +1,6 @@
 use shared::{
     msg_result::CombineMsgs,
+    syn::{vec_to_path, CatchErr, GetVec, Msg, MsgResult},
     traits::{AndThen, CollectVec, CollectVecInto, ExpandEnum, Get2D, NoneOr},
 };
 
@@ -8,8 +9,6 @@ use crate::{
     utils::{
         constants::NAMESPACE,
         paths::{Crate, CratePath},
-        syn::vec_to_path,
-        CatchErr, GetVec, Msg, MsgResult,
     },
 };
 

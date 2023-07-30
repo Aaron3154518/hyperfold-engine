@@ -6,13 +6,14 @@ use shared::{
     macros::{expand_enum, ExpandEnum},
     match_ok,
     msg_result::Zip7Msgs,
+    syn::{vec_to_path, Msg, MsgResult},
     traits::{Call, CollectVec, PushInto},
 };
 
 use crate::{
     codegen::Crates,
     parse::{resolve_path_from_crate, DiscardSymbol, GlobalSymbol, ItemPath, MatchSymbol},
-    utils::{constants::NAMESPACE, idents::global_var, syn::vec_to_path, Msg, MsgResult},
+    utils::{constants::NAMESPACE, idents::global_var},
 };
 
 // All named crate indices

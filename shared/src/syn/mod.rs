@@ -1,3 +1,4 @@
+mod msg;
 mod parse;
 mod path;
 mod quote;
@@ -8,8 +9,12 @@ mod uses;
 mod util;
 
 pub use self::quote::Quote;
+pub use msg::{
+    CatchErr, CatchSpanErr, GetVec, InjectSpan, Msg, MsgResult, NewError, ParseMsg, ParseMsgResult,
+    SpanFile, ToCompileErr, ToMsg,
+};
 pub use parse::{parse_tokens, Parse, StreamParse};
-pub use path::{arr_to_path, string_to_path, vec_to_path};
+pub use path::{arr_to_path, path_to_vec, string_to_path, vec_to_path};
 pub use r#type::{arr_to_type, get_type_generics, string_to_type, type_to_type};
 pub use span::ToRange;
 pub use tokenstream::format_code;

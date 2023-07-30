@@ -1,13 +1,13 @@
 use quote::ToTokens;
 use syn::{spanned::Spanned, Pat};
 
-use crate::{
-    parse::{
-        AstCrate, ModInfo, {AstMod, Symbol},
-    },
-    utils::{syn::use_path_from_syn, CatchErr, InjectSpan, Msg, MsgResult},
+use crate::parse::{
+    AstCrate, ModInfo, {AstMod, Symbol},
 };
-use shared::traits::{Catch, CollectVecInto};
+use shared::{
+    syn::{use_path_from_syn, CatchErr, InjectSpan, Msg, MsgResult},
+    traits::{Catch, CollectVecInto},
+};
 
 use super::symbol::MatchSymbolTrait;
 

@@ -9,3 +9,5 @@ edition = "2021"
 syn = "2.0.15"
 shared_macros = { path = "./macros" }
 proc-macro2 = "1.0.65"
+quote = "1.0.32"
+regex = "1.9.1"

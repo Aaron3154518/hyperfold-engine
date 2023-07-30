@@ -25,6 +25,7 @@ use component_set::ComponentSetLabels;
 use parse::{AstCrate, ComponentSymbol};
 use shared::{
     msg_result::{MsgTrait, ToMsgs, Zip2Msgs},
+    syn::Msg,
     traits::{CollectVec, CollectVecInto, GetSlice},
 };
 use utils::{paths::Crate, SpanFiles};
@@ -85,10 +86,10 @@ pub fn parse(entry: PathBuf) {
         let config = codespan_reporting::term::Config::default();
         for msg in errs {
             let diagnostic = match msg {
-                utils::Msg::Diagnostic { msg, file, span } => Diagnostic::error()
+                Msg::Diagnostic { msg, file, span } => Diagnostic::error()
                     .with_message(msg)
                     .with_labels(vec![Label::primary(file, span)]),
-                utils::Msg::String(msg) => Diagnostic::error().with_message(msg),
+                Msg::String(msg) => Diagnostic::error().with_message(msg),
             };
             term::emit(&mut writer, &config, &span_files, &diagnostic);
         }

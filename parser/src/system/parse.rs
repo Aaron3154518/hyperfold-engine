@@ -12,6 +12,10 @@ use syn::spanned::Spanned;
 use shared::{
     msg_result::CombineMsgs,
     parsing::SystemMacroArgs,
+    syn::{
+        get_type_generics, parse_tokens, use_path_from_syn, InjectSpan, Msg, MsgResult, ToMsg,
+        ToRange,
+    },
     traits::{CollectVecInto, PushInto},
 };
 
@@ -21,10 +25,6 @@ use crate::{
         HardcodedSymbol, ItemPath, MatchSymbol, ModInfo,
     },
     resolve::Items,
-    utils::{
-        syn::{get_type_generics, use_path_from_syn, ToRange},
-        InjectSpan, Msg, MsgResult,
-    },
 };
 
 #[derive(Clone, Debug)]
@@ -185,7 +185,7 @@ impl ItemSystem {
         (m, cr, crates): ModInfo,
     ) -> MsgResult<Self> {
         let path = m.path.to_vec().push_into(fun.data.sig.ident.to_string());
-        let attr_args = SystemMacroArgs::from(&attr.args);
+        let attr_args = parse_tokens(attr.args.clone()).for_mod(m)?;
         FnArg::parse(&attr_args, items, &fun.data.sig, (m, cr, crates)).map(|args| ItemSystem {
             path: ItemPath {
                 cr_idx: cr.idx,
