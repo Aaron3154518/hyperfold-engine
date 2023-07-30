@@ -60,6 +60,7 @@ pub struct ItemEvent {
 #[derive(Debug)]
 pub struct ItemState {
     pub path: ItemPath,
+    pub data_path: ItemPath,
     pub enter_event: usize,
     pub exit_event: usize,
     pub label: usize,
@@ -172,11 +173,15 @@ impl Items {
                 ComponentMacroArgs::default(),
             ),
             {
-                let path = path.to_vec().push_into(STATE_DATA.to_string());
+                let data_path = path.to_vec().push_into(STATE_DATA.to_string());
                 self.states.push(ItemState {
                     path: ItemPath {
                         cr_idx,
                         path: path.to_vec(),
+                    },
+                    data_path: ItemPath {
+                        cr_idx,
+                        path: data_path.to_vec(),
                     },
                     enter_event: self.events.len() - 2,
                     exit_event: self.events.len() - 1,
@@ -184,7 +189,7 @@ impl Items {
                 });
                 Symbol {
                     kind: SymbolType::State(state_idx),
-                    path,
+                    path: data_path,
                     public: true,
                 }
             },

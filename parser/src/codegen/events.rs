@@ -1,8 +1,9 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use shared::{
+    constants::{STATE_DATA, STATE_ENTER_EVENT},
     match_ok,
-    msg_result::{CombineMsgs, Zip3Msgs},
+    msg_result::{CombineMsgs, Zip5Msgs},
     traits::{CollectVec, CollectVecInto, MapNone},
 };
 
@@ -10,7 +11,7 @@ use crate::{
     parse::ItemPath,
     resolve::{ItemEvent, ItemState},
     utils::{
-        idents::{event_var, event_variant, CodegenIdents, CODEGEN_IDENTS},
+        idents::{event_var, event_variant, state_var, CodegenIdents, CODEGEN_IDENTS},
         paths::{Crate, ENGINE_TRAITS},
         syn::vec_to_path,
         Msg, MsgResult,
@@ -109,7 +110,7 @@ impl GetTraitTypes for Vec<ItemEvent> {
 
 impl GetTraitTypes for Vec<ItemState> {
     fn get_paths(&self) -> Vec<&ItemPath> {
-        self.map_vec(|s| &s.path)
+        self.map_vec(|s| &s.data_path)
     }
 }
 
@@ -133,16 +134,24 @@ pub fn event_trait_defs(
 pub fn event_trait_impls(
     cr_idx: usize,
     events: &Vec<ItemEvent>,
+    states: &Vec<ItemState>,
     crates: &Crates,
 ) -> MsgResult<TokenStream> {
     let macro_cr_idx = crates.get_crate_index(Crate::Macros);
 
-    let (vars, variants) = (0..events.len()).unzip_vec_into(|i| (event_var(i), event_variant(i)));
-
     // Implement trait for every event
-    let types = events
-        .map_vec(|c| crates.get_item_syn_path(cr_idx, &c.path))
+    let (e_vars, e_variants) =
+        (0..events.len()).unzip_vec_into(|i| (event_var(i), event_variant(i)));
+    let e_types = events
+        .map_vec(|e| crates.get_item_syn_path(cr_idx, &e.path))
         .combine_msgs();
+
+    // Implement trait for every state
+    let s_vars = (0..states.len()).map_vec_into(|i| state_var(i));
+    let s_types = states
+        .map_vec(|s| crates.get_item_syn_path(cr_idx, &s.path))
+        .combine_msgs();
+
     // Implement all dependency traits
     let crate_paths = crates
         .get_crate_syn_paths(cr_idx, [macro_cr_idx])
@@ -156,24 +165,44 @@ pub fn event_trait_impls(
         ..
     } = &*CODEGEN_IDENTS;
     let add_event_trait = crates.get_syn_path(cr_idx, &ENGINE_TRAITS.add_event);
+    let set_state_trait = crates.get_syn_path(cr_idx, &ENGINE_TRAITS.set_state);
 
-    match_ok!(Zip3Msgs, types, crate_paths, add_event_trait, {
-        quote!(
-            #(
-                impl #add_event_trait<#types> for #events_type {
-                    fn new_event(&mut self, t: #types) {
-                        self.#vars.push(t);
-                        self.add_event(#event_enum::#variants);
-                    }
+    let data = format_ident!("{STATE_DATA}");
+    let on_enter = format_ident!("{STATE_ENTER_EVENT}");
 
-                    fn get_event<'a>(&'a self) -> Option<&'a #types> {
-                        self.#vars.last()
+    match_ok!(
+        Zip5Msgs,
+        e_types,
+        s_types,
+        crate_paths,
+        add_event_trait,
+        set_state_trait,
+        {
+            quote!(
+                #(
+                    impl #add_event_trait<#e_types> for #events_type {
+                        fn new_event(&mut self, t: #e_types) {
+                            self.#e_vars.push(t);
+                            self.add_event(#event_enum::#e_variants);
+                        }
+
+                        fn get_event<'a>(&'a self) -> Option<&'a #e_types> {
+                            self.#e_vars.last()
+                        }
                     }
-                }
-            )*
-            #(
-                impl #crate_paths::#namespace::#add_event for #events_type {}
-            )*
-        )
-    })
+                )*
+                #(
+                    impl #set_state_trait<#s_types::#data> for #events_type {
+                        fn set_state(&mut self, t: #s_types::#data) {
+                            self.#s_vars.push(t);
+                            self.new_event(#s_types::#on_enter)
+                        }
+                    }
+                )*
+                #(
+                    impl #crate_paths::#namespace::#add_event for #events_type {}
+                )*
+            )
+        }
+    )
 }

@@ -13,7 +13,7 @@ use quote::{format_ident, quote};
 use shared::{
     constants::{INDEX, INDEX_SEP},
     match_ok,
-    msg_result::{CombineMsgs, MsgTrait, Zip2Msgs, Zip8Msgs},
+    msg_result::{CombineMsgs, MsgTrait, Zip2Msgs, Zip9Msgs},
     traits::{Catch, CollectVec, CollectVecInto, ThenOk},
 };
 
@@ -23,7 +23,7 @@ use crate::{
     resolve::Items,
     utils::{
         constants::NAMESPACE,
-        paths::{Crate, NAMESPACE_USE_STMTS},
+        paths::{Crate, MAIN_USE_STMTS, NAMESPACE_USE_STMTS},
         syn::ToRange,
         CatchErr, Msg, MsgResult,
     },
@@ -51,7 +51,7 @@ pub fn codegen(crates: &Crates, items: &Items) -> MsgResult<Vec<TokenStream>> {
     let events = super::events(main_cr_idx, &items.events, crates);
 
     // Generate event trait implementations
-    let event_traits = super::event_trait_impls(main_cr_idx, &items.events, crates);
+    let event_traits = super::event_trait_impls(main_cr_idx, &items.events, &items.states, crates);
 
     // Generate event/component traits
     let trait_defs = crates
@@ -83,6 +83,11 @@ pub fn codegen(crates: &Crates, items: &Items) -> MsgResult<Vec<TokenStream>> {
         .combine_msgs()
         .map(|use_stmts| use_stmts.map_vec_into(|stmts| quote!(#(pub use #stmts;)*)));
 
+    let main_use_stmts = MAIN_USE_STMTS
+        .map_vec(|path| crates.get_syn_path(main_cr_idx, path))
+        .combine_msgs()
+        .map(|use_stmts| quote!(#(use #use_stmts;)*));
+
     // Write codegen to file
     let namespace = format_ident!("{NAMESPACE}");
     let allows = quote!(
@@ -92,7 +97,7 @@ pub fn codegen(crates: &Crates, items: &Items) -> MsgResult<Vec<TokenStream>> {
         #[allow(dead_code)]
     );
     match_ok!(
-        Zip8Msgs,
+        Zip9Msgs,
         globals,
         components,
         component_traits,
@@ -101,6 +106,7 @@ pub fn codegen(crates: &Crates, items: &Items) -> MsgResult<Vec<TokenStream>> {
         trait_defs,
         manager_impl,
         use_stmts,
+        main_use_stmts,
         {
             trait_defs
                 .into_iter()
@@ -122,6 +128,7 @@ pub fn codegen(crates: &Crates, items: &Items) -> MsgResult<Vec<TokenStream>> {
                                 #allows
                                 pub mod #namespace {
                                     #use_stmts
+                                    #main_use_stmts
                                     #globals
                                     #components
                                     #add_component

@@ -232,3 +232,6 @@ paths!(ENGINE_PATHS = EnginePaths {
 
 // Use statements for the namespace
 pub const NAMESPACE_USE_STMTS: Lazy<[&CratePath; 1]> = Lazy::new(|| [&ENGINE_PATHS.entity]);
+
+pub const MAIN_USE_STMTS: Lazy<[&CratePath; 2]> =
+    Lazy::new(|| [&ENGINE_TRAITS.add_event, &ENGINE_TRAITS.set_state]);

@@ -76,3 +76,7 @@ pub fn component_set_keys_fn(cs_idx: usize, ret_vec: bool) -> syn::Ident {
         if ret_vec { "_vec" } else { "" }
     )
 }
+
+pub fn state_var(s_idx: usize) -> syn::Ident {
+    format_ident!("s{s_idx}")
+}
