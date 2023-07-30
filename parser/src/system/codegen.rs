@@ -11,7 +11,7 @@ use crate::{
     component_set::{BuildSetsArg, BuildSetsResult, ComponentSet},
     resolve::Items,
     utils::{
-        idents::{event_variant, global_var, CodegenIdents, CODEGEN_IDENTS},
+        idents::{component_var, event_variant, global_var, CodegenIdents, CODEGEN_IDENTS},
         paths::{ENGINE_PATHS, ENGINE_TRAITS},
         syn::Quote,
         Msg, MsgResult,
@@ -99,11 +99,9 @@ fn codegen_system(
     };
 
     quote!(
-        |#comps_var: &mut #components, #globals_var: &mut #globals, #events_var: &mut #events| {
-            if let Some(#e_var) = #event_trait::get_event(#events_var) {
-                #build_sets_code
-                #func
-            }
+        if let Some(#e_var) = #event_trait::get_event(#events_var) {
+            #build_sets_code
+            #func
         }
     )
 }

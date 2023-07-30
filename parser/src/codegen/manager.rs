@@ -12,7 +12,7 @@ use crate::{
     resolve::Items,
     system::{codegen_systems, SystemsCodegenResult},
     utils::{
-        idents::{CodegenIdents, CODEGEN_IDENTS},
+        idents::{component_var, event_variant, CodegenIdents, CODEGEN_IDENTS},
         paths::{Crate, EngineGlobalPaths, ENGINE_GLOBALS, ENGINE_PATHS, ENGINE_TRAITS},
         MsgResult,
     },
@@ -101,12 +101,12 @@ pub fn manager_impl(cr_idx: usize, items: &Items, crates: &Crates) -> MsgResult<
         ..
     } = &*CODEGEN_IDENTS;
 
+    let global_paths = ENGINE_GLOBALS.get_global_vars(crates, cr_idx);
     let result = codegen_systems(cr_idx, items, crates);
     let init_events = init_events_fn(cr_idx, items, crates);
     let path_to_engine = crates.get_named_crate_syn_path(cr_idx, Crate::Engine);
     let component_set_fns =
         ComponentSet::codegen_get_keys_fns(cr_idx, &items.component_sets, crates);
-    let global_paths = ENGINE_GLOBALS.get_global_vars(crates, cr_idx);
     let manager_trait = crates.get_syn_path(cr_idx, &ENGINE_PATHS.manager_trait);
 
     match_ok!(
@@ -120,8 +120,8 @@ pub fn manager_impl(cr_idx: usize, items: &Items, crates: &Crates) -> MsgResult<
         {
             let SystemsCodegenResult {
                 init_systems,
-                systems,
-                system_events,
+                mut systems,
+                mut system_events,
             } = result;
             let EngineGlobalPaths {
                 c_foo: g_c_foo,
@@ -132,6 +132,14 @@ pub fn manager_impl(cr_idx: usize, items: &Items, crates: &Crates) -> MsgResult<
                 camera: g_camera,
                 screen: g_screen,
             } = global_paths;
+            // Add state cleanup systems
+            for state in &items.states {
+                let s_label = component_var(state.label);
+                system_events.push(event_variant(state.exit_event));
+                systems.push(quote!(
+                    #gfoo_var.#g_entity_trash.0.extend(#cfoo_var.#s_label.keys());
+                ));
+            }
             quote!(
                 impl #manager {
                     #(#component_set_fns)*
@@ -141,7 +149,14 @@ pub fn manager_impl(cr_idx: usize, items: &Items, crates: &Crates) -> MsgResult<
                     }
 
                     fn add_systems(&mut self) {
-                        #(self.add_system(#event_enum::#system_events, Box::new(#systems));)*
+                        #(
+                            self.add_system(
+                                #event_enum::#system_events,
+                                Box::new(|#cfoo_var: &mut #components, #gfoo_var: &mut #globals, #efoo_var: &mut #events| {
+                                    #systems
+                                })
+                            );
+                        )*
                     }
                 }
 
