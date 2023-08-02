@@ -101,6 +101,7 @@ pub fn rect_to_camera_coords(rect: &Rect, screen: &Screen, camera: &Camera) -> R
     r
 }
 
+#[derive(Clone, Copy)]
 #[macros::component]
 struct Elevation(pub u8);
 

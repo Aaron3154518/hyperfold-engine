@@ -86,7 +86,7 @@ impl Destination {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct RenderData {
     pub(super) dest: Destination,
     pub(super) dest_rect: Rect,
@@ -136,6 +136,14 @@ pub trait RenderDataTrait {
 
     fn get_render_data_mut<'a>(&'a mut self) -> &'a mut RenderData;
 
+    fn get_dest_opts(&self) -> Destination {
+        self.get_render_data().dest
+    }
+
+    fn get_render_opts(&self) -> Option<RenderOptions> {
+        self.get_render_data().opts
+    }
+
     fn set_alpha(&mut self, alpha: u8) {
         let rd = self.get_render_data_mut();
         rd.alpha = alpha;
@@ -147,16 +155,27 @@ pub trait RenderDataTrait {
         rd.dest_rect = rd.dest.to_rect(rd.get_tex_dim());
     }
 
-    fn set_dest(&mut self, rect: Rect, mode: RectMode, fit: Fit, align_x: Align, align_y: Align) {
+    fn set_dest(&mut self, dest: Destination) {
         let rd = self.get_render_data_mut();
-        rd.dest = Destination {
+        rd.dest = dest;
+        rd.dest_rect = rd.dest.to_rect(rd.get_tex_dim());
+    }
+
+    fn set_dest_opts(
+        &mut self,
+        rect: Rect,
+        mode: RectMode,
+        fit: Fit,
+        align_x: Align,
+        align_y: Align,
+    ) {
+        self.set_dest(Destination {
             rect,
             mode,
             fit,
             align_x,
             align_y,
-        };
-        rd.dest_rect = rd.dest.to_rect(rd.get_tex_dim());
+        });
     }
 
     fn set_dest_rect(&mut self, rect: Rect) {
@@ -186,6 +205,10 @@ pub trait RenderDataTrait {
 
     fn set_area(&mut self, area: Option<Rect>) {
         self.get_render_data_mut().area = area;
+    }
+
+    fn set_render_options(&mut self, opts: Option<RenderOptions>) {
+        self.get_render_data_mut().opts = opts;
     }
 
     fn set_rotation(&mut self, deg: f64, center: Option<Point>) {
@@ -245,7 +268,12 @@ where
         .with_dest_mode(RectMode::Percent)
     }
 
-    fn with_dest(
+    fn with_dest(mut self, dest: Destination) -> Self {
+        self.set_dest(dest);
+        self
+    }
+
+    fn with_dest_opts(
         mut self,
         rect: Rect,
         mode: RectMode,
@@ -253,7 +281,7 @@ where
         align_x: Align,
         align_y: Align,
     ) -> Self {
-        self.set_dest(rect, mode, fit, align_x, align_y);
+        self.set_dest_opts(rect, mode, fit, align_x, align_y);
         self
     }
 
@@ -437,8 +465,8 @@ components!(RenderPos, tex: &'a mut RenderComponent, pos: &'a Position);
 fn set_render_pos(_ev: &PreRender, screen: &Screen, camera: &Camera, entities: Vec<RenderPos>) {
     for RenderPos { tex, pos, .. } in entities {
         let dest = rect_to_camera_coords(&pos.0, screen, camera);
-        tex.try_mut(|rt: &mut RenderTexture| rt.get_render_data_mut().set_dest_rect(dest))
-            .try_mut(tex, |ra: &mut RenderAsset| {
+        tex.try_as_mut(|rt: &mut RenderTexture| rt.get_render_data_mut().set_dest_rect(dest))
+            .try_as_mut(tex, |ra: &mut RenderAsset| {
                 ra.get_render_data_mut().set_dest_rect(dest)
             });
     }
@@ -485,16 +513,28 @@ struct Animation {
     frame: u32,
     mspf: u32,
     timer: u32,
+    loop_anim: bool,
+    running: bool,
 }
 
 impl Animation {
-    pub fn new(num_frames: u32, mspf: u32) -> Self {
+    fn create(num_frames: u32, mspf: u32, loop_anim: bool) -> Self {
         Self {
             num_frames,
             frame: 0,
             mspf,
             timer: 0,
+            loop_anim,
+            running: true,
         }
+    }
+
+    pub fn new(num_frames: u32, mspf: u32) -> Self {
+        Self::create(num_frames, mspf, true)
+    }
+
+    pub fn once(num_frames: u32, mspf: u32) -> Self {
+        Self::create(num_frames, mspf, false)
     }
 }
 
@@ -506,11 +546,14 @@ components!(
 
 #[macros::system]
 pub fn update_animations(update: &Update, entities: Vec<Animations>) {
-    for Animations { anim, tex, .. } in entities {
+    for Animations { anim, tex, .. } in entities.into_iter().filter(|e| e.anim.running) {
         anim.timer += update.0;
         if anim.timer >= anim.mspf {
             anim.frame = (anim.frame + anim.timer / anim.mspf) % anim.num_frames;
             anim.timer %= anim.mspf;
+            if !anim.loop_anim && anim.frame == anim.num_frames - 1 {
+                anim.running = false;
+            }
 
             let f = |rd: &mut RenderData| {
                 let frame_size = rd.dim.w / anim.num_frames;
@@ -529,8 +572,8 @@ pub fn update_animations(update: &Update, entities: Vec<Animations>) {
                 }
             };
 
-            tex.try_mut(|rt: &mut RenderTexture| f(rt.get_render_data_mut()))
-                .try_mut(tex, |ra: &mut RenderAsset| f(ra.get_render_data_mut()));
+            tex.try_as_mut(|rt: &mut RenderTexture| f(rt.get_render_data_mut()))
+                .try_as_mut(tex, |ra: &mut RenderAsset| f(ra.get_render_data_mut()));
         }
     }
 }

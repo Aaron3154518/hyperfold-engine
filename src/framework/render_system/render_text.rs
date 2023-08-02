@@ -200,17 +200,19 @@ fn update_render_text(
             Some(pos) => pos,
             None => continue,
         };
-        tex.try_mut(|rt: &mut RenderText| {
+        tex.try_as_mut(|rt: &mut RenderText| {
             let rect = rect_to_camera_coords(&pos.0, screen, camera);
             let tex = render_text!(rt, rect, r, am);
 
             // TODO: only if needed
             // Redraw images
             let mut draw = |rc: &mut RenderComponent, rect: Rect| {
-                rc.try_mut(|rt: &mut RenderTexture| rt.get_render_data_mut().set_dest_rect(rect))
-                    .try_mut(rc, |ra: &mut RenderAsset| {
-                        ra.get_render_data_mut().set_dest_rect(rect)
-                    });
+                rc.try_as_mut(|rt: &mut RenderTexture| {
+                    rt.get_render_data_mut().set_dest_rect(rect)
+                })
+                .try_as_mut(rc, |ra: &mut RenderAsset| {
+                    ra.get_render_data_mut().set_dest_rect(rect)
+                });
                 tex.draw(r, &mut Rectangle::new().set_color(rt.bkgrnd).fill(rect));
                 tex.draw_asset(r, am, rc);
             };

@@ -99,10 +99,11 @@ pub trait AsType<T: 'static>: AsAny {
         self.as_any_mut().downcast_mut()
     }
 
-    fn try_mut<'a, F>(&'a mut self, f: F) -> bool
-    where
-        F: FnOnce(&'a mut T),
-    {
+    fn try_as<'a>(&'a self, f: impl FnOnce(&'a T)) -> bool {
+        self.as_type().map(|t| f(t)).is_some()
+    }
+
+    fn try_as_mut<'a>(&'a mut self, f: impl FnOnce(&'a mut T)) -> bool {
         self.as_type_mut().map(|t| f(t)).is_some()
     }
 }
@@ -112,9 +113,9 @@ where
     T: 'static,
     U: AsType<T> + ?Sized,
 {
-    fn try_mut<'a, F>(self, t: &'a mut U, f: F) -> bool
-    where
-        F: FnOnce(&'a mut T);
+    fn try_as<'a>(self, u: &'a U, f: impl FnOnce(&'a T)) -> bool;
+
+    fn try_as_mut<'a>(self, u: &'a mut U, f: impl FnOnce(&'a mut T)) -> bool;
 }
 
 impl<U, T> TryAsType<U, T> for bool
@@ -122,11 +123,12 @@ where
     T: 'static,
     U: AsType<T> + ?Sized,
 {
-    fn try_mut<'a, F>(self, u: &'a mut U, f: F) -> bool
-    where
-        F: FnOnce(&'a mut T),
-    {
-        self || u.try_mut(f)
+    fn try_as<'a>(self, u: &'a U, f: impl FnOnce(&'a T)) -> bool {
+        self || u.try_as(f)
+    }
+
+    fn try_as_mut<'a>(self, u: &'a mut U, f: impl FnOnce(&'a mut T)) -> bool {
+        self || u.try_as_mut(f)
     }
 }
 

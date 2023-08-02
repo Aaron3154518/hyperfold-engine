@@ -38,7 +38,7 @@ impl Text {
                     r.create_texture_from_surface(font.render(&text[self.start..self.end], color));
                 tex.draw(
                     r,
-                    &mut RenderTexture::new(Some(text_tex)).with_dest(
+                    &mut RenderTexture::new(Some(text_tex)).with_dest_opts(
                         rect,
                         RectMode::Absolute,
                         Fit::fit_dest(),

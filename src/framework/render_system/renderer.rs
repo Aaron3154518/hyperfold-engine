@@ -15,7 +15,7 @@ use super::{surface::Surface, Renderer, Texture, Window};
 pub const W: u32 = 960;
 pub const H: u32 = 720;
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct RenderOptions {
     pub rotation_deg: f64,
     pub rotation_center: Option<Point>,

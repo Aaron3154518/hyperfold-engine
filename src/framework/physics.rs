@@ -5,9 +5,11 @@ use crate::{
     utils::rect::{Align, PointF, Rect},
 };
 
+#[derive(Clone, Copy)]
 #[macros::component]
 struct Position(pub Rect);
 
+#[derive(Clone, Copy)]
 #[macros::component]
 struct HitBox(pub Rect);
 
