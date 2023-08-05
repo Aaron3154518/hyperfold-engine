@@ -66,3 +66,10 @@ macro_rules! components {
             }
         };
     }
+
+#[macro_export]
+macro_rules! system_macro {
+    () => {};
+
+    ($($tt: tt)*) => {};
+}

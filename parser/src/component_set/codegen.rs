@@ -176,7 +176,7 @@ impl ComponentSet {
                     _ => quote!(
                         let mut #cs = #init;
                         let #f = #label_fn;
-                        #cs.drain_filter(|(k, _)| !#eval_labels);
+                        #cs.extract_if(|(k, _)| !#eval_labels).count();
                     ),
                 }
             }

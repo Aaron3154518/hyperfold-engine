@@ -86,27 +86,36 @@ pub fn global(input: TokenStream, item: TokenStream) -> TokenStream {
 
 #[proc_macro_attribute]
 pub fn system(input: TokenStream, item: TokenStream) -> TokenStream {
-    parse_and_quote(input, |args: SystemMacroArgs, span| {
-        let mut fun = parse_macro_input2!(item as syn::ItemFn);
-        fun.vis = parse_quote!(pub);
+    let mut fun = parse_macro_input!(item as syn::ItemFn);
+    fun.vis = parse_quote!(pub);
+    let input: proc_macro2::TokenStream = input.into();
 
-        let paths = match match args {
-            SystemMacroArgs::Init() => Vec::new(),
-            SystemMacroArgs::System { states } => states.map_vec_into(|(p, _)| vec_to_path(p)),
-        }
-        .combine_msgs()
-        .to_compile_errors(span)
-        {
-            Ok(paths) => paths,
-            Err(errs) => return errs,
-        };
+    quote!(
+        crate::system_macro! { #input }
+        #fun
+    )
+    .into()
+    // parse_and_quote(input, |args: SystemMacroArgs, span| {
+    //     let mut fun = parse_macro_input2!(item as syn::ItemFn);
+    //     fun.vis = parse_quote!(pub);
 
-        quote!(
-            #fun
+    //     let paths = match match args {
+    //         SystemMacroArgs::Init() => Vec::new(),
+    //         SystemMacroArgs::System { states } => states.map_vec_into(|(p, _)| vec_to_path(p)),
+    //     }
+    //     .combine_msgs()
+    //     .to_compile_errors(span)
+    //     {
+    //         Ok(paths) => paths,
+    //         Err(errs) => return errs,
+    //     };
 
-            #(const _: std::marker::PhantomData<#paths> = std::marker::PhantomData;)*
-        )
-    })
+    //     quote!(
+    //         #fun
+
+    //         #(const _: std::marker::PhantomData<#paths> = std::marker::PhantomData;)*
+    //     )
+    // })
 }
 
 #[proc_macro_attribute]
