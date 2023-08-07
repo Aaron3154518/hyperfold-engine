@@ -92,7 +92,7 @@ pub trait ZipResults<const N: usize, I, O, Er> {
     fn zip(self, i: I) -> Results<O, Er>;
 }
 
-macro_rules! zip_results2 {
+macro_rules! zip_results {
     ($r: ident, $tr: ident, $err: ident, ($n: literal), ($a: ident)) => {
         impl<$a, $err> $tr<$n, (), $a, $err> for $r<$a, $err> {
             fn zip(self, _: ()) -> $r<$a, $err> {
@@ -102,7 +102,7 @@ macro_rules! zip_results2 {
     };
 
     ($r: ident, $tr: ident, $err: ident, ($n1: literal $(,$ns: literal)+), ($a1: ident, $a2: ident $(,$as: ident)*)) => {
-        zip_results2!($r, $tr, $err, ($($ns),*), ($a2 $(,$as)*));
+        zip_results!($r, $tr, $err, ($($ns),*), ($a2 $(,$as)*));
 
         #[allow(unused_parens)]
         impl<$a1, $a2 $(,$as)*, $err> $tr<$n1, ($r<$a2, $err> $(,$r<$as, $err>)*), ($a1, $a2 $(,$as)*), $err>
@@ -123,7 +123,7 @@ macro_rules! zip_results2 {
     };
 }
 
-zip_results2!(
+zip_results!(
     Results,
     ZipResults,
     Er,
@@ -135,24 +135,24 @@ zip_results2!(
 );
 
 #[macro_export]
-macro_rules! match_ok {
+macro_rules! zip_match {
     // Add custom base cases to avoid empty parentheses
-    ($v: ident, $ok: block) => {
+    (($v: ident) => $ok: block) => {
         $v.map(|$v| $ok)
     };
 
-    ($v: ident, $ok: block, $e: ident, $err: block) => {
+    (($v: ident) => $ok: block, ($e: ident) => $err: block) => {
         match $v {
             Ok(v) => Ok($ok),
             Err($e) => Err($err),
         }
     };
 
-    ($v0: ident $(,$vs: ident)*, $ok: block) => {
+    (($v0: ident $(,$vs: ident)*) => $ok: block) => {
         $v0.zip(($($vs),*)).map(|($v0 $(,$vs)*)| $ok)
     };
 
-    ($v0: ident $(,$vs: ident)*, $ok: block, $e: ident, $err: block) => {
+    (($v0: ident $(,$vs: ident)*) => $ok: block, ($e: ident) => $err: block) => {
         match $v0.zip(($($vs),*)) {
             Ok(($v0 $(,$vs)*)) => Ok($ok),
             Err($e) => Err($err)
