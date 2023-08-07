@@ -1,30 +1,31 @@
 #![feature(lazy_cell)]
 
 mod diagnostic;
+mod error;
+mod result;
 mod span;
 mod writer;
 
-use std::{fs, ops::Range};
+use std::fs;
 
 use codespan_reporting::{
     diagnostic::Label,
     files::SimpleFiles,
     term::{self, Config},
 };
-use proc_macro2::LineColumn;
-
-use span::ToRange;
-use syn::spanned::Spanned;
 
 use crate::writer::{Writer, WriterTrait};
 
 pub use codespan_reporting::diagnostic::Diagnostic as CodespanDiagnostic;
 pub use diagnostic::*;
+pub use error::*;
+pub use result::*;
 
 impl Diagnostic {
     pub fn new(
         message: String,
         file_name: String,
+        level: DiagnosticLevel,
         byte_start: usize,
         byte_end: usize,
         line_start: usize,
@@ -41,10 +42,17 @@ impl Diagnostic {
         );
 
         let config = Config::default();
-        let diagnostic = CodespanDiagnostic::error()
-            .with_message(message.to_string())
-            .with_notes(vec!["Note1".to_string(), "Note2".to_string()])
-            .with_labels(vec![Label::primary(id, byte_start..byte_end)]);
+        let diagnostic = match level {
+            DiagnosticLevel::Note | DiagnosticLevel::Warning | DiagnosticLevel::Help => {
+                CodespanDiagnostic::warning()
+            }
+            DiagnosticLevel::Error | DiagnosticLevel::FailureNote | DiagnosticLevel::Ice => {
+                CodespanDiagnostic::error()
+            }
+        }
+        .with_message(message.to_string())
+        .with_notes(vec!["Note1".to_string(), "Note2".to_string()])
+        .with_labels(vec![Label::primary(id, byte_start..byte_end)]);
         let rendered = Some(
             term::emit(&mut writer, &config, &files, &diagnostic)
                 .map(|_| writer.to_string())
@@ -54,7 +62,7 @@ impl Diagnostic {
         Self {
             message,
             code: None,
-            level: DiagnosticLevel::Error,
+            level,
             spans: vec![DiagnosticSpan {
                 // Need
                 file_name,
@@ -78,24 +86,25 @@ impl Diagnostic {
         }
     }
 
-    pub fn from_span(message: String, file_name: String, span: impl Spanned) -> Self {
-        let span = span.span();
-        let LineColumn {
-            line: line_start,
-            column: column_start,
-        } = span.start();
-        let LineColumn {
-            line: line_end,
-            column: column_end,
-        } = span.end();
-        let Range {
-            start: byte_start,
-            end: byte_end,
-        } = span.to_range().unwrap_or(0..0);
+    pub fn from_span(
+        message: String,
+        file_name: String,
+        level: DiagnosticLevel,
+        span: impl Into<ErrorSpan>,
+    ) -> Self {
+        let ErrorSpan {
+            byte_start,
+            byte_end,
+            line_start,
+            line_end,
+            column_start,
+            column_end,
+        } = span.into();
 
         Self::new(
             message,
             file_name,
+            level,
             byte_start,
             byte_end,
             line_start,
@@ -105,11 +114,45 @@ impl Diagnostic {
         )
     }
 
+    pub fn without_span(message: String, file_name: String, level: DiagnosticLevel) -> Self {
+        Self::new(message, file_name, level, 0, 0, 0, 0, 0, 0)
+    }
+
     pub fn to_json(&self) -> serde_json::Result<String> {
         serde_json::to_string(self)
     }
 
     pub fn emit(&self) -> serde_json::Result<()> {
         self.to_json().map(|msg| println!("cargo:warning={msg}"))
+    }
+}
+
+impl From<SpannedError> for Diagnostic {
+    fn from(
+        SpannedError {
+            msg,
+            file,
+            span:
+                ErrorSpan {
+                    byte_start,
+                    byte_end,
+                    line_start,
+                    line_end,
+                    column_start,
+                    column_end,
+                },
+        }: SpannedError,
+    ) -> Self {
+        Self::new(
+            msg,
+            file,
+            DiagnosticLevel::Error,
+            byte_start,
+            byte_end,
+            line_start,
+            line_end,
+            column_start,
+            column_end,
+        )
     }
 }
