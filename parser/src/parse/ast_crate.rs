@@ -8,8 +8,9 @@ use std::{
     path::PathBuf,
 };
 
+use diagnostic::DiagnosticResult;
 use shared::{
-    syn::{CatchErr, GetVec, Msg, MsgResult},
+    syn::{CatchErr, DiagnosticResult, GetVec, Msg},
     traits::{Call, Catch, CollectVec, CollectVecInto, ExpandEnum, GetSlice, PushInto},
 };
 
@@ -28,14 +29,14 @@ use crate::{
 const ENGINE: &str = ".";
 const MACROS: &str = "macros";
 
-fn get_engine_dir() -> MsgResult<PathBuf> {
+fn get_engine_dir() -> DiagnosticResult<PathBuf> {
     fs::canonicalize(PathBuf::from(ENGINE)).catch_err(&format!(
         "Could not canonicalize engine crate path relative to: {:#?}",
         env::current_dir()
     ))
 }
 
-fn get_macros_dir() -> MsgResult<PathBuf> {
+fn get_macros_dir() -> DiagnosticResult<PathBuf> {
     Ok(get_engine_dir()?.join("macros"))
 }
 
@@ -49,12 +50,7 @@ pub struct AstCrate {
 }
 
 impl AstCrate {
-    pub fn new(
-        span_files: &mut SpanFiles,
-        dir: PathBuf,
-        idx: usize,
-        is_entry: bool,
-    ) -> MsgResult<Self> {
+    pub fn new(dir: PathBuf, idx: usize, is_entry: bool) -> DiagnosticResult<Self> {
         let rel_dir = dir.to_owned();
         let dir: PathBuf = fs::canonicalize(dir).catch_err(&format!(
             "Could not canonicalize path: {}",
@@ -70,7 +66,6 @@ impl AstCrate {
                 .to_string(),
             dir: dir.to_owned(),
             main: AstMod::parse_dir(
-                span_files,
                 dir.join("src"),
                 &vec!["crate".to_string()],
                 if is_entry {
@@ -83,10 +78,8 @@ impl AstCrate {
         })
     }
 
-    pub fn parse(mut dir: PathBuf) -> MsgResult<(Crates, SpanFiles)> {
-        let mut span_files = SpanFiles::new();
-
-        let mut crates = vec![AstCrate::new(&mut span_files, dir.to_owned(), 0, true)?];
+    pub fn parse(mut dir: PathBuf) -> DiagnosticResult<Crates> {
+        let mut crates = vec![AstCrate::new(dir.to_owned(), 0, true)?];
 
         let engine_dir = get_engine_dir()?;
         let macros_dir = get_macros_dir()?;
@@ -98,12 +91,7 @@ impl AstCrate {
             let (deps, new_deps) = Self::get_crate_dependencies(cr_dir.to_owned(), &crates)?;
             crate_deps.push(deps);
             for path in new_deps {
-                crates.push(AstCrate::new(
-                    &mut span_files,
-                    cr_dir.join(path),
-                    crates.len(),
-                    false,
-                )?);
+                crates.push(AstCrate::new(cr_dir.join(path), crates.len(), false)?);
             }
             i += 1;
         }
@@ -133,13 +121,13 @@ impl AstCrate {
         crate_idxs[Crate::Engine as usize] = engine_cr_idx;
         crate_idxs[Crate::Macros as usize] = macros_cr_idx;
 
-        Ok((Crates::new(crates, crate_idxs)?, span_files))
+        Crates::new(crates, crate_idxs)
     }
 
     fn get_crate_dependencies(
         cr_dir: PathBuf,
         crates: &Vec<AstCrate>,
-    ) -> MsgResult<(Vec<(usize, String)>, Vec<String>)> {
+    ) -> DiagnosticResult<(Vec<(usize, String)>, Vec<String>)> {
         let deps = AstCrate::parse_cargo_toml(cr_dir.to_owned())?;
         let mut new_deps = Vec::new();
         let mut cr_deps = Vec::new();
@@ -161,7 +149,7 @@ impl AstCrate {
         Ok((cr_deps, new_deps))
     }
 
-    fn parse_cargo_toml(dir: PathBuf) -> MsgResult<HashMap<String, String>> {
+    fn parse_cargo_toml(dir: PathBuf) -> DiagnosticResult<HashMap<String, String>> {
         // Get the path to the `Cargo.toml` file
         let cargo_toml_path = dir.join("Cargo.toml");
 
@@ -201,10 +189,10 @@ impl AstCrate {
     }
 
     // Insert things into crates
-    fn get_mod_from_path<'a>(&'a mut self, path: &[String]) -> MsgResult<&'a mut AstMod> {
+    fn get_mod_from_path<'a>(&'a mut self, path: &[String]) -> DiagnosticResult<&'a mut AstMod> {
         let mut path_it = path.iter();
         if !path_it.next().is_some_and(|s| s == "crate") {
-            return Err(vec![Msg::String(format!(
+            return Err(vec![Error::new(&format!(
                 "No mod defined at the path: {path:#?}"
             ))]);
         }
@@ -219,18 +207,18 @@ impl AstCrate {
         Ok(m)
     }
 
-    pub fn add_symbol(&mut self, sym: Symbol) -> MsgResult<()> {
+    pub fn add_symbol(&mut self, sym: Symbol) -> DiagnosticResult<()> {
         self.get_mod_from_path(sym.path.slice_to(-1))?
             .symbols
             .push(sym);
         Ok(())
     }
 
-    pub fn add_mod<'a>(&'a mut self, path: Vec<String>, mut data: NewMod) -> MsgResult<()> {
+    pub fn add_mod<'a>(&'a mut self, path: Vec<String>, mut data: NewMod) -> DiagnosticResult<()> {
         Ok(self.get_mod_from_path(&path)?.add_mod(data))
     }
 
-    pub fn add_hardcoded_symbol(crates: &mut Crates, sym: HardcodedSymbol) -> MsgResult<()> {
+    pub fn add_hardcoded_symbol(crates: &mut Crates, sym: HardcodedSymbol) -> DiagnosticResult<()> {
         let path = sym.get_path();
         crates.get_crate_mut(path.cr)?.add_symbol(Symbol {
             kind: SymbolType::Hardcoded(sym),

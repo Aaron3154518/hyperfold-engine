@@ -103,7 +103,7 @@ pub fn system(input: TokenStream, item: TokenStream) -> TokenStream {
     //         SystemMacroArgs::Init() => Vec::new(),
     //         SystemMacroArgs::System { states } => states.map_vec_into(|(p, _)| vec_to_path(p)),
     //     }
-    //     .combine_msgs()
+    //     .combine_results()
     //     .to_compile_errors(span)
     //     {
     //         Ok(paths) => paths,

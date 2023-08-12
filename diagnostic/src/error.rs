@@ -3,7 +3,7 @@ use std::ops::Range;
 use proc_macro2::LineColumn;
 use syn::spanned::Spanned;
 
-use crate::span::ToRange;
+use crate::{span::ToRange, DiagnosticResult};
 
 #[derive(Debug, Copy, Clone)]
 pub struct ErrorSpan {
@@ -88,3 +88,55 @@ impl Error {
         }
     }
 }
+
+// Create new error from message and object
+pub trait NewError {
+    fn error<T>(self, msg: &str, file: &str) -> DiagnosticResult<T>;
+}
+
+impl<S> NewError for S
+where
+    S: Into<ErrorSpan>,
+{
+    fn error<T>(self, msg: &str, file: &str) -> DiagnosticResult<T> {
+        Err(vec![Error::Spanned(SpannedError {
+            msg: msg.to_string(),
+            file: file.to_string(),
+            span: self.into(),
+        })])
+    }
+}
+
+// Convert Option/Result to DiagnosticResult
+pub trait CatchErr<T> {
+    fn catch_err(self, msg: &str) -> DiagnosticResult<T>;
+}
+
+impl<T> CatchErr<T> for Option<T> {
+    fn catch_err(self, msg: &str) -> DiagnosticResult<T> {
+        self.ok_or_else(|| vec![Error::new(&msg.to_string())])
+    }
+}
+
+impl<T, E> CatchErr<T> for Result<T, E> {
+    fn catch_err(self, msg: &str) -> DiagnosticResult<T> {
+        self.map_err(|_| vec![Error::new(&msg.to_string())])
+    }
+}
+
+// // Convert syn::Result to Error
+// pub trait CatchSpanErr<T> {
+//     fn catch_err(self, msg: &str) -> DiagnosticResult<T>;
+
+//     fn catch_err_span(self, msg: &str, span: Span) -> DiagnosticResult<T>;
+// }
+
+// impl<T> CatchSpanErr<T> for syn::Result<T> {
+//     fn catch_err(self, msg: &str) -> DiagnosticResult<T> {
+//         self.map_err(|e| vec![Error::spanned(msg, "", e.span())])
+//     }
+
+//     fn catch_err_span(self, msg: &str, span: Span) -> DiagnosticResult<T> {
+//         self.map_err(|_| vec![Error::spanned(msg, "", span)])
+//     }
+// }

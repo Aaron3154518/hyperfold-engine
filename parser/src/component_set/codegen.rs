@@ -3,7 +3,7 @@ use quote::{format_ident, quote};
 use shared::{
     match_ok,
     msg_result::Zip3Msgs,
-    syn::{get_fn_name, MsgResult, Quote},
+    syn::{get_fn_name, DiagnosticResult, Quote},
     traits::{CollectVec, CollectVecInto, ThenNone},
 };
 
@@ -65,7 +65,7 @@ impl ComponentSet {
         cr_idx: usize,
         component_sets: &Vec<Self>,
         crates: &Crates,
-    ) -> MsgResult<Vec<TokenStream>> {
+    ) -> DiagnosticResult<Vec<TokenStream>> {
         let filter_fn = crates.get_syn_path(cr_idx, &ENGINE_PATHS.filter);
         let entity_set = crates.get_syn_path(cr_idx, &ENGINE_PATHS.entity_set);
         let entity = crates.get_syn_path(cr_idx, &ENGINE_PATHS.entity);

@@ -5,7 +5,7 @@ use std::array;
 use shared::{
     match_ok,
     msg_result::{CombineMsgs, Zip5Msgs},
-    syn::{vec_to_path, Msg, MsgResult},
+    syn::{vec_to_path, DiagnosticResult, Msg},
     traits::{AndThen, CollectVec, CollectVecInto, ThenOk},
 };
 
@@ -102,11 +102,11 @@ pub fn components(
     cr_idx: usize,
     components: &Vec<ItemComponent>,
     crates: &Crates,
-) -> MsgResult<TokenStream> {
+) -> DiagnosticResult<TokenStream> {
     let vars = (0..components.len()).map_vec_into(|i| component_var(i));
     let types = components
         .map_vec(|c| crates.get_item_syn_path(cr_idx, &c.path))
-        .combine_msgs();
+        .combine_results();
 
     let entity_set = crates.get_syn_path(cr_idx, &ENGINE_PATHS.entity_set);
     let entity_trash = crates.get_syn_path(cr_idx, &ENGINE_GLOBALS.entity_trash);
@@ -144,7 +144,7 @@ pub fn component_trait_defs(
     cr_idx: usize,
     components: &Vec<ItemComponent>,
     crates: &Crates,
-) -> MsgResult<TokenStream> {
+) -> DiagnosticResult<TokenStream> {
     trait_defs(
         cr_idx,
         crates,
@@ -157,12 +157,12 @@ pub fn component_trait_impls(
     cr_idx: usize,
     components: &Vec<ItemComponent>,
     crates: &Crates,
-) -> MsgResult<TokenStream> {
+) -> DiagnosticResult<TokenStream> {
     let macro_cr_idx = crates.get_crate_index(Crate::Macros);
 
     let types = components
         .map_vec(|c| crates.get_item_syn_path(cr_idx, &c.path))
-        .combine_msgs();
+        .combine_results();
     let crate_paths = crates
         .get_crate_syn_paths(cr_idx, [macro_cr_idx])
         .map(|paths| paths.map_vec_into(|(_, p)| p));

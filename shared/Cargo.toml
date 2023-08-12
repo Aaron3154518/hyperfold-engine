@@ -6,8 +6,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-syn = "2.0.15"
 shared_macros = { path = "./macros" }
+diagnostic = { path = "../diagnostic" }
+syn = "2.0.15"
 proc-macro2 = "1.0.65"
 quote = "1.0.32"
 regex = "1.9.1"

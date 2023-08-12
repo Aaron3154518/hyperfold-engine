@@ -1,9 +1,8 @@
+use diagnostic::Error;
 use proc_macro2::{token_stream::IntoIter, TokenStream, TokenTree};
 use quote::{quote, ToTokens};
 use std::{collections::VecDeque, env::temp_dir, fs, path::PathBuf};
-use syn::{
-    parenthesized, parse_macro_input, spanned::Spanned, token::Trait, Error, PatType, Token,
-};
+use syn::{parenthesized, parse_macro_input, spanned::Spanned, token::Trait, PatType, Token};
 
 use crate::{
     codegen::{self as codegen, Crates, Traits},
@@ -26,7 +25,7 @@ use shared::{
     match_ok,
     msg_result::{CombineMsgs, MsgTrait, Zip2Msgs, Zip8Msgs},
     parsing::{ComponentMacroArgs, GlobalMacroArgs, SystemMacroArgs},
-    syn::{parse_tokens, CatchErr, Msg, MsgResult, ToMsg},
+    syn::parse_tokens,
     traits::{
         Call, Catch, CollectVec, CollectVecInto, FindFrom, GetResult, HandleErr, Increment,
         PushInto, SplitAround,
@@ -224,9 +223,9 @@ impl Items {
 
     fn add_symbols(
         &mut self,
-        errs: &mut Vec<Msg>,
+        errs: &mut Vec<Error>,
         crates: &mut Crates,
-        f: impl Fn(&mut Vec<Msg>, &mut Self, ModInfo) -> Vec<NewSymbol>,
+        f: impl Fn(&mut Vec<Error>, &mut Self, ModInfo) -> Vec<NewSymbol>,
     ) {
         let macro_cr_idx = crates.get_crate_index(Crate::Macros);
 
@@ -256,7 +255,7 @@ impl Items {
         }
     }
 
-    pub fn resolve(crates: &mut Crates) -> (Self, Vec<Msg>) {
+    pub fn resolve(crates: &mut Crates) -> (Self, Vec<Error>) {
         let mut errs = Vec::new();
         let mut items = Items::new();
 

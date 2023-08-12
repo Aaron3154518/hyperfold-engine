@@ -11,8 +11,8 @@ use crate::parse::ItemPath;
 use shared::{
     msg_result::MsgTrait,
     syn::{
-        get_type_generics, parse_tokens, use_path_from_syn, CatchSpanErr, Parse, ParseMsg,
-        ParseMsgResult, StreamParse,
+        get_type_generics, parse_tokens, use_path_from_syn, CatchSpanErr, DiagnosticResult, Parse,
+        ParseMsg, StreamParse,
     },
     traits::{CollectVec, PushInto},
 };
@@ -40,7 +40,7 @@ impl LabelOp {
 }
 
 impl Parse for LabelOp {
-    fn parse(input: syn::parse::ParseStream) -> ParseMsgResult<Self> {
+    fn parse(input: syn::parse::ParseStream) -> DiagnosticResult<Self> {
         let span = input.span();
         input
             .parse::<Token!(&&)>()
@@ -70,12 +70,12 @@ enum Expression {
 }
 
 impl Expression {
-    pub fn to_item(self, neg: bool) -> ParseMsgResult<AstLabelItem> {
+    pub fn to_item(self, neg: bool) -> DiagnosticResult<AstLabelItem> {
         let mut item = match self {
             Expression::Item(i) => i,
             Expression::Expr { first, noops, ops } => {
                 let mut get_item =
-                    |items: Vec<AstLabelItem>, op: LabelOp| -> ParseMsgResult<AstLabelItem> {
+                    |items: Vec<AstLabelItem>, op: LabelOp| -> DiagnosticResult<AstLabelItem> {
                         Ok(if items.len() <= 1 {
                             items.into_iter().next().ok_or(vec![ParseMsg::String(
                                 "Empty label expression".to_string(),
@@ -129,7 +129,7 @@ impl Expression {
 }
 
 impl Parse for Expression {
-    fn parse(input: syn::parse::ParseStream) -> ParseMsgResult<Self> {
+    fn parse(input: syn::parse::ParseStream) -> DiagnosticResult<Self> {
         let first = input.parse_stream()?;
 
         let mut noops = vec![];
@@ -174,7 +174,7 @@ impl AstLabelItem {
 }
 
 impl Parse for AstLabelItem {
-    fn parse(input: syn::parse::ParseStream) -> ParseMsgResult<Self> {
+    fn parse(input: syn::parse::ParseStream) -> DiagnosticResult<Self> {
         let mut not = false;
         while input.parse::<Token!(!)>().is_ok() {
             not = !not;
@@ -230,7 +230,7 @@ pub struct AstComponentSetItem {
 }
 
 impl AstComponentSetItem {
-    pub fn from(var: String, ty: &syn::Type) -> ParseMsgResult<Self> {
+    pub fn from(var: String, ty: &syn::Type) -> DiagnosticResult<Self> {
         let span = ty.span();
         match ty {
             syn::Type::Path(ty) => {
@@ -292,7 +292,7 @@ impl AstComponentSetItem {
 }
 
 impl Parse for AstComponentSetItem {
-    fn parse(input: syn::parse::ParseStream) -> ParseMsgResult<Self> {
+    fn parse(input: syn::parse::ParseStream) -> DiagnosticResult<Self> {
         // var : type
         let var = input
             .parse::<syn::Ident>()
@@ -311,7 +311,7 @@ pub struct AstComponentSet {
 }
 
 impl Parse for AstComponentSet {
-    fn parse(input: syn::parse::ParseStream) -> ParseMsgResult<Self> {
+    fn parse(input: syn::parse::ParseStream) -> DiagnosticResult<Self> {
         let mut labels = None;
 
         // First ident

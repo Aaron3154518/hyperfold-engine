@@ -5,6 +5,10 @@ pub trait PushInto<T> {
     fn push_into(self, t: T) -> Self;
 
     fn push_item(&mut self, t: T) -> &mut Self;
+
+    fn pop_into(self) -> Self;
+
+    fn pop_item(&mut self) -> &mut Self;
 }
 
 impl<T> PushInto<T> for Vec<T> {
@@ -17,6 +21,16 @@ impl<T> PushInto<T> for Vec<T> {
         self.push(t);
         self
     }
+
+    fn pop_into(mut self) -> Self {
+        self.pop();
+        self
+    }
+
+    fn pop_item(&mut self) -> &mut Self {
+        self.pop();
+        self
+    }
 }
 
 impl PushInto<String> for PathBuf {
@@ -27,6 +41,16 @@ impl PushInto<String> for PathBuf {
 
     fn push_item(&mut self, t: String) -> &mut Self {
         self.push(t);
+        self
+    }
+
+    fn pop_into(mut self) -> Self {
+        self.pop();
+        self
+    }
+
+    fn pop_item(&mut self) -> &mut Self {
+        self.pop();
         self
     }
 }

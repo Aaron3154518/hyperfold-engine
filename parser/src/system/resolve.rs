@@ -1,3 +1,4 @@
+use diagnostic::{DiagnosticResult, Error};
 use proc_macro2::Span;
 use std::collections::{HashMap, HashSet};
 
@@ -5,7 +6,6 @@ use shared::{
     constants::TAB,
     msg_result::{CombineMsgs, MsgTrait},
     parsing::SystemMacroArgs,
-    syn::{Msg, MsgResult},
     traits::{CollectVec, CollectVecInto, PushInto, ThenOk},
 };
 
@@ -74,7 +74,7 @@ impl ComponentRefTracker {
         }
     }
 
-    pub fn validate(&self, sys: &ItemSystem) -> MsgResult<()> {
+    pub fn validate(&self, sys: &ItemSystem) -> DiagnosticResult<()> {
         let (mut_cnt, immut_cnt) = (self.mut_refs.len(), self.immut_refs.len());
 
         (mut_cnt > 1)
@@ -104,7 +104,7 @@ impl ComponentRefTracker {
 }
 
 impl ItemSystem {
-    pub fn validate(&self, items: &Items) -> MsgResult<FnArgs> {
+    pub fn validate(&self, items: &Items) -> DiagnosticResult<FnArgs> {
         let mut global_idxs = HashSet::new();
 
         match self.attr_args {
@@ -122,7 +122,7 @@ impl ItemSystem {
                         self.msg(&format!("Init systems may not contain {}", arg.ty))
                     ]),
                 })
-                .combine_msgs()
+                .combine_results()
                 .map(|globals| FnArgs::Init { globals }),
             SystemMacroArgs::System { .. } => {
                 let mut component_refs = HashMap::new();
@@ -159,7 +159,7 @@ impl ItemSystem {
                                 });
                             }),
                     })
-                    .combine_msgs()
+                    .combine_results()
                     // Require event
                     .then_msgs(event.ok_or(vec![self.msg("System must specify an event")]))
                     // Check component reference mutability
@@ -167,7 +167,7 @@ impl ItemSystem {
                         component_refs
                             .into_iter()
                             .map_vec_into(|(i, refs)| refs.validate(self))
-                            .combine_msgs(),
+                            .combine_results(),
                     )
                     .map(|event| FnArgs::System {
                         event,
@@ -184,11 +184,11 @@ impl ItemSystem {
         i: usize,
         globals: &mut HashSet<usize>,
         items: &'a Items,
-    ) -> MsgResult<&'a ItemGlobal> {
+    ) -> DiagnosticResult<&'a ItemGlobal> {
         items
             .globals
             .get(i)
-            .ok_or(vec![Msg::String(format!("Invalid Global index: {i}"))])
+            .ok_or(vec![Error::new(&format!("Invalid Global index: {i}"))])
             .and_then(|g| {
                 if g.args.is_const {
                     self.validate_mut(arg, false).map(|_| g)
@@ -209,11 +209,11 @@ impl ItemSystem {
         arg: &FnArg,
         i: usize,
         items: &'a Items,
-    ) -> MsgResult<&'a ItemEvent> {
+    ) -> DiagnosticResult<&'a ItemEvent> {
         items
             .events
             .get(i)
-            .ok_or(vec![Msg::String(format!("Invalid Event index: {i}"))])
+            .ok_or(vec![Error::new(&format!("Invalid Event index: {i}"))])
             .and_msgs(self.validate_ref(arg, 1))
             .and_msgs(self.validate_mut(arg, false))
     }
@@ -225,11 +225,11 @@ impl ItemSystem {
         is_vec: bool,
         component_refs: &mut HashMap<usize, ComponentRefTracker>,
         items: &'a Items,
-    ) -> MsgResult<&'a ComponentSet> {
+    ) -> DiagnosticResult<&'a ComponentSet> {
         items
             .component_sets
             .get(i)
-            .ok_or(vec![Msg::String(format!(
+            .ok_or(vec![Error::new(&format!(
                 "Invalid component set index: {i}"
             ))])
             .and_then(|cs| {
@@ -277,7 +277,7 @@ impl ItemSystem {
     }
 
     // Validate conditions
-    fn validate_ref(&self, arg: &FnArg, should_be_cnt: usize) -> MsgResult<()> {
+    fn validate_ref(&self, arg: &FnArg, should_be_cnt: usize) -> DiagnosticResult<()> {
         (arg.ref_cnt == should_be_cnt).ok(
             (),
             vec![self.new_msg(
@@ -297,7 +297,7 @@ impl ItemSystem {
         )
     }
 
-    fn validate_mut(&self, arg: &FnArg, should_be_mut: bool) -> MsgResult<()> {
+    fn validate_mut(&self, arg: &FnArg, should_be_mut: bool) -> DiagnosticResult<()> {
         (arg.is_mut == should_be_mut).ok(
             (),
             vec![self.new_msg(

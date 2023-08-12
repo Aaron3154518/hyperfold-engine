@@ -1,19 +1,18 @@
-use crate::{
-    syn::{CatchErr, MsgResult},
-    traits::CollectVecInto,
-};
+use diagnostic::{CatchErr, DiagnosticResult, Error};
+
+use crate::traits::CollectVecInto;
 
 // To path
-pub fn vec_to_path(path: Vec<String>) -> MsgResult<syn::Path> {
+pub fn vec_to_path(path: Vec<String>) -> DiagnosticResult<syn::Path> {
     string_to_path(path.join("::"))
 }
 
-pub fn arr_to_path<const N: usize>(path: [&str; N]) -> MsgResult<syn::Path> {
+pub fn arr_to_path<const N: usize>(path: [&str; N]) -> DiagnosticResult<syn::Path> {
     string_to_path(path.join("::"))
 }
 
-pub fn string_to_path(path: String) -> MsgResult<syn::Path> {
-    syn::parse_str(&path).catch_err(format!("Could not parse path: {}", path).as_str())
+pub fn string_to_path(path: String) -> DiagnosticResult<syn::Path> {
+    syn::parse_str(&path).catch_err(&format!("Could not parse path: {}", path))
 }
 
 pub fn path_to_vec(path: &syn::Path) -> Vec<String> {

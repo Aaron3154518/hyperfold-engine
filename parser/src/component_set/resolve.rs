@@ -14,7 +14,7 @@ use crate::{
 };
 use shared::{
     msg_result::{CombineMsgs, MsgTrait, Zip2Msgs},
-    syn::{get_fn_name, parse_tokens, Msg, MsgResult, ParseMsg, ToMsg, ToRange},
+    syn::{get_fn_name, parse_tokens, DiagnosticResult, Msg, ParseMsg, ToMsg, ToRange},
     traits::{Call, CollectVec, CollectVecInto, PushInto, ThenNone},
 };
 
@@ -26,7 +26,7 @@ pub enum LabelItem {
 }
 
 impl LabelItem {
-    fn resolve(item: AstLabelItem, (m, cr, crates): ModInfo) -> MsgResult<Self> {
+    fn resolve(item: AstLabelItem, (m, cr, crates): ModInfo) -> DiagnosticResult<Self> {
         match item {
             AstLabelItem::Item { not, ty, span } => resolve_path(ty, (m, cr, crates))
                 .expect_component_in_mod(m, &span)
@@ -35,7 +35,7 @@ impl LabelItem {
             AstLabelItem::Expression { op, items } => items
                 .into_iter()
                 .map_vec_into(|item| Self::resolve(item, (m, cr, crates)))
-                .combine_msgs()
+                .combine_results()
                 .map(|items| Self::Expression { op, items }),
         }
     }
@@ -77,7 +77,7 @@ impl ComponentSetItem {
             span,
         }: AstComponentSetItem,
         (m, cr, crates): ModInfo,
-    ) -> MsgResult<Self> {
+    ) -> DiagnosticResult<Self> {
         resolve_path(ty.path.to_vec(), (m, cr, crates))
             .expect_component_in_mod(m, &span)
             .discard_symbol()
@@ -148,7 +148,7 @@ impl ComponentSet {
             .is_some_and(|comp| comp.args.is_singleton)
     }
 
-    pub fn parse(tokens: TokenStream, (m, cr, crates): ModInfo) -> MsgResult<Self> {
+    pub fn parse(tokens: TokenStream, (m, cr, crates): ModInfo) -> DiagnosticResult<Self> {
         let span = tokens.span();
         parse_tokens(tokens)
             .for_mod(m)
@@ -162,10 +162,10 @@ impl ComponentSet {
             labels,
         }: AstComponentSet,
         (m, cr, crates): ModInfo,
-    ) -> MsgResult<Self> {
+    ) -> DiagnosticResult<Self> {
         args.into_iter()
             .map_vec_into(|arg| ComponentSetItem::resolve(arg, (m, cr, crates)))
-            .combine_msgs()
+            .combine_results()
             .zip(labels.map_or(Ok(None), |l| {
                 LabelItem::resolve(l, (m, cr, crates)).map(|t| Some(t))
             }))

@@ -3,8 +3,8 @@ use quote::quote;
 
 use shared::{
     match_ok,
-    msg_result::{CombineMsgs, MsgTrait, ToMsgs, Zip5Msgs},
-    syn::{Msg, MsgResult, Quote},
+    msg_result::{CombineMsgs, MsgTrait, ToMsgs, Zip2Msgs, Zip3Msgs, Zip5Msgs},
+    syn::{DiagnosticResult, Msg, Quote},
     traits::{CollectVec, CollectVecInto},
 };
 
@@ -116,7 +116,7 @@ pub fn codegen_systems(
     cr_idx: usize,
     items: &Items,
     crates: &Crates,
-) -> MsgResult<SystemsCodegenResult> {
+) -> DiagnosticResult<SystemsCodegenResult> {
     let event_trait = crates.get_syn_path(cr_idx, &ENGINE_TRAITS.add_event);
     let intersect = crates.get_syn_path(cr_idx, &ENGINE_PATHS.intersect);
     let intersect_opt = crates.get_syn_path(cr_idx, &ENGINE_PATHS.intersect_opt);
@@ -127,21 +127,11 @@ pub fn codegen_systems(
 
     let mut errs = Vec::new();
 
-    for system in &items.systems {
-        let event_trait = event_trait.get_ref();
-        let intersect = intersect.get_ref();
-        let intersect_opt = intersect_opt.get_ref();
-
-        let func_name = crates.get_item_syn_path(cr_idx, &system.path);
-        let args = system.validate(items);
-        match_ok!(
-            Zip5Msgs,
-            func_name,
-            args,
-            event_trait,
-            intersect,
-            intersect_opt,
-            {
+    match_ok!(Zip3Msgs, event_trait, intersect, intersect_opt, {
+        for system in &items.systems {
+            let func_name = crates.get_item_syn_path(cr_idx, &system.path);
+            let args = system.validate(items);
+            match_ok!(Zip2Msgs, func_name, args, {
                 match args {
                     FnArgs::Init { globals } => {
                         init_systems.push(codegen_init_system(globals, func_name))
@@ -156,7 +146,7 @@ pub fn codegen_systems(
                                 items
                                     .component_sets
                                     .get(fn_arg.idx)
-                                    .ok_or(vec![Msg::String(format!(
+                                    .ok_or(vec![Error::new(&format!(
                                         "Invalid component set index: {}",
                                         fn_arg.idx
                                     ))])
@@ -166,16 +156,16 @@ pub fn codegen_systems(
                                             .map(|ty| BuildSetsArg { cs, fn_arg, ty })
                                     })
                             })
-                            .combine_msgs();
+                            .combine_results();
 
                         system_events.push(event_variant(event.idx));
 
                         systems.push(component_sets.map(|component_sets| {
                             codegen_system(CodegenArgs {
                                 func_name,
-                                event_trait,
-                                intersect,
-                                intersect_opt,
+                                event_trait: &event_trait,
+                                intersect: &intersect,
+                                intersect_opt: &intersect_opt,
                                 event,
                                 globals,
                                 component_sets,
@@ -183,13 +173,13 @@ pub fn codegen_systems(
                         }));
                     }
                 }
-            }
-        )
-        .record_errs(&mut errs);
-    }
+            })
+            .record_errs(&mut errs);
+        }
+    });
 
     systems
-        .combine_msgs()
+        .combine_results()
         .and_msgs(errs.err_or(()))
         .map(|systems| SystemsCodegenResult {
             init_systems,

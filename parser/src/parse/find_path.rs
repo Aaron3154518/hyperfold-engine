@@ -5,7 +5,7 @@ use crate::parse::{
     AstCrate, ModInfo, {AstMod, Symbol},
 };
 use shared::{
-    syn::{use_path_from_syn, CatchErr, InjectSpan, Msg, MsgResult},
+    syn::{use_path_from_syn, CatchErr, DiagnosticResult, InjectSpan, Msg},
     traits::{Catch, CollectVecInto},
 };
 
@@ -28,7 +28,7 @@ impl ItemPath {
 
 fn resolve_error(path: Vec<String>) -> Vec<Msg> {
     let path = path.join("::");
-    vec![Msg::String(format!("Could not resolve path: {path}"))]
+    vec![Error::new(&format!("Could not resolve path: {path}"))]
 }
 
 // Err means:
@@ -38,7 +38,7 @@ pub fn resolve_path_from_crate<'a>(
     mut path: Vec<String>,
     cr: &'a AstCrate,
     crates: &'a Vec<AstCrate>,
-) -> MsgResult<&'a Symbol> {
+) -> DiagnosticResult<&'a Symbol> {
     // println!("Resolve: {}, crate: {}", path.join("::"), cr.idx);
     match path.first() {
         Some(p) => {
@@ -75,7 +75,7 @@ fn resolve_path_from_mod<'a>(
     path: Vec<String>,
     idx: usize,
     (m, cr, crates): ModInfo<'a>,
-) -> MsgResult<&'a Symbol> {
+) -> DiagnosticResult<&'a Symbol> {
     // println!(
     //     "Resolve Mod: {} at {}",
     //     path.join("::"),
@@ -138,7 +138,10 @@ fn resolve_path_from_mod<'a>(
 }
 
 // Paths that start relative to some mod item
-pub fn resolve_path<'a>(path: Vec<String>, (m, cr, crates): ModInfo<'a>) -> MsgResult<&'a Symbol> {
+pub fn resolve_path<'a>(
+    path: Vec<String>,
+    (m, cr, crates): ModInfo<'a>,
+) -> DiagnosticResult<&'a Symbol> {
     // println!("Local Resolve: {}", path.join("::"));
     let cr_idx = cr.idx;
 
@@ -198,21 +201,24 @@ pub fn resolve_syn_path<'a>(
     parent_path: &Vec<String>,
     path: &syn::Path,
     (m, cr, crates): ModInfo<'a>,
-) -> MsgResult<&'a Symbol> {
+) -> DiagnosticResult<&'a Symbol> {
     resolve_path(use_path_from_syn(&m.path, path), (m, cr, crates))
 }
 
-impl<'a> MatchSymbolTrait<'a> for MsgResult<&'a Symbol> {
-    fn and_then_symbol<T>(self, f: impl FnOnce(&'a Symbol) -> MsgResult<T>) -> MsgResult<T> {
+impl<'a> MatchSymbolTrait<'a> for DiagnosticResult<&'a Symbol> {
+    fn and_then_symbol<T>(
+        self,
+        f: impl FnOnce(&'a Symbol) -> DiagnosticResult<T>,
+    ) -> DiagnosticResult<T> {
         self.and_then(f)
     }
 
     fn and_then_symbol_in_mod<T>(
         self,
-        f: impl FnOnce(&'a Symbol) -> MsgResult<T>,
+        f: impl FnOnce(&'a Symbol) -> DiagnosticResult<T>,
         m: &AstMod,
         span: &dyn Spanned,
-    ) -> MsgResult<T> {
+    ) -> DiagnosticResult<T> {
         self.in_mod(m, span).and_then(f)
     }
 }

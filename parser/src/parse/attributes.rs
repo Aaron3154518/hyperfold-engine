@@ -5,7 +5,7 @@ use syn::spanned::Spanned;
 
 use shared::{
     msg_result::{MsgTrait, ToMsgs},
-    syn::{use_path_from_vec, CatchErr, MsgResult},
+    syn::{use_path_from_vec, CatchErr, DiagnosticResult},
     traits::NoneOr,
 };
 
@@ -60,7 +60,7 @@ pub fn get_attributes_if_active(
     attrs: &Vec<syn::Attribute>,
     path: &Vec<String>,
     features: &Vec<String>,
-) -> MsgResult<Option<Vec<AstAttribute>>> {
+) -> DiagnosticResult<Option<Vec<AstAttribute>>> {
     let mut is_active = true;
     let new_attrs =
         get_attributes(attrs, path)?
@@ -81,7 +81,7 @@ pub fn get_attributes_if_active(
 pub fn get_attributes(
     attrs: &Vec<syn::Attribute>,
     path: &Vec<String>,
-) -> MsgResult<Vec<Attribute>> {
+) -> DiagnosticResult<Vec<Attribute>> {
     let mut new_attrs = Vec::new();
     let mut errs = Vec::new();
     for a in attrs {
@@ -136,7 +136,7 @@ pub fn eval_cfg_args(cfg: &Cfg, features: &Vec<String>) -> Option<bool> {
 }
 
 // Parses arguments to a single ast attribute
-fn parse_attr_args(mut attr_type: Attribute, attr: &syn::Attribute) -> MsgResult<Attribute> {
+fn parse_attr_args(mut attr_type: Attribute, attr: &syn::Attribute) -> DiagnosticResult<Attribute> {
     match &mut attr_type {
         Attribute::Ecs(ast_attr) => match &attr.meta {
             syn::Meta::List(l) => {

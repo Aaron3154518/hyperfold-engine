@@ -1,40 +1,40 @@
 use crate::traits::{PushInto, ThenOk};
 
 // Type for propogating errors
-pub type MsgResult<T, E> = Result<T, Vec<E>>;
+pub type DiagnosticResult<T, E> = Result<T, Vec<E>>;
 
 pub trait MsgTrait<T, E> {
-    fn new(t: T, errs: Vec<E>) -> MsgResult<T, E>;
+    fn new(t: T, errs: Vec<E>) -> DiagnosticResult<T, E>;
 
-    fn get_ref<'a>(&'a self) -> MsgResult<&'a T, E>;
+    fn get_ref<'a>(&'a self) -> DiagnosticResult<&'a T, E>;
 
     // Add rhs errors, don't overwrite data
-    fn and_msgs<U>(self, rhs: MsgResult<U, E>) -> MsgResult<T, E>;
+    fn and_msgs<U>(self, rhs: DiagnosticResult<U, E>) -> DiagnosticResult<T, E>;
 
     // Add rhs errors, do overwrite data
-    fn then_msgs<U>(self, rhs: MsgResult<U, E>) -> MsgResult<U, E>;
+    fn then_msgs<U>(self, rhs: DiagnosticResult<U, E>) -> DiagnosticResult<U, E>;
 
-    fn add_msg(self, f: impl FnOnce() -> E) -> MsgResult<T, E>;
+    fn add_msg(self, f: impl FnOnce() -> E) -> DiagnosticResult<T, E>;
 
     fn record_errs(self, errs: &mut Vec<E>) -> Option<T>;
 }
 
-impl<T, E> MsgTrait<T, E> for MsgResult<T, E>
+impl<T, E> MsgTrait<T, E> for DiagnosticResult<T, E>
 where
     E: Clone,
 {
-    fn new(t: T, errs: Vec<E>) -> MsgResult<T, E> {
+    fn new(t: T, errs: Vec<E>) -> DiagnosticResult<T, E> {
         errs.is_empty().ok(t, errs)
     }
 
-    fn get_ref<'a>(&'a self) -> MsgResult<&'a T, E> {
+    fn get_ref<'a>(&'a self) -> DiagnosticResult<&'a T, E> {
         match self {
             Ok(t) => Ok(t),
             Err(e) => Err(e.to_vec()),
         }
     }
 
-    fn and_msgs<U>(self, rhs: MsgResult<U, E>) -> MsgResult<T, E> {
+    fn and_msgs<U>(self, rhs: DiagnosticResult<U, E>) -> DiagnosticResult<T, E> {
         match (self, rhs) {
             (Ok(t), Ok(_)) => Ok(t),
             (Ok(_), Err(e)) | (Err(e), Ok(_)) => Err(e),
@@ -42,11 +42,11 @@ where
         }
     }
 
-    fn then_msgs<U>(self, rhs: MsgResult<U, E>) -> MsgResult<U, E> {
+    fn then_msgs<U>(self, rhs: DiagnosticResult<U, E>) -> DiagnosticResult<U, E> {
         rhs.and_msgs(self)
     }
 
-    fn add_msg(self, f: impl FnOnce() -> E) -> MsgResult<T, E> {
+    fn add_msg(self, f: impl FnOnce() -> E) -> DiagnosticResult<T, E> {
         self.map_err(|errs| errs.push_into(f()))
     }
 
@@ -63,11 +63,11 @@ where
 
 // Combines vectors of messages
 pub trait CombineMsgs<T, E> {
-    fn combine_msgs(self) -> MsgResult<T, E>;
+    fn combine_results(self) -> DiagnosticResult<T, E>;
 }
 
-impl<T, E> CombineMsgs<Vec<T>, E> for Vec<MsgResult<T, E>> {
-    fn combine_msgs(self) -> MsgResult<Vec<T>, E> {
+impl<T, E> CombineMsgs<Vec<T>, E> for Vec<DiagnosticResult<T, E>> {
+    fn combine_results(self) -> DiagnosticResult<Vec<T>, E> {
         let mut msgs = Vec::new();
         let mut ts = Vec::new();
         for msg in self {
@@ -82,11 +82,11 @@ impl<T, E> CombineMsgs<Vec<T>, E> for Vec<MsgResult<T, E>> {
 
 // Flatten messages
 pub trait FlattenMsgs<T, E> {
-    fn flatten_msgs(self) -> MsgResult<T, E>;
+    fn flatten_msgs(self) -> DiagnosticResult<T, E>;
 }
 
-impl<T, E> FlattenMsgs<T, E> for MsgResult<MsgResult<T, E>, E> {
-    fn flatten_msgs(self) -> MsgResult<T, E> {
+impl<T, E> FlattenMsgs<T, E> for DiagnosticResult<DiagnosticResult<T, E>, E> {
+    fn flatten_msgs(self) -> DiagnosticResult<T, E> {
         match self {
             Ok(t) => t,
             Err(e) => Err(e),
@@ -94,13 +94,13 @@ impl<T, E> FlattenMsgs<T, E> for MsgResult<MsgResult<T, E>, E> {
     }
 }
 
-// Vec<E> -> MsgResult
+// Vec<E> -> DiagnosticResult
 pub trait ToMsgs<T, E> {
-    fn err_or(self, t: T) -> MsgResult<T, E>;
+    fn err_or(self, t: T) -> DiagnosticResult<T, E>;
 }
 
 impl<T, E> ToMsgs<T, E> for Vec<E> {
-    fn err_or(self, t: T) -> MsgResult<T, E> {
+    fn err_or(self, t: T) -> DiagnosticResult<T, E> {
         self.is_empty().ok(t, self)
     }
 }
@@ -109,12 +109,12 @@ macro_rules! msgs_zip {
     ($err: ident, ($tr: ident), ($v0: ident, $vn: ident)) => {
         #[allow(non_snake_case)]
         pub trait $tr<$v0, $vn, $err> {
-            fn zip(self, $vn: MsgResult<$vn, $err>) -> MsgResult<($v0, $vn), $err>;
+            fn zip(self, $vn: DiagnosticResult<$vn, $err>) -> DiagnosticResult<($v0, $vn), $err>;
         }
 
         #[allow(non_snake_case)]
-        impl<$v0, $vn, $err> $tr<$v0, $vn, Er> for MsgResult<$v0, $err> where $err: Clone {
-            fn zip(self, $vn: MsgResult<$vn, $err>) -> MsgResult<($v0, $vn), $err> {
+        impl<$v0, $vn, $err> $tr<$v0, $vn, Er> for DiagnosticResult<$v0, $err> where $err: Clone {
+            fn zip(self, $vn: DiagnosticResult<$vn, $err>) -> DiagnosticResult<($v0, $vn), $err> {
                 match (self, $vn) {
                     (Ok($v0), Ok($vn)) => Ok(($v0, $vn)),
                     (Ok(_), Err(e)) | (Err(e), Ok(_)) => Err(e),
@@ -129,14 +129,14 @@ macro_rules! msgs_zip {
 
         #[allow(non_snake_case)]
         pub trait $tr<$v0 $(,$vs)*, $vn1, $vn, $err> {
-            fn zip(self $(,$vs: MsgResult<$vs, $err>)*, $vn1: MsgResult<$vn1, $err>, $vn: MsgResult<$vn, $err>)
-                -> MsgResult<($v0 $(,$vs)*, $vn1, $vn), $err>;
+            fn zip(self $(,$vs: DiagnosticResult<$vs, $err>)*, $vn1: DiagnosticResult<$vn1, $err>, $vn: DiagnosticResult<$vn, $err>)
+                -> DiagnosticResult<($v0 $(,$vs)*, $vn1, $vn), $err>;
         }
 
         #[allow(non_snake_case)]
-        impl<$v0 $(,$vs)*, $vn1, $vn, $err> $tr<$v0 $(,$vs)*, $vn1, $vn, $err> for MsgResult<$v0, $err> where $err: Clone {
-            fn zip(self $(,$vs: MsgResult<$vs, $err>)*, $vn1: MsgResult<$vn1, $err>, $vn: MsgResult<$vn, $err>)
-                -> MsgResult<($v0 $(,$vs)*, $vn1, $vn), $err> {
+        impl<$v0 $(,$vs)*, $vn1, $vn, $err> $tr<$v0 $(,$vs)*, $vn1, $vn, $err> for DiagnosticResult<$v0, $err> where $err: Clone {
+            fn zip(self $(,$vs: DiagnosticResult<$vs, $err>)*, $vn1: DiagnosticResult<$vn1, $err>, $vn: DiagnosticResult<$vn, $err>)
+                -> DiagnosticResult<($v0 $(,$vs)*, $vn1, $vn), $err> {
                     match (<Self as $tr1<$v0 $(,$vs)*, $vn1, $err>>::zip(self $(,$vs)*, $vn1), $vn) {
                         (Ok(($v0 $(,$vs)*, $vn1)), Ok($vn)) => Ok(($v0 $(,$vs)*, $vn1, $vn)),
                         (Ok(_), Err(e)) | (Err(e), Ok(_)) => Err(e),

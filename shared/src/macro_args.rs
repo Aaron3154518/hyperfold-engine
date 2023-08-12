@@ -1,9 +1,9 @@
+use diagnostic::{CombineResults, DiagnosticResult, Error, NewError};
 use proc_macro2::Span;
 use syn::spanned::Spanned;
 
 use crate::{
-    msg_result::CombineMsgs,
-    syn::{path_to_vec, NewError, Parse, ParseMsg, ParseMsgResult},
+    syn::{path_to_vec, Parse},
     traits::CollectVec,
 };
 
@@ -12,10 +12,10 @@ pub trait ParseFrom<T>
 where
     Self: Sized,
 {
-    fn parse_from(vals: &T) -> ParseMsgResult<Self>;
+    fn parse_from(vals: &T) -> DiagnosticResult<Self>;
 }
 
-fn parse<T, U>(input: syn::parse::ParseStream) -> ParseMsgResult<T>
+fn parse<T, U>(input: syn::parse::ParseStream) -> DiagnosticResult<T>
 where
     T: ParseFrom<Vec<U>>,
     U: syn::parse::Parse,
@@ -46,23 +46,24 @@ impl Default for ComponentMacroArgs {
 }
 
 impl ParseFrom<Vec<syn::Ident>> for ComponentMacroArgs {
-    fn parse_from(vals: &Vec<syn::Ident>) -> ParseMsgResult<Self> {
+    fn parse_from(vals: &Vec<syn::Ident>) -> DiagnosticResult<Self> {
         let mut c = Self::default();
         vals.map_vec(|i| match i.to_string().as_str() {
             "Dummy" => Ok(c.is_dummy = true),
             "Singleton" => Ok(c.is_singleton = true),
-            "Const" => {
-                i.error("Component cannot be Const\nPerhaps you meant to declare this as 'global'?")
-            }
-            _ => i.error(&format!("Unknown macro argument for component: {i}")),
+            "Const" => i.error(
+                "Component cannot be Const\nPerhaps you meant to declare this as 'global'?",
+                "",
+            ),
+            _ => i.error(&format!("Unknown macro argument for component: {i}"), ""),
         })
-        .combine_msgs()?;
+        .combine_results()?;
         Ok(c)
     }
 }
 
 impl Parse for ComponentMacroArgs {
-    fn parse(input: syn::parse::ParseStream) -> ParseMsgResult<Self> {
+    fn parse(input: syn::parse::ParseStream) -> DiagnosticResult<Self> {
         parse(input)
     }
 }
@@ -84,23 +85,24 @@ impl Default for GlobalMacroArgs {
 }
 
 impl ParseFrom<Vec<syn::Ident>> for GlobalMacroArgs {
-    fn parse_from(vals: &Vec<syn::Ident>) -> ParseMsgResult<Self> {
+    fn parse_from(vals: &Vec<syn::Ident>) -> DiagnosticResult<Self> {
         let mut g = Self::default();
         vals.map_vec(|i| match i.to_string().as_str() {
             "Dummy" => Ok(g.is_dummy = true),
             "Const" => Ok(g.is_const = true),
             "Singleton" => i.error(
                 "Global cannot be a Singleton\nPerhaps you meant to declare this as 'component'?",
+                "",
             ),
-            _ => i.error(&format!("Unknown macro argument for global: {i}")),
+            _ => i.error(&format!("Unknown macro argument for global: {i}"), ""),
         })
-        .combine_msgs()?;
+        .combine_results()?;
         Ok(g)
     }
 }
 
 impl Parse for GlobalMacroArgs {
-    fn parse(input: syn::parse::ParseStream) -> ParseMsgResult<Self> {
+    fn parse(input: syn::parse::ParseStream) -> DiagnosticResult<Self> {
         parse(input)
     }
 }
@@ -119,7 +121,7 @@ impl Default for SystemMacroArgs {
 }
 
 impl ParseFrom<Vec<syn::Path>> for SystemMacroArgs {
-    fn parse_from(vals: &Vec<syn::Path>) -> ParseMsgResult<Self> {
+    fn parse_from(vals: &Vec<syn::Path>) -> DiagnosticResult<Self> {
         let mut is_init = false;
         let states = vals.filter_map_vec(|p| {
             if p.get_ident().is_some_and(|i| i == "Init") {
@@ -133,11 +135,12 @@ impl ParseFrom<Vec<syn::Path>> for SystemMacroArgs {
             true => match &states[..] {
                 [] => Ok(Self::Init()),
                 slice => Err(slice.map_vec(|(path, span)| {
-                    ParseMsg::from_span(
+                    Error::spanned(
                         &format!(
                             "Unknown macro argument for init system: {}",
                             path.join("::")
                         ),
+                        "",
                         span.span(),
                     )
                 })),
@@ -148,7 +151,7 @@ impl ParseFrom<Vec<syn::Path>> for SystemMacroArgs {
 }
 
 impl Parse for SystemMacroArgs {
-    fn parse(input: syn::parse::ParseStream) -> ParseMsgResult<Self> {
+    fn parse(input: syn::parse::ParseStream) -> DiagnosticResult<Self> {
         parse(input)
     }
 }

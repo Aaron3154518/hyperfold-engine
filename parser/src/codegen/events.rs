@@ -4,7 +4,7 @@ use shared::{
     constants::{STATE_DATA, STATE_ENTER_EVENT, STATE_EXIT_EVENT},
     match_ok,
     msg_result::{CombineMsgs, Zip2Msgs, Zip5Msgs},
-    syn::{vec_to_path, Msg, MsgResult},
+    syn::{vec_to_path, DiagnosticResult, Msg},
     traits::{unzip::Unzip3, CollectVec, CollectVecInto, MapNone},
 };
 
@@ -82,7 +82,7 @@ pub fn events(
     events: &Vec<ItemEvent>,
     states: &Vec<ItemState>,
     crates: &Crates,
-) -> MsgResult<TokenStream> {
+) -> DiagnosticResult<TokenStream> {
     let CodegenIdents {
         events: events_type,
         events_var,
@@ -97,7 +97,7 @@ pub fn events(
         (0..events.len()).unzip_vec_into(|i| (event_var(i), event_variant(i)));
     let e_types = events
         .map_vec(|e| crates.get_item_syn_path(cr_idx, &e.path))
-        .combine_msgs();
+        .combine_results();
 
     let (s_vars, s_variants, s_exit_events) = states.enumer_unzipn_vec(
         |(i, s)| (state_var(i), state_variant(i), event_variant(s.exit_event)),
@@ -105,7 +105,7 @@ pub fn events(
     );
     let s_types = states
         .map_vec(|s| crates.get_item_syn_path(cr_idx, &s.path))
-        .combine_msgs();
+        .combine_results();
     let s_data = format_ident!("{STATE_DATA}");
     let s_on_exit = format_ident!("{STATE_EXIT_EVENT}");
 
@@ -210,7 +210,7 @@ pub fn event_trait_defs(
     events: &Vec<ItemEvent>,
     states: &Vec<ItemState>,
     crates: &Crates,
-) -> MsgResult<TokenStream> {
+) -> DiagnosticResult<TokenStream> {
     trait_defs(
         cr_idx,
         crates,
@@ -227,7 +227,7 @@ pub fn event_trait_impls(
     events: &Vec<ItemEvent>,
     states: &Vec<ItemState>,
     crates: &Crates,
-) -> MsgResult<TokenStream> {
+) -> DiagnosticResult<TokenStream> {
     let macro_cr_idx = crates.get_crate_index(Crate::Macros);
 
     // Implement trait for every event
@@ -235,13 +235,13 @@ pub fn event_trait_impls(
         (0..events.len()).unzip_vec_into(|i| (event_var(i), event_variant(i)));
     let e_types = events
         .map_vec(|e| crates.get_item_syn_path(cr_idx, &e.path))
-        .combine_msgs();
+        .combine_results();
 
     // Implement trait for every state
     let s_vars = (0..states.len()).map_vec_into(|i| state_var(i));
     let s_types = states
         .map_vec(|s| crates.get_item_syn_path(cr_idx, &s.path))
-        .combine_msgs();
+        .combine_results();
 
     // Implement all dependency traits
     let crate_paths = crates

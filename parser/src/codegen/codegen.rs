@@ -14,7 +14,7 @@ use shared::{
     constants::{INDEX, INDEX_SEP},
     match_ok,
     msg_result::{CombineMsgs, MsgTrait, Zip2Msgs, Zip9Msgs},
-    syn::{CatchErr, Msg, MsgResult, ToRange},
+    syn::{CatchErr, DiagnosticResult, Msg, ToRange},
     traits::{Catch, CollectVec, CollectVecInto, ThenOk},
 };
 
@@ -30,7 +30,7 @@ use crate::{
 
 use super::Crates;
 
-pub fn codegen(crates: &Crates, items: &Items) -> MsgResult<Vec<TokenStream>> {
+pub fn codegen(crates: &Crates, items: &Items) -> DiagnosticResult<Vec<TokenStream>> {
     let main_cr_idx = crates.get_crate_index(Crate::Main);
     let macro_cr_idx = crates.get_crate_index(Crate::Macros);
 
@@ -65,7 +65,7 @@ pub fn codegen(crates: &Crates, items: &Items) -> MsgResult<Vec<TokenStream>> {
                 }
             })
         })
-        .combine_msgs();
+        .combine_results();
 
     // Generate manager struct
     let manager_def = super::manager_def();
@@ -77,14 +77,14 @@ pub fn codegen(crates: &Crates, items: &Items) -> MsgResult<Vec<TokenStream>> {
         .map_vec_into(|cr| {
             NAMESPACE_USE_STMTS
                 .map_vec(|path| crates.get_syn_path(cr.idx, path))
-                .combine_msgs()
+                .combine_results()
         })
-        .combine_msgs()
+        .combine_results()
         .map(|use_stmts| use_stmts.map_vec_into(|stmts| quote!(#(pub use #stmts;)*)));
 
     let main_use_stmts = MAIN_USE_STMTS
         .map_vec(|path| crates.get_syn_path(main_cr_idx, path))
-        .combine_msgs()
+        .combine_results()
         .map(|use_stmts| quote!(#(use #use_stmts;)*));
 
     // Write codegen to file
@@ -156,7 +156,7 @@ pub fn codegen(crates: &Crates, items: &Items) -> MsgResult<Vec<TokenStream>> {
     )
 }
 
-pub fn write_codegen(code: Vec<(&AstCrate, String)>) -> MsgResult<()> {
+pub fn write_codegen(code: Vec<(&AstCrate, String)>) -> DiagnosticResult<()> {
     let out = PathBuf::from(std::env::var("OUT_DIR").catch_err("No out dir specified")?);
 
     let mut index_lines = Vec::new();

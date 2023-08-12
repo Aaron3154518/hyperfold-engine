@@ -9,7 +9,7 @@ use super::AstMod;
 use shared::{
     macros::{expand_enum, ExpandEnum},
     parsing::{ComponentMacroArgs, GlobalMacroArgs},
-    syn::{Msg, MsgResult},
+    syn::{DiagnosticResult, Msg},
 };
 
 // Symbol with path - Edit this to add new engine items
@@ -93,21 +93,24 @@ impl Symbol {
         let msg = format!("Expected {} but found {}", expected, self.kind);
         match location {
             Some((m, span)) => Msg::for_mod(&msg, m, span),
-            None => Msg::String(msg),
+            None => Error::new(&msg),
         }
     }
 }
 
 // Base for match symbol
 pub trait MatchSymbolTrait<'a> {
-    fn and_then_symbol<T>(self, f: impl FnOnce(&'a Symbol) -> MsgResult<T>) -> MsgResult<T>;
+    fn and_then_symbol<T>(
+        self,
+        f: impl FnOnce(&'a Symbol) -> DiagnosticResult<T>,
+    ) -> DiagnosticResult<T>;
 
     fn and_then_symbol_in_mod<T>(
         self,
-        f: impl FnOnce(&'a Symbol) -> MsgResult<T>,
+        f: impl FnOnce(&'a Symbol) -> DiagnosticResult<T>,
         m: &AstMod,
         span: &dyn Spanned,
-    ) -> MsgResult<T>;
+    ) -> DiagnosticResult<T>;
 }
 
 // Private part of MatchSymbol
@@ -120,9 +123,9 @@ mod match_symbol {
     {
         fn and_then_impl<T>(
             self,
-            f: impl FnOnce(&'a Symbol) -> MsgResult<T>,
+            f: impl FnOnce(&'a Symbol) -> DiagnosticResult<T>,
             l: Option<Location>,
-        ) -> MsgResult<T> {
+        ) -> DiagnosticResult<T> {
             match l {
                 Some((m, span)) => self.and_then_symbol_in_mod(f, m, span),
                 None => self.and_then_symbol(f),
@@ -132,7 +135,7 @@ mod match_symbol {
         fn expect_component_impl(
             self,
             l: Option<Location>,
-        ) -> MsgResult<(&'a Symbol, ComponentSymbol)> {
+        ) -> DiagnosticResult<(&'a Symbol, ComponentSymbol)> {
             self.and_then_impl(
                 |arg| match arg.kind {
                     SymbolType::Component(c_sym) => Ok((arg, c_sym)),
@@ -142,7 +145,10 @@ mod match_symbol {
             )
         }
 
-        fn expect_global_impl(self, l: Option<Location>) -> MsgResult<(&'a Symbol, GlobalSymbol)> {
+        fn expect_global_impl(
+            self,
+            l: Option<Location>,
+        ) -> DiagnosticResult<(&'a Symbol, GlobalSymbol)> {
             self.and_then_impl(
                 |arg| match arg.kind {
                     SymbolType::Global(g_sym) => Ok((arg, g_sym)),
@@ -152,7 +158,10 @@ mod match_symbol {
             )
         }
 
-        fn expect_trait_impl(self, l: Option<Location>) -> MsgResult<(&'a Symbol, GlobalSymbol)> {
+        fn expect_trait_impl(
+            self,
+            l: Option<Location>,
+        ) -> DiagnosticResult<(&'a Symbol, GlobalSymbol)> {
             self.and_then_impl(
                 |arg| match arg.kind {
                     SymbolType::Trait(g_sym) => Ok((arg, g_sym)),
@@ -165,7 +174,7 @@ mod match_symbol {
         fn expect_global_or_trait_impl(
             self,
             l: Option<Location>,
-        ) -> MsgResult<(&'a Symbol, GlobalSymbol)> {
+        ) -> DiagnosticResult<(&'a Symbol, GlobalSymbol)> {
             self.and_then_impl(
                 |arg| match arg.kind {
                     SymbolType::Global(g_sym) | SymbolType::Trait(g_sym) => Ok((arg, g_sym)),
@@ -175,7 +184,7 @@ mod match_symbol {
             )
         }
 
-        fn expect_event_impl(self, l: Option<Location>) -> MsgResult<(&'a Symbol, usize)> {
+        fn expect_event_impl(self, l: Option<Location>) -> DiagnosticResult<(&'a Symbol, usize)> {
             self.and_then_impl(
                 |arg| match arg.kind {
                     SymbolType::Event(i) => Ok((arg, i)),
@@ -185,7 +194,7 @@ mod match_symbol {
             )
         }
 
-        fn expect_state_impl(self, l: Option<Location>) -> MsgResult<(&'a Symbol, usize)> {
+        fn expect_state_impl(self, l: Option<Location>) -> DiagnosticResult<(&'a Symbol, usize)> {
             self.and_then_impl(
                 |arg| match arg.kind {
                     SymbolType::State(i) => Ok((arg, i)),
@@ -195,7 +204,10 @@ mod match_symbol {
             )
         }
 
-        fn expect_system_impl(self, l: Option<Location>) -> MsgResult<(&'a Symbol, (usize, Span))> {
+        fn expect_system_impl(
+            self,
+            l: Option<Location>,
+        ) -> DiagnosticResult<(&'a Symbol, (usize, Span))> {
             self.and_then_impl(
                 |arg| match arg.kind {
                     SymbolType::System(i, s) => Ok((arg, (i, s))),
@@ -205,7 +217,10 @@ mod match_symbol {
             )
         }
 
-        fn expect_component_set_impl(self, l: Option<Location>) -> MsgResult<(&'a Symbol, usize)> {
+        fn expect_component_set_impl(
+            self,
+            l: Option<Location>,
+        ) -> DiagnosticResult<(&'a Symbol, usize)> {
             self.and_then_impl(
                 |arg| match arg.kind {
                     SymbolType::ComponentSet(i) => Ok((arg, i)),
@@ -218,7 +233,7 @@ mod match_symbol {
         fn expect_any_hardcoded_impl(
             self,
             l: Option<Location>,
-        ) -> MsgResult<(&'a Symbol, HardcodedSymbol)> {
+        ) -> DiagnosticResult<(&'a Symbol, HardcodedSymbol)> {
             self.and_then_impl(
                 |arg| match arg.kind {
                     SymbolType::Hardcoded(sym) => Ok((arg, sym)),
@@ -232,7 +247,7 @@ mod match_symbol {
             self,
             sym: HardcodedSymbol,
             l: Option<Location>,
-        ) -> MsgResult<&'a Symbol> {
+        ) -> DiagnosticResult<&'a Symbol> {
             self.expect_any_hardcoded_impl(l)
                 .and_then(|(s, h_sym)| match h_sym == sym {
                     true => Ok(s),
@@ -251,7 +266,7 @@ pub trait MatchSymbol<'a>
 where
     Self: Sized + match_symbol::MatchSymbolPrivate<'a>,
 {
-    fn expect_component(self) -> MsgResult<(&'a Symbol, ComponentSymbol)> {
+    fn expect_component(self) -> DiagnosticResult<(&'a Symbol, ComponentSymbol)> {
         self.expect_component_impl(None)
     }
 
@@ -259,11 +274,11 @@ where
         self,
         m: &AstMod,
         span: &impl Spanned,
-    ) -> MsgResult<(&'a Symbol, ComponentSymbol)> {
+    ) -> DiagnosticResult<(&'a Symbol, ComponentSymbol)> {
         self.expect_component_impl(Some((m, span)))
     }
 
-    fn expect_global(self) -> MsgResult<(&'a Symbol, GlobalSymbol)> {
+    fn expect_global(self) -> DiagnosticResult<(&'a Symbol, GlobalSymbol)> {
         self.expect_global_impl(None)
     }
 
@@ -271,11 +286,11 @@ where
         self,
         m: &AstMod,
         span: &impl Spanned,
-    ) -> MsgResult<(&'a Symbol, GlobalSymbol)> {
+    ) -> DiagnosticResult<(&'a Symbol, GlobalSymbol)> {
         self.expect_global_impl(Some((m, span)))
     }
 
-    fn expect_trait(self) -> MsgResult<(&'a Symbol, GlobalSymbol)> {
+    fn expect_trait(self) -> DiagnosticResult<(&'a Symbol, GlobalSymbol)> {
         self.expect_trait_impl(None)
     }
 
@@ -283,11 +298,11 @@ where
         self,
         m: &AstMod,
         span: &impl Spanned,
-    ) -> MsgResult<(&'a Symbol, GlobalSymbol)> {
+    ) -> DiagnosticResult<(&'a Symbol, GlobalSymbol)> {
         self.expect_trait_impl(Some((m, span)))
     }
 
-    fn expect_global_or_trait(self) -> MsgResult<(&'a Symbol, GlobalSymbol)> {
+    fn expect_global_or_trait(self) -> DiagnosticResult<(&'a Symbol, GlobalSymbol)> {
         self.expect_global_or_trait_impl(None)
     }
 
@@ -295,11 +310,11 @@ where
         self,
         m: &AstMod,
         span: &impl Spanned,
-    ) -> MsgResult<(&'a Symbol, GlobalSymbol)> {
+    ) -> DiagnosticResult<(&'a Symbol, GlobalSymbol)> {
         self.expect_global_or_trait_impl(Some((m, span)))
     }
 
-    fn expect_event(self) -> MsgResult<(&'a Symbol, usize)> {
+    fn expect_event(self) -> DiagnosticResult<(&'a Symbol, usize)> {
         self.expect_event_impl(None)
     }
 
@@ -307,11 +322,11 @@ where
         self,
         m: &AstMod,
         span: &impl Spanned,
-    ) -> MsgResult<(&'a Symbol, usize)> {
+    ) -> DiagnosticResult<(&'a Symbol, usize)> {
         self.expect_event_impl(Some((m, span)))
     }
 
-    fn expect_state(self) -> MsgResult<(&'a Symbol, usize)> {
+    fn expect_state(self) -> DiagnosticResult<(&'a Symbol, usize)> {
         self.expect_state_impl(None)
     }
 
@@ -319,11 +334,11 @@ where
         self,
         m: &AstMod,
         span: &impl Spanned,
-    ) -> MsgResult<(&'a Symbol, usize)> {
+    ) -> DiagnosticResult<(&'a Symbol, usize)> {
         self.expect_state_impl(Some((m, span)))
     }
 
-    fn expect_system(self) -> MsgResult<(&'a Symbol, (usize, Span))> {
+    fn expect_system(self) -> DiagnosticResult<(&'a Symbol, (usize, Span))> {
         self.expect_system_impl(None)
     }
 
@@ -331,11 +346,11 @@ where
         self,
         m: &AstMod,
         span: &impl Spanned,
-    ) -> MsgResult<(&'a Symbol, (usize, Span))> {
+    ) -> DiagnosticResult<(&'a Symbol, (usize, Span))> {
         self.expect_system_impl(Some((m, span)))
     }
 
-    fn expect_component_set(self) -> MsgResult<(&'a Symbol, usize)> {
+    fn expect_component_set(self) -> DiagnosticResult<(&'a Symbol, usize)> {
         self.expect_component_set_impl(None)
     }
 
@@ -343,11 +358,11 @@ where
         self,
         m: &AstMod,
         span: &impl Spanned,
-    ) -> MsgResult<(&'a Symbol, usize)> {
+    ) -> DiagnosticResult<(&'a Symbol, usize)> {
         self.expect_component_set_impl(Some((m, span)))
     }
 
-    fn expect_any_hardcoded(self) -> MsgResult<(&'a Symbol, HardcodedSymbol)> {
+    fn expect_any_hardcoded(self) -> DiagnosticResult<(&'a Symbol, HardcodedSymbol)> {
         self.expect_any_hardcoded_impl(None)
     }
 
@@ -355,11 +370,11 @@ where
         self,
         m: &AstMod,
         span: &impl Spanned,
-    ) -> MsgResult<(&'a Symbol, HardcodedSymbol)> {
+    ) -> DiagnosticResult<(&'a Symbol, HardcodedSymbol)> {
         self.expect_any_hardcoded_impl(Some((m, span)))
     }
 
-    fn expect_hardcoded(self, sym: HardcodedSymbol) -> MsgResult<&'a Symbol> {
+    fn expect_hardcoded(self, sym: HardcodedSymbol) -> DiagnosticResult<&'a Symbol> {
         self.expect_hardcoded_impl(sym, None)
     }
 
@@ -368,7 +383,7 @@ where
         sym: HardcodedSymbol,
         m: &AstMod,
         span: &impl Spanned,
-    ) -> MsgResult<&'a Symbol> {
+    ) -> DiagnosticResult<&'a Symbol> {
         self.expect_hardcoded_impl(sym, Some((m, span)))
     }
 }
@@ -377,11 +392,11 @@ impl<'a, T> MatchSymbol<'a> for T where T: match_symbol::MatchSymbolPrivate<'a> 
 
 // Helper function to just get the data from a resolved symbol
 pub trait DiscardSymbol<T> {
-    fn discard_symbol(self) -> MsgResult<T>;
+    fn discard_symbol(self) -> DiagnosticResult<T>;
 }
 
-impl<T> DiscardSymbol<T> for MsgResult<(&Symbol, T)> {
-    fn discard_symbol(self) -> MsgResult<T> {
+impl<T> DiscardSymbol<T> for DiagnosticResult<(&Symbol, T)> {
+    fn discard_symbol(self) -> DiagnosticResult<T> {
         self.map(|(_, t)| t)
     }
 }

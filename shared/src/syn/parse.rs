@@ -1,18 +1,16 @@
+use diagnostic::{DiagnosticResult, Error};
 use proc_macro2::{TokenStream, TokenTree};
 use syn::{parse::ParseStream, spanned::Spanned};
 
-use crate::{
-    syn::msg::{ParseMsg, ParseMsgResult},
-    traits::Increment,
-};
+use crate::traits::Increment;
 
 pub trait Parse<T = Self> {
-    fn parse(input: ParseStream) -> ParseMsgResult<T>;
+    fn parse(input: ParseStream) -> DiagnosticResult<T>;
 }
 
-pub struct ParseMsgResultWrapper<T>(pub ParseMsgResult<T>);
+pub struct DiagnosticResultWrapper<T>(pub DiagnosticResult<T>);
 
-impl<T> syn::parse::Parse for ParseMsgResultWrapper<T>
+impl<T> syn::parse::Parse for DiagnosticResultWrapper<T>
 where
     T: Parse<T>,
 {
@@ -23,12 +21,12 @@ where
         if result.is_err() {
             input.consume();
         }
-        Ok(ParseMsgResultWrapper(result))
+        Ok(DiagnosticResultWrapper(result))
     }
 }
 
 pub trait StreamParse {
-    fn parse_stream<T>(self) -> ParseMsgResult<T>
+    fn parse_stream<T>(self) -> DiagnosticResult<T>
     where
         T: Parse;
 
@@ -36,7 +34,7 @@ pub trait StreamParse {
 }
 
 impl StreamParse for ParseStream<'_> {
-    fn parse_stream<T>(self) -> ParseMsgResult<T>
+    fn parse_stream<T>(self) -> DiagnosticResult<T>
     where
         T: Parse,
     {
@@ -55,23 +53,23 @@ impl StreamParse for ParseStream<'_> {
     }
 }
 
-pub fn parse_tokens<T>(input: TokenStream) -> ParseMsgResult<T>
+pub fn parse_tokens<T>(input: TokenStream) -> DiagnosticResult<T>
 where
     T: Parse<T>,
 {
     let input_span = input.span();
-    match syn::parse2::<ParseMsgResultWrapper<T>>(input) {
+    match syn::parse2::<DiagnosticResultWrapper<T>>(input) {
         Ok(mut t) => {
             // Add input span to empty message spans
             if let Err(msgs) = &mut t.0 {
                 msgs.iter_mut().for_each(|msg| {
-                    if let ParseMsg::Diagnostic { span, .. } = msg {
-                        *span = span.located_at(input_span);
+                    if let Error::Spanned(err) = msg {
+                        // *span = span.located_at(input_span);
                     }
                 });
             }
             t.0
         }
-        Err(e) => Err(vec![ParseMsg::from_span(&format!("{e}"), e.span())]),
+        Err(e) => Err(vec![Error::spanned(&format!("{e}"), "", e.span())]),
     }
 }

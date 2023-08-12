@@ -3,6 +3,7 @@ use std::{
     path::{Display, PathBuf},
 };
 
+use diagnostic::{CatchErr, DiagnosticResult, Error, ErrorSpan, ToResultsTrait};
 use proc_macro2::{Span, TokenStream};
 
 use syn::{spanned::Spanned, visit::Visit};
@@ -10,10 +11,7 @@ use syn::{spanned::Spanned, visit::Visit};
 use crate::{
     parse::attributes::{get_attributes_if_active, Attribute, EcsAttribute},
     parse::ItemPath,
-    utils::{
-        paths::{CratePath, ENGINE_PATHS, MACRO_PATHS},
-        SpanFiles,
-    },
+    utils::paths::{CratePath, ENGINE_PATHS, MACRO_PATHS},
 };
 
 use super::{attributes::AstAttribute, Symbol};
@@ -22,7 +20,7 @@ use shared::{
     macros::{expand_enum, ExpandEnum},
     msg_result::{MsgTrait, ToMsgs},
     parsing::{ComponentMacroArgs, GlobalMacroArgs},
-    syn::{add_use_item, use_path_from_syn, CatchErr, Msg, MsgResult, SpanFile, ToRange},
+    syn::{add_use_item, use_path_from_syn, ToRange},
     traits::{Catch, HandleErr, PushInto},
 };
 
@@ -108,10 +106,6 @@ pub enum AstModType {
 }
 
 // Module
-struct VisitorArgs<'a> {
-    span_files: &'a mut SpanFiles,
-}
-
 pub struct NewMod {
     pub name: String,
     pub mods: Vec<NewMod>,
@@ -122,9 +116,8 @@ pub struct NewMod {
 #[derive(Debug)]
 pub struct AstMod {
     pub ty: AstModType,
-    pub dir: PathBuf,
-    pub span_file: usize,
-    pub span_start: Option<usize>,
+    pub file: PathBuf,
+    pub span: ErrorSpan,
     pub path: Vec<String>,
     pub mods: Vec<AstMod>,
     pub uses: Vec<AstUse>,
@@ -135,18 +128,11 @@ pub struct AstMod {
 // TODO: ignore private mods to avoid name collisions
 // Pass 1: parsing
 impl AstMod {
-    pub fn new(
-        dir: PathBuf,
-        path: Vec<String>,
-        ty: AstModType,
-        span_file: usize,
-        span_start: Option<usize>,
-    ) -> Self {
+    pub fn new(file: PathBuf, path: Vec<String>, ty: AstModType, span: ErrorSpan) -> Self {
         Self {
             ty,
-            dir,
-            span_file,
-            span_start,
+            file,
+            span,
             path,
             mods: Vec::new(),
             uses: Vec::new(),
@@ -155,13 +141,7 @@ impl AstMod {
         }
     }
 
-    pub fn parse(
-        span_files: &mut SpanFiles,
-        dir: PathBuf,
-        file: PathBuf,
-        path: Vec<String>,
-        ty: AstModType,
-    ) -> MsgResult<Self> {
+    pub fn parse(file: PathBuf, path: Vec<String>, ty: AstModType) -> DiagnosticResult<Self> {
         let file_contents = fs::read_to_string(file.to_owned())
             .catch_err(&format!("Failed to read file: {}", file.display()))?;
         let ast = syn::parse_file(&file_contents).catch_err(&format!(
@@ -169,15 +149,9 @@ impl AstMod {
             file.display()
         ))?;
 
-        let mut s = Self::new(
-            dir,
-            path,
-            ty,
-            span_files.add(file.display().to_string(), file_contents),
-            ast.span().to_range().ok().map(|r| r.start),
-        );
+        let mut s = Self::new(file, path, ty, ast.span().to_range().ok().map(|r| r.start));
 
-        s.visit_file(ast, &mut VisitorArgs { span_files })?;
+        s.visit_file(ast)?;
         // Post processing
         s.resolve_local_use_paths()?;
 
@@ -186,11 +160,10 @@ impl AstMod {
 
     pub fn add_mod(&mut self, data: NewMod) {
         let mut new_mod = AstMod::new(
-            self.dir.clone(),
+            self.file.clone(),
             self.path.to_vec().push_into(data.name),
             AstModType::Internal,
-            self.span_file,
-            self.span_start,
+            self.span,
         );
         new_mod.symbols = data.symbols;
         new_mod.uses = data.uses;
@@ -201,7 +174,7 @@ impl AstMod {
     }
 
     // E.g. mod Foo; use Foo::Bar;
-    pub fn resolve_local_use_paths(&mut self) -> MsgResult<()> {
+    pub fn resolve_local_use_paths(&mut self) -> DiagnosticResult<()> {
         for use_path in self.uses.iter_mut() {
             let first = use_path.path.first().catch_err("Empty use path")?;
             if let Some(m) = self
@@ -219,22 +192,22 @@ impl AstMod {
 
 // File/items
 impl AstMod {
-    fn visit_file(&mut self, i: syn::File, args: &mut VisitorArgs) -> MsgResult<()> {
-        self.visit_items(i.items, args)
+    fn visit_file(&mut self, i: syn::File) -> DiagnosticResult<()> {
+        self.visit_items(i.items)
     }
 
-    fn visit_items(&mut self, items: Vec<syn::Item>, args: &mut VisitorArgs) -> MsgResult<()> {
+    fn visit_items(&mut self, items: Vec<syn::Item>) -> DiagnosticResult<()> {
         let mut errs = Vec::new();
         for item in items {
-            self.visit_item(item, args).record_errs(&mut errs);
+            self.visit_item(item).record_errs(&mut errs);
         }
         errs.err_or(())
     }
 
-    fn visit_item(&mut self, i: syn::Item, args: &mut VisitorArgs) -> MsgResult<()> {
+    fn visit_item(&mut self, i: syn::Item) -> DiagnosticResult<()> {
         // Match again to parse
         match i {
-            syn::Item::Mod(i) => self.visit_item_mod(i, args)?,
+            syn::Item::Mod(i) => self.visit_item_mod(i)?,
             syn::Item::Use(i) => self.visit_item_use(i)?,
             syn::Item::Fn(i) => self.visit_item_fn(i)?,
             syn::Item::Enum(i) => self.visit_item_enum(i)?,
@@ -246,25 +219,26 @@ impl AstMod {
     }
 
     // Mod
-    fn visit_item_mod(&mut self, i: syn::ItemMod, args: &mut VisitorArgs) -> MsgResult<()> {
+    fn visit_item_mod(&mut self, i: syn::ItemMod) -> DiagnosticResult<()> {
         if let Some(attrs) = get_attributes_if_active(&i.attrs, &self.path, &Vec::new())? {
             self.mods.push(match i.content {
                 // Parse inner mod
                 Some((_, items)) => {
                     let mut new_mod = Self::new(
-                        self.dir.to_owned(),
+                        self.file.to_owned(),
                         [self.path.to_vec(), vec![i.ident.to_string()]].concat(),
                         AstModType::Internal,
-                        self.span_file,
-                        self.span_start,
+                        self.span,
                     );
-                    new_mod.visit_items(items, args);
+                    new_mod.visit_items(items);
                     new_mod
                 }
                 // Parse file mod
                 None => Self::parse_mod(
-                    args.span_files,
-                    self.dir.join(i.ident.to_string()),
+                    self.file
+                        .to_owned()
+                        .pop_into()
+                        .push_into(i.ident.to_string()),
                     &[self.path.to_vec(), vec![i.ident.to_string()]].concat(),
                 )?,
             });
@@ -273,7 +247,7 @@ impl AstMod {
     }
 
     // Components
-    fn visit_item_struct(&mut self, i: syn::ItemStruct) -> MsgResult<()> {
+    fn visit_item_struct(&mut self, i: syn::ItemStruct) -> DiagnosticResult<()> {
         if let Some(attrs) = get_attributes_if_active(&i.attrs, &self.path, &Vec::new())? {
             if !attrs.is_empty() {
                 self.items.structs.push(AstItem {
@@ -286,7 +260,7 @@ impl AstMod {
         Ok(())
     }
 
-    fn visit_item_enum(&mut self, i: syn::ItemEnum) -> MsgResult<()> {
+    fn visit_item_enum(&mut self, i: syn::ItemEnum) -> DiagnosticResult<()> {
         if let Some(attrs) = get_attributes_if_active(&i.attrs, &self.path, &Vec::new())? {
             if !attrs.is_empty() {
                 self.items.enums.push(AstItem {
@@ -300,7 +274,7 @@ impl AstMod {
     }
 
     // Systems
-    fn visit_item_fn(&mut self, i: syn::ItemFn) -> MsgResult<()> {
+    fn visit_item_fn(&mut self, i: syn::ItemFn) -> DiagnosticResult<()> {
         if let Some(attrs) = get_attributes_if_active(&i.attrs, &self.path, &Vec::new())? {
             if !attrs.is_empty() {
                 self.items.functions.push(AstItem {
@@ -314,7 +288,7 @@ impl AstMod {
     }
 
     // Macro call
-    fn visit_item_macro(&mut self, i: syn::ItemMacro) -> MsgResult<()> {
+    fn visit_item_macro(&mut self, i: syn::ItemMacro) -> DiagnosticResult<()> {
         if let Some(_) = get_attributes_if_active(&i.attrs, &self.path, &Vec::new())? {
             // Some is for macro_rules!
             if i.ident.is_none() {
@@ -338,7 +312,7 @@ impl AstMod {
 
 // Use paths
 impl AstMod {
-    fn visit_item_use(&mut self, i: syn::ItemUse) -> MsgResult<()> {
+    fn visit_item_use(&mut self, i: syn::ItemUse) -> DiagnosticResult<()> {
         if let Some(attrs) = get_attributes_if_active(&i.attrs, &self.path, &Vec::new())? {
             let mut uses = Vec::new();
             self.visit_use_tree(i.tree, &mut Vec::new(), &mut uses)?;
@@ -358,7 +332,7 @@ impl AstMod {
         i: syn::UseTree,
         path: &mut Vec<String>,
         items: &mut Vec<AstUse>,
-    ) -> MsgResult<()> {
+    ) -> DiagnosticResult<()> {
         Ok(match i {
             syn::UseTree::Path(i) => self.visit_use_path(i, path, items)?,
             syn::UseTree::Name(i) => self.visit_use_name(i, path, items)?,
@@ -373,7 +347,7 @@ impl AstMod {
         i: syn::UsePath,
         path: &mut Vec<String>,
         items: &mut Vec<AstUse>,
-    ) -> MsgResult<()> {
+    ) -> DiagnosticResult<()> {
         add_use_item(&self.path, path, i.ident.to_string());
         self.visit_use_tree(*i.tree, path, items)
     }
@@ -383,7 +357,7 @@ impl AstMod {
         i: syn::UseName,
         path: &mut Vec<String>,
         items: &mut Vec<AstUse>,
-    ) -> MsgResult<()> {
+    ) -> DiagnosticResult<()> {
         add_use_item(&self.path, path, i.ident.to_string());
         items.push(AstUse {
             ident: path
@@ -422,22 +396,12 @@ impl AstMod {
         i: syn::UseGroup,
         path: &mut Vec<String>,
         items: &mut Vec<AstUse>,
-    ) -> MsgResult<()> {
+    ) -> DiagnosticResult<()> {
         let mut errs = Vec::new();
         for i in i.items {
             self.visit_use_tree(i, &mut path.to_vec(), items)
                 .record_errs(&mut errs);
         }
         errs.err_or(())
-    }
-}
-
-impl SpanFile for AstMod {
-    fn span_file(&self) -> usize {
-        self.span_file
-    }
-
-    fn span_start(&self) -> Option<usize> {
-        self.span_start
     }
 }

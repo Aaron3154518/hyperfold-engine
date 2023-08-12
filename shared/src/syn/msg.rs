@@ -19,7 +19,7 @@ pub trait SpanFile {
 pub trait NewError {
     fn msg(&self, msg: &str) -> ParseMsg;
 
-    fn error<T>(&self, msg: &str) -> ParseMsgResult<T>;
+    fn error<T>(&self, msg: &str) -> DiagnosticResult<T>;
 }
 
 impl<S> NewError for S
@@ -30,7 +30,7 @@ where
         ParseMsg::from_span(msg, self.span())
     }
 
-    fn error<T>(&self, msg: &str) -> ParseMsgResult<T> {
+    fn error<T>(&self, msg: &str) -> DiagnosticResult<T> {
         Err(vec![self.msg(msg)])
     }
 }
@@ -55,7 +55,7 @@ impl ParseMsg {
     }
 }
 
-pub type ParseMsgResult<T> = msg_result::MsgResult<T, ParseMsg>;
+pub type DiagnosticResult<T> = msg_result::DiagnosticResult<T, ParseMsg>;
 
 // Convert ParseMsg to Msg
 pub trait ToMsg<T> {
@@ -69,9 +69,9 @@ impl ToMsg<Msg> for ParseMsg {
         match self {
             ParseMsg::Diagnostic { msg, span } => match span.to_range() {
                 Ok(range) => Msg::from_range(msg, file, range, mod_start),
-                Err(_) => Msg::String(msg),
+                Err(_) => Error::new(&msg),
             },
-            ParseMsg::String(msg) => Msg::String(msg),
+            ParseMsg::String(msg) => Error::new(&msg),
         }
     }
 
@@ -90,29 +90,29 @@ impl ToMsg<Vec<Msg>> for Vec<ParseMsg> {
     }
 }
 
-impl<T> ToMsg<MsgResult<T>> for ParseMsgResult<T> {
-    fn for_file(self, file: usize, mod_start: Option<usize>) -> MsgResult<T> {
+impl<T> ToMsg<DiagnosticResult<T>> for DiagnosticResult<T> {
+    fn for_file(self, file: usize, mod_start: Option<usize>) -> DiagnosticResult<T> {
         self.map_err(|e| e.for_file(file, mod_start))
     }
 
-    fn for_mod(self, m: &impl SpanFile) -> MsgResult<T> {
+    fn for_mod(self, m: &impl SpanFile) -> DiagnosticResult<T> {
         self.map_err(|e| e.for_mod(m))
     }
 }
 
 // Convert syn::Result to ParseMsg
 pub trait CatchSpanErr<T> {
-    fn catch_err(self, msg: &str) -> ParseMsgResult<T>;
+    fn catch_err(self, msg: &str) -> DiagnosticResult<T>;
 
-    fn catch_err_span(self, msg: &str, span: Span) -> ParseMsgResult<T>;
+    fn catch_err_span(self, msg: &str, span: Span) -> DiagnosticResult<T>;
 }
 
 impl<T> CatchSpanErr<T> for syn::Result<T> {
-    fn catch_err(self, msg: &str) -> ParseMsgResult<T> {
+    fn catch_err(self, msg: &str) -> DiagnosticResult<T> {
         self.map_err(|e| vec![ParseMsg::from_span(msg, e.span())])
     }
 
-    fn catch_err_span(self, msg: &str, span: Span) -> ParseMsgResult<T> {
+    fn catch_err_span(self, msg: &str, span: Span) -> DiagnosticResult<T> {
         self.map_err(|_| vec![ParseMsg::from_span(msg, span)])
     }
 }
@@ -162,7 +162,7 @@ impl Msg {
     }
 }
 
-pub type MsgResult<T> = msg_result::MsgResult<T, Msg>;
+pub type DiagnosticResult<T> = msg_result::DiagnosticResult<T, Msg>;
 
 // Inject span into string messages
 pub trait InjectSpan {
@@ -194,7 +194,7 @@ impl InjectSpan for Vec<Msg> {
     }
 }
 
-impl<T> InjectSpan for MsgResult<T> {
+impl<T> InjectSpan for DiagnosticResult<T> {
     fn in_mod(self, m: &impl SpanFile, span: &(impl Spanned + ?Sized)) -> Self {
         self.map_err(|msgs| msgs.in_mod(m, span))
     }
@@ -206,34 +206,34 @@ impl<T> InjectSpan for MsgResult<T> {
 
 // Convert error type to Msg
 pub trait CatchErr<T> {
-    fn catch_err(self, msg: &str) -> MsgResult<T>;
+    fn catch_err(self, msg: &str) -> DiagnosticResult<T>;
 }
 
 impl<T> CatchErr<T> for Option<T> {
-    fn catch_err(self, msg: &str) -> MsgResult<T> {
-        self.ok_or_else(|| vec![Msg::String(msg.to_string())])
+    fn catch_err(self, msg: &str) -> DiagnosticResult<T> {
+        self.ok_or_else(|| vec![Error::new(&msg.to_string())])
     }
 }
 
 impl<T, E> CatchErr<T> for Result<T, E> {
-    fn catch_err(self, msg: &str) -> MsgResult<T> {
-        self.map_err(|_| vec![Msg::String(msg.to_string())])
+    fn catch_err(self, msg: &str) -> DiagnosticResult<T> {
+        self.map_err(|_| vec![Error::new(&msg.to_string())])
     }
 }
 
 // Access Vec or get error
 pub trait GetVec<T> {
-    fn try_get<'a>(&'a self, i: usize) -> MsgResult<&'a T>;
+    fn try_get<'a>(&'a self, i: usize) -> DiagnosticResult<&'a T>;
 
-    fn try_get_mut<'a>(&'a mut self, i: usize) -> MsgResult<&'a mut T>;
+    fn try_get_mut<'a>(&'a mut self, i: usize) -> DiagnosticResult<&'a mut T>;
 }
 
 impl<T> GetVec<T> for Vec<T> {
-    fn try_get<'a>(&'a self, i: usize) -> MsgResult<&'a T> {
+    fn try_get<'a>(&'a self, i: usize) -> DiagnosticResult<&'a T> {
         self.get(i).catch_err(&format!("Invalid index: {i}"))
     }
 
-    fn try_get_mut<'a>(&'a mut self, i: usize) -> MsgResult<&'a mut T> {
+    fn try_get_mut<'a>(&'a mut self, i: usize) -> DiagnosticResult<&'a mut T> {
         self.get_mut(i).catch_err(&format!("Invalid index: {i}"))
     }
 }
@@ -243,7 +243,7 @@ pub trait ToCompileErr<T> {
     fn to_compile_errors(self, span: Span) -> Result<T, TokenStream>;
 }
 
-impl<T> ToCompileErr<T> for MsgResult<T> {
+impl<T> ToCompileErr<T> for DiagnosticResult<T> {
     fn to_compile_errors(self, span: Span) -> Result<T, TokenStream> {
         self.map_err(|errs| {
             let errs = errs.map_vec_into(|err| {
@@ -251,7 +251,7 @@ impl<T> ToCompileErr<T> for MsgResult<T> {
                     span,
                     match err {
                         Msg::Diagnostic { msg, .. } => msg,
-                        Msg::String(msg) => msg,
+                        Error::new(&msg) => msg,
                     },
                 )
                 .into_compile_error()

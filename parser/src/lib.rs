@@ -13,22 +13,16 @@ mod utils;
 use std::{io::Write, path::PathBuf};
 
 use codegen::write_codegen;
-use codespan_reporting::{
-    diagnostic::{Diagnostic, Label},
-    term,
-};
+use diagnostic::{Diagnostic, DiagnosticLevel};
 use resolve::Items;
 
 use component_set::ComponentSetLabels;
 use parse::{AstCrate, ComponentSymbol};
 use shared::{
     msg_result::{MsgTrait, ToMsgs, Zip2Msgs},
-    syn::Msg,
     traits::{CollectVec, CollectVecInto, GetSlice},
 };
-use utils::{paths::Crate, SpanFiles};
-
-use crate::utils::writer::{Writer, WriterTrait};
+use utils::paths::Crate;
 
 // Process:
 // 1) Parse AST, get mod/crate structure, use statements, and important syntax items
@@ -38,8 +32,8 @@ use crate::utils::writer::{Writer, WriterTrait};
 // 5) Parse systems; Validate arguments; insert symbols
 // 6) Codegen
 pub fn parse(entry: PathBuf) {
-    let (errs, span_files) = match AstCrate::parse(entry) {
-        Ok((mut crates, span_files)) => {
+    let errs = match AstCrate::parse(entry) {
+        Ok(mut crates) => {
             let (items, mut errs) = Items::resolve(&mut crates);
 
             let macro_cr_idx = crates.get_crate_index(Crate::Macros);
@@ -72,28 +66,20 @@ pub fn parse(entry: PathBuf) {
 
             write_codegen(code).record_errs(&mut errs);
 
-            (errs, span_files)
+            errs
         }
-        Err(errs) => (errs, SpanFiles::new()),
+        Err(errs) => errs,
     };
 
     if !errs.is_empty() {
-        let mut writer = Writer::empty();
-        writer.write(b"\n");
-
-        let config = codespan_reporting::term::Config::default();
         for msg in errs {
-            let diagnostic = match msg {
-                Msg::Diagnostic { msg, file, span } => Diagnostic::error()
-                    .with_message(msg)
-                    .with_labels(vec![Label::primary(file, span)]),
-                Msg::String(msg) => Diagnostic::error().with_message(msg),
-            };
-            term::emit(&mut writer, &config, &span_files, &diagnostic);
+            match msg {
+                diagnostic::Error::Spanned(err) => Diagnostic::from(err),
+                diagnostic::Error::Message { msg } => {
+                    Diagnostic::without_span(msg, String::new(), DiagnosticLevel::Error)
+                }
+            }
+            .emit();
         }
-
-        let warning = "cargo:warning=";
-        let replace = format!("\n{warning}\r{}\r", " ".repeat(warning.len()));
-        println!("{}", writer.to_string().replace("\n", replace.as_str()));
     }
 }

@@ -3,7 +3,7 @@ use quote::quote;
 use shared::{
     match_ok,
     msg_result::CombineMsgs,
-    syn::{vec_to_path, MsgResult},
+    syn::{vec_to_path, DiagnosticResult},
     traits::{CollectVec, CollectVecInto},
 };
 
@@ -46,11 +46,11 @@ pub fn globals(
     cr_idx: usize,
     globals: &Vec<ItemGlobal>,
     crates: &Crates,
-) -> MsgResult<TokenStream> {
+) -> DiagnosticResult<TokenStream> {
     let vars = (0..globals.len()).map_vec_into(|i| global_var(i));
     let types = globals
         .map_vec(|g| crates.get_item_syn_path(cr_idx, &g.path))
-        .combine_msgs();
+        .combine_results();
 
     match_ok!(types, {
         codegen(CodegenArgs {

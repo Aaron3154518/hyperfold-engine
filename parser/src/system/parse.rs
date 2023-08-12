@@ -1,10 +1,4 @@
-use codespan_reporting::{
-    diagnostic::{Diagnostic, Label},
-    term::{
-        self,
-        termcolor::{ColorChoice, StandardStream},
-    },
-};
+use diagnostic::DiagnosticResult;
 use proc_macro2::Span;
 use quote::ToTokens;
 use syn::spanned::Spanned;
@@ -12,10 +6,7 @@ use syn::spanned::Spanned;
 use shared::{
     msg_result::CombineMsgs,
     parsing::SystemMacroArgs,
-    syn::{
-        get_type_generics, parse_tokens, use_path_from_syn, InjectSpan, Msg, MsgResult, ToMsg,
-        ToRange,
-    },
+    syn::{get_type_generics, parse_tokens, use_path_from_syn, ToRange},
     traits::{CollectVecInto, PushInto},
 };
 
@@ -64,7 +55,7 @@ impl FnArg {
         items: &Items,
         sig: &syn::Signature,
         (m, cr, crates): ModInfo,
-    ) -> MsgResult<Vec<Self>> {
+    ) -> DiagnosticResult<Vec<Self>> {
         sig.inputs
             .iter()
             .map_vec_into(|arg| match arg {
@@ -75,10 +66,10 @@ impl FnArg {
                     FnArg::parse_type(ty, (m, cr, crates))
                 }
             })
-            .combine_msgs()
+            .combine_results()
     }
 
-    fn parse_type(ty: &syn::Type, (m, cr, crates): ModInfo) -> MsgResult<Self> {
+    fn parse_type(ty: &syn::Type, (m, cr, crates): ModInfo) -> DiagnosticResult<Self> {
         let ty_str = ty.to_token_stream().to_string();
         match ty {
             syn::Type::Path(p) => {
@@ -183,7 +174,7 @@ impl ItemSystem {
         attr: &AstAttribute,
         items: &Items,
         (m, cr, crates): ModInfo,
-    ) -> MsgResult<Self> {
+    ) -> DiagnosticResult<Self> {
         let path = m.path.to_vec().push_into(fun.data.sig.ident.to_string());
         let attr_args = parse_tokens(attr.args.clone()).for_mod(m)?;
         FnArg::parse(&attr_args, items, &fun.data.sig, (m, cr, crates)).map(|args| ItemSystem {
@@ -195,7 +186,7 @@ impl ItemSystem {
             attr_args,
             file: m.span_file,
             span: fun.data.sig.ident.span(),
-            span_start: m.span_start,
+            span_start: m.span,
         })
     }
 
