@@ -197,6 +197,10 @@ impl AstMod {
         });
     }
 
+    pub fn take_errors(&mut self) -> Vec<SpannedError> {
+        std::mem::replace(&mut self.errs, Vec::new())
+    }
+
     // E.g. mod Foo; use Foo::Bar;
     fn resolve_local_use_paths(&mut self) {
         for use_path in self.uses.iter_mut() {

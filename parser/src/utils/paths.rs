@@ -1,4 +1,4 @@
-use diagnostic::{DiagnosticResult, Error};
+use diagnostic::ToErr;
 use once_cell::sync::Lazy;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
@@ -7,7 +7,7 @@ use shared::{
     macros::{expand_enum, ExpandEnum},
     match_ok,
     msg_result::Zip7Msgs,
-    syn::vec_to_path,
+    syn::{error::MsgResult, vec_to_path},
     traits::{Call, CollectVec, PushInto},
 };
 
@@ -162,10 +162,10 @@ macro_rules! engine_globals {
         }
 
         impl $ty {
-            pub fn get_global_vars(&self, crates: &Crates, cr_idx: usize) -> DiagnosticResult<$ty_res> {
+            pub fn get_global_vars(&self, crates: &Crates, cr_idx: usize) -> MsgResult<$ty_res> {
                 let cr = match crates.get(cr_idx) {
                     Some(cr) => cr,
-                    None => return Err(vec![Error::new(&format!("Invalid crate index: {cr_idx}"))]),
+                    None => return format!("Invalid crate index: {cr_idx}").err(),
                 };
                 let get_global = |cr_path| {
                     crates

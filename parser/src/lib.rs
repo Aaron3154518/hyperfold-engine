@@ -20,7 +20,7 @@ use component_set::ComponentSetLabels;
 use parse::{AstCrate, ComponentSymbol};
 use shared::{
     msg_result::{MsgTrait, ToMsgs, Zip2Msgs},
-    traits::{CollectVec, CollectVecInto, GetSlice},
+    traits::{Call, CollectVec, CollectVecInto, GetSlice},
 };
 use utils::paths::Crate;
 
@@ -66,20 +66,27 @@ pub fn parse(entry: PathBuf) {
 
             write_codegen(code).record_errs(&mut errs);
 
+            crates.iter().for_each(|cr| {
+                cr.iter_mods().for_each(|m| {
+                    m.take_errors().into_iter().for_each(|err| {
+                        Diagnostic::from_span(
+                            err.msg,
+                            m.get_file(),
+                            DiagnosticLevel::Error,
+                            err.span,
+                        )
+                        .emit()
+                        .call(|_| ())
+                    })
+                })
+            });
+
             errs
         }
         Err(errs) => errs,
     };
 
-    if !errs.is_empty() {
-        for msg in errs {
-            match msg {
-                diagnostic::Error::Spanned(err) => Diagnostic::from(err),
-                diagnostic::Error::Message { msg } => {
-                    Diagnostic::without_span(msg, String::new(), DiagnosticLevel::Error)
-                }
-            }
-            .emit();
-        }
+    for msg in errs {
+        Diagnostic::without_span(msg, String::new(), DiagnosticLevel::Error).emit();
     }
 }

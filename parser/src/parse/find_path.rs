@@ -1,4 +1,4 @@
-use diagnostic::{CatchErr, CatchErr, DiagnosticResult, Error};
+use diagnostic::{CatchErr, Results, ToErr};
 use quote::ToTokens;
 use syn::{spanned::Spanned, Pat};
 
@@ -6,11 +6,11 @@ use crate::parse::{
     AstCrate, ModInfo, {AstMod, Symbol},
 };
 use shared::{
-    syn::use_path_from_syn,
+    syn::{error::MsgResult, use_path_from_syn},
     traits::{Catch, CollectVecInto},
 };
 
-use super::{symbol::MatchSymbolTrait, ModError};
+use super::MatchSymbol;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct ItemPath {
@@ -27,9 +27,9 @@ impl ItemPath {
     }
 }
 
-fn resolve_error(path: Vec<String>) -> Vec<Error> {
+fn resolve_error(path: Vec<String>) -> String {
     let path = path.join("::");
-    vec![Error::new(&format!("Could not resolve path: {path}"))]
+    format!("Could not resolve path: {path}")
 }
 
 // Err means:
@@ -39,7 +39,7 @@ pub fn resolve_path_from_crate<'a>(
     mut path: Vec<String>,
     cr: &'a AstCrate,
     crates: &'a Vec<AstCrate>,
-) -> DiagnosticResult<&'a Symbol> {
+) -> MsgResult<&'a Symbol> {
     // println!("Resolve: {}, crate: {}", path.join("::"), cr.idx);
     match path.first() {
         Some(p) => {
@@ -55,15 +55,17 @@ pub fn resolve_path_from_crate<'a>(
                     (alias == p).then(|| {
                         resolve_path_from_crate(
                             [vec!["crate".to_string()], path[1..].to_vec()].concat(),
-                            crates.get(*idx).catch_err("Invalid dependency index")?,
+                            crates
+                                .get(*idx)
+                                .catch_err("Invalid dependency index".to_string())?,
                             crates,
                         )
                     })
                 }),
             }
-            .map_or(Err(resolve_error(path)), |r| r)
+            .map_or(resolve_error(path).err(), |r| r)
         }
-        None => Err(resolve_error(path)),
+        None => resolve_error(path).err(),
     }
 }
 
@@ -76,7 +78,7 @@ fn resolve_path_from_mod<'a>(
     path: Vec<String>,
     idx: usize,
     (m, cr, crates): ModInfo<'a>,
-) -> DiagnosticResult<&'a Symbol> {
+) -> MsgResult<&'a Symbol> {
     // println!(
     //     "Resolve Mod: {} at {}",
     //     path.join("::"),
@@ -86,7 +88,7 @@ fn resolve_path_from_mod<'a>(
 
     let name = path
         .get(idx)
-        .catch_err(&format!(
+        .catch_err(format!(
             "Bad resolve path index: {} in path: \"{}\"",
             idx,
             path.join("::")
@@ -97,11 +99,11 @@ fn resolve_path_from_mod<'a>(
     // println!("Finding: {name}");
     // Check sub modules
     for m in m.mods.iter() {
-        if name == *m.path.last().catch_err("Mod path is empty")? {
+        if name == *m.path.last().catch_err("Mod path is empty".to_string())? {
             // println!("Found Mod: {}", name);
             return if is_path_end {
                 // The path points to a mod
-                Err(resolve_error(path))
+                resolve_error(path).err()
             } else {
                 resolve_path_from_mod(path, idx + 1, (m, cr, crates))
             };
@@ -115,7 +117,7 @@ fn resolve_path_from_mod<'a>(
             return if is_path_end {
                 Ok(sym)
             } else {
-                Err(resolve_error(sym.path.to_vec()))
+                resolve_error(sym.path.to_vec()).err()
             };
         }
     }
@@ -135,20 +137,17 @@ fn resolve_path_from_mod<'a>(
         }
     }
 
-    Err(resolve_error(path))
+    resolve_error(path).err()
 }
 
 // Paths that start relative to some mod item
-pub fn resolve_path<'a>(
-    path: Vec<String>,
-    (m, cr, crates): ModInfo<'a>,
-) -> DiagnosticResult<&'a Symbol> {
+pub fn resolve_path<'a>(path: Vec<String>, (m, cr, crates): ModInfo<'a>) -> MsgResult<&'a Symbol> {
     // println!("Local Resolve: {}", path.join("::"));
     let cr_idx = cr.idx;
 
     let name = path
         .first()
-        .catch_err(&format!("Empty resolve path: {}", path.join("::")))?;
+        .catch_err(format!("Empty resolve path: {}", path.join("::")))?;
 
     // Can't be local
     if name == "crate" {
@@ -202,24 +201,12 @@ pub fn resolve_syn_path<'a>(
     parent_path: &Vec<String>,
     path: &syn::Path,
     (m, cr, crates): ModInfo<'a>,
-) -> DiagnosticResult<&'a Symbol> {
+) -> MsgResult<&'a Symbol> {
     resolve_path(use_path_from_syn(&m.path, path), (m, cr, crates))
 }
 
-impl<'a> MatchSymbolTrait<'a> for DiagnosticResult<&'a Symbol> {
-    fn and_then_symbol<T>(
-        self,
-        f: impl FnOnce(&'a Symbol) -> DiagnosticResult<T>,
-    ) -> DiagnosticResult<T> {
+impl<'a> MatchSymbol<'a> for MsgResult<&'a Symbol> {
+    fn and_then_impl<T>(self, f: impl FnOnce(&'a Symbol) -> MsgResult<T>) -> MsgResult<T> {
         self.and_then(f)
-    }
-
-    fn and_then_symbol_in_mod<T>(
-        self,
-        f: impl FnOnce(&'a Symbol) -> DiagnosticResult<T>,
-        m: &AstMod,
-        span: &dyn Spanned,
-    ) -> DiagnosticResult<T> {
-        self.in_mod(m, span).and_then(f)
     }
 }

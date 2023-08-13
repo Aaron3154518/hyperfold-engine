@@ -1,4 +1,3 @@
-use diagnostic::Error;
 use proc_macro2::{token_stream::IntoIter, TokenStream, TokenTree};
 use quote::{quote, ToTokens};
 use std::{collections::VecDeque, env::temp_dir, fs, path::PathBuf};
@@ -10,7 +9,7 @@ use crate::{
     parse::{
         resolve_path, AstCrate, AstFunction, AstItem, AstItems, AstMod, AstModType, AstUse,
         ComponentSymbol, DiscardSymbol, GlobalSymbol, HardcodedSymbol, ItemPath, MatchSymbol,
-        ModError, ModInfo, NewMod, Symbol, SymbolType,
+        ModInfo, NewMod, Symbol, SymbolType,
     },
     system::ItemSystem,
     utils::{
@@ -25,7 +24,7 @@ use shared::{
     match_ok,
     msg_result::{CombineMsgs, MsgTrait, Zip2Msgs, Zip8Msgs},
     parsing::{ComponentMacroArgs, GlobalMacroArgs, SystemMacroArgs},
-    syn::parse_tokens,
+    syn::{error::SplitBuildResult, parse_tokens},
     traits::{
         Call, Catch, CollectVec, CollectVecInto, FindFrom, GetResult, HandleErr, Increment,
         PushInto, SplitAround,
@@ -223,9 +222,9 @@ impl Items {
 
     fn add_symbols(
         &mut self,
-        errs: &mut Vec<Error>,
+        errs: &mut Vec<String>,
         crates: &mut Crates,
-        f: impl Fn(&mut Vec<Error>, &mut Self, ModInfo) -> Vec<NewSymbol>,
+        f: impl Fn(&mut Vec<String>, &mut Self, ModInfo) -> Vec<NewSymbol>,
     ) {
         let macro_cr_idx = crates.get_crate_index(Crate::Macros);
 
@@ -255,7 +254,7 @@ impl Items {
         }
     }
 
-    pub fn resolve(crates: &mut Crates) -> (Self, Vec<Error>) {
+    pub fn resolve(crates: &mut Crates) -> (Self, Vec<String>) {
         let mut errs = Vec::new();
         let mut items = Items::new();
 
@@ -289,8 +288,9 @@ impl Items {
                         .discard_symbol()
                     {
                         Ok(HardcodedSymbol::ComponentMacro) => {
-                            if let Some(args) =
-                                parse_tokens(attr.args.clone()).in_mod(m).record_errs(errs)
+                            if let Some(args) = parse_tokens(attr.args.clone())
+                                .take_spanned_errs(&mut m.errs)
+                                .record_errs(errs)
                             {
                                 symbols.push(NewSymbol::Symbol(items.add_component(
                                     cr.idx,
@@ -301,8 +301,9 @@ impl Items {
                             break;
                         }
                         Ok(HardcodedSymbol::GlobalMacro) => {
-                            if let Some(args) =
-                                parse_tokens(attr.args.clone()).in_mod(m).record_errs(errs)
+                            if let Some(args) = parse_tokens(attr.args.clone())
+                                .take_spanned_errs(&mut m.errs)
+                                .record_errs(errs)
                             {
                                 symbols.push(NewSymbol::Symbol(items.add_global(
                                     cr.idx,
@@ -358,6 +359,7 @@ impl Items {
                 .iter()
                 .map(|(_, alias)| AstUse {
                     ident: alias.to_string(),
+                    first: alias.to_string(),
                     path: vec![alias.to_string()],
                     public: true,
                 })
