@@ -71,8 +71,8 @@ impl<T> From<SpannedError> for BuildResult<T> {
     }
 }
 
-pub fn err(msg: &str) -> BuildError {
-    BuildError::new(msg)
+pub fn err(msg: &str, span: impl Into<ErrorSpan>) -> SpannedError {
+    SpannedError::new(msg, span)
 }
 
 // Convert Into<ErrorSpan> into SpannedError
@@ -122,9 +122,11 @@ impl<T> AddSpan<T> for MsgResult<T> {
 pub trait SplitBuildResult<T> {
     fn split_errs(self) -> Result<T, (Vec<String>, Vec<SpannedError>)>;
 
-    fn take_spanned_errs(self, errs: &mut Vec<SpannedError>) -> MsgResult<T>;
+    fn add_span(self, span: impl Into<ErrorSpan>) -> SpannedResult<T>;
 
-    fn take_msg_errs(self, errs: &mut Vec<String>) -> SpannedResult<T>;
+    fn record_spanned_errs(self, errs: &mut Vec<SpannedError>) -> MsgResult<T>;
+
+    fn record_msg_errs(self, errs: &mut Vec<String>) -> SpannedResult<T>;
 }
 
 impl<T> SplitBuildResult<T> for BuildResult<T> {
@@ -141,14 +143,24 @@ impl<T> SplitBuildResult<T> for BuildResult<T> {
         })
     }
 
-    fn take_spanned_errs(self, errs: &mut Vec<SpannedError>) -> MsgResult<T> {
+    fn add_span(self, span: impl Into<ErrorSpan>) -> SpannedResult<T> {
+        let span = span.into();
+        self.map_err(|errs| {
+            errs.map_vec_into(|err| SpannedError {
+                msg: err.msg,
+                span: err.span.unwrap_or(span),
+            })
+        })
+    }
+
+    fn record_spanned_errs(self, errs: &mut Vec<SpannedError>) -> MsgResult<T> {
         self.split_errs().map_err(|(other, es)| {
             errs.extend(es);
             other
         })
     }
 
-    fn take_msg_errs(self, errs: &mut Vec<String>) -> SpannedResult<T> {
+    fn record_msg_errs(self, errs: &mut Vec<String>) -> SpannedResult<T> {
         self.split_errs().map_err(|(es, other)| {
             errs.extend(es);
             other

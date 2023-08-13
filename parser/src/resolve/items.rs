@@ -1,3 +1,4 @@
+use diagnostic::CatchErr;
 use proc_macro2::{token_stream::IntoIter, TokenStream, TokenTree};
 use quote::{quote, ToTokens};
 use std::{collections::VecDeque, env::temp_dir, fs, path::PathBuf};
@@ -24,7 +25,10 @@ use shared::{
     match_ok,
     msg_result::{CombineMsgs, MsgTrait, Zip2Msgs, Zip8Msgs},
     parsing::{ComponentMacroArgs, GlobalMacroArgs, SystemMacroArgs},
-    syn::{error::SplitBuildResult, parse_tokens},
+    syn::{
+        error::{AddSpan, SpannedResult, SplitBuildResult},
+        parse_tokens,
+    },
     traits::{
         Call, Catch, CollectVec, CollectVecInto, FindFrom, GetResult, HandleErr, Increment,
         PushInto, SplitAround,
@@ -226,6 +230,15 @@ impl Items {
         crates: &mut Crates,
         f: impl Fn(&mut Vec<String>, &mut Self, ModInfo) -> Vec<NewSymbol>,
     ) {
+        self.add_symbols_result(errs, crates, |a, b, c| f(a, b, c).map_vec_into(|s| Ok(s)))
+    }
+
+    fn add_symbols_result(
+        &mut self,
+        errs: &mut Vec<String>,
+        crates: &mut Crates,
+        f: impl Fn(&mut Vec<String>, &mut Self, ModInfo) -> Vec<SpannedResult<NewSymbol>>,
+    ) {
         let macro_cr_idx = crates.get_crate_index(Crate::Macros);
 
         // Get symbols
@@ -240,15 +253,20 @@ impl Items {
             let mut mods = cr.iter_mods_mut();
             for mod_symbols in crate_symbols {
                 if let Some(m) = mods.next(cr) {
-                    let mod_symbols = mod_symbols.filter_map_vec_into(|s| match s {
-                        NewSymbol::Symbol(s) => Some(s),
-                        // Mod iteration order is locked, so adding new mods is safe
-                        NewSymbol::Mod(new_mod) => {
-                            m.add_mod(new_mod);
-                            None
+                    for s in mod_symbols {
+                        match s {
+                            Ok(NewSymbol::Symbol(s)) => {
+                                m.symbols.push(s);
+                            }
+                            // Mod iteration order is locked, so adding new mods is safe
+                            Ok(NewSymbol::Mod(new_mod)) => {
+                                m.add_mod(new_mod);
+                            }
+                            Err(errs) => {
+                                m.errs.extend(errs);
+                            }
                         }
-                    });
-                    m.symbols.extend(mod_symbols);
+                    }
                 }
             }
         }
@@ -288,9 +306,8 @@ impl Items {
                         .discard_symbol()
                     {
                         Ok(HardcodedSymbol::ComponentMacro) => {
-                            if let Some(args) = parse_tokens(attr.args.clone())
-                                .take_spanned_errs(&mut m.errs)
-                                .record_errs(errs)
+                            if let Some(args) =
+                                parse_tokens(attr.args.clone()).record_errs(&mut m.errs)
                             {
                                 symbols.push(NewSymbol::Symbol(items.add_component(
                                     cr.idx,
@@ -301,9 +318,8 @@ impl Items {
                             break;
                         }
                         Ok(HardcodedSymbol::GlobalMacro) => {
-                            if let Some(args) = parse_tokens(attr.args.clone())
-                                .take_spanned_errs(&mut m.errs)
-                                .record_errs(errs)
+                            if let Some(args) =
+                                parse_tokens(attr.args.clone()).record_errs(&mut m.errs)
                             {
                                 symbols.push(NewSymbol::Symbol(items.add_global(
                                     cr.idx,
@@ -415,16 +431,15 @@ impl Items {
         }
 
         // Resolve systems
-        items.add_symbols(&mut errs, crates, |errs, items, mod_info| {
+        items.add_symbols_result(&mut errs, crates, |errs, items, mod_info| {
             let (m, cr, crates) = mod_info;
             m.items.functions.iter().filter_map_vec_into(|fun| {
                 fun.data.attrs.iter().find_map(|attr| {
                     resolve_path(attr.path.to_vec(), mod_info)
                         .expect_hardcoded(HardcodedSymbol::SystemMacro)
                         .ok()
-                        .and_then(|sym| {
+                        .map(|sym| {
                             ItemSystem::parse(fun, attr, &items, mod_info)
-                                .handle_err(|es| errs.extend(es))
                                 .map(|sys| NewSymbol::Symbol(items.add_system(sys, fun)))
                         })
                 })

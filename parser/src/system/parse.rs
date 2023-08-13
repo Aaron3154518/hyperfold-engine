@@ -1,4 +1,4 @@
-use diagnostic::{DiagnosticResult, Error, ErrorSpan};
+use diagnostic::{ErrorSpan, ResultsTrait, ToErr};
 use proc_macro2::Span;
 use quote::ToTokens;
 use syn::spanned::Spanned;
@@ -6,14 +6,17 @@ use syn::spanned::Spanned;
 use shared::{
     msg_result::CombineMsgs,
     parsing::SystemMacroArgs,
-    syn::{get_type_generics, parse_tokens, use_path_from_syn, ToRange},
-    traits::{CollectVecInto, PushInto},
+    syn::{
+        error::{err, AddSpan, SpannedResult, SplitBuildResult},
+        get_type_generics, parse_tokens, use_path_from_syn, ToRange,
+    },
+    traits::{Call, CollectVecInto, CombineOptions, PushInto, ToNone},
 };
 
 use crate::{
     parse::{
         resolve_path, resolve_syn_path, AstAttribute, AstFunction, AstItem, DiscardSymbol,
-        HardcodedSymbol, ItemPath, MatchSymbol, ModError, ModInfo,
+        HardcodedSymbol, ItemPath, MatchSymbol, ModInfo,
     },
     resolve::Items,
 };
@@ -55,11 +58,11 @@ impl FnArg {
         items: &Items,
         sig: &syn::Signature,
         (m, cr, crates): ModInfo,
-    ) -> DiagnosticResult<Vec<Self>> {
+    ) -> SpannedResult<Vec<Self>> {
         sig.inputs
             .iter()
             .map_vec_into(|arg| match arg {
-                syn::FnArg::Receiver(r) => Err(vec![m.error("Cannot use self in function", r)]),
+                syn::FnArg::Receiver(r) => err("Cannot use self in function", r).err(),
                 syn::FnArg::Typed(syn::PatType { ty, .. }) => {
                     FnArg::parse_type(ty, (m, cr, crates))
                 }
@@ -67,7 +70,7 @@ impl FnArg {
             .combine_results()
     }
 
-    fn parse_type(ty: &syn::Type, (m, cr, crates): ModInfo) -> DiagnosticResult<Self> {
+    fn parse_type(ty: &syn::Type, (m, cr, crates): ModInfo) -> SpannedResult<Self> {
         let ty_str = ty.to_token_stream().to_string();
         match ty {
             syn::Type::Path(p) => {
@@ -77,26 +80,25 @@ impl FnArg {
                     "Vec" => match get_type_generics(p).as_ref().and_then(|v| v.first()) {
                         Some(syn::GenericArgument::Type(syn::Type::Path(ty))) => {
                             resolve_syn_path(&m.path, &ty.path, (m, cr, crates))
-                                .expect_component_set_in_mod(m, ty)
+                                .expect_component_set()
                                 .discard_symbol()
+                                .add_span(ty)
                                 .map(|idx| FnArgType::Entities { idx, is_vec: true })
                         }
-                        _ => Err(vec![m.error("Invalid argument type", ty)]),
+                        _ => err("Invalid argument type", ty).err(),
                     },
-                    _ => {
-                        resolve_path(path, (m, cr, crates))
-                            .in_mod(m, &ty)
-                            .and_then(|sym| match sym.kind {
-                                crate::parse::SymbolType::Global(g_sym) => {
-                                    Ok(FnArgType::Global(g_sym.idx))
-                                }
-                                crate::parse::SymbolType::Event(i) => Ok(FnArgType::Event(i)),
-                                crate::parse::SymbolType::ComponentSet(idx) => {
-                                    Ok(FnArgType::Entities { idx, is_vec: false })
-                                }
-                                _ => Err(vec![m.error("Invalid argument type", ty)]),
-                            })
-                    }
+                    _ => resolve_path(path, (m, cr, crates))
+                        .add_span(ty)
+                        .and_then(|sym| match sym.kind {
+                            crate::parse::SymbolType::Global(g_sym) => {
+                                Ok(FnArgType::Global(g_sym.idx))
+                            }
+                            crate::parse::SymbolType::Event(i) => Ok(FnArgType::Event(i)),
+                            crate::parse::SymbolType::ComponentSet(idx) => {
+                                Ok(FnArgType::Entities { idx, is_vec: false })
+                            }
+                            _ => err("Invalid argument type", ty).err(),
+                        }),
                 }
                 .map(|data| Self {
                     ty: data,
@@ -124,8 +126,9 @@ impl FnArg {
                 match traits.split_first() {
                     Some((tr, tail)) if tail.is_empty() => {
                         resolve_syn_path(&m.path, &tr.path, (m, cr, crates))
-                            .expect_trait_in_mod(m, ty)
+                            .expect_trait()
                             .discard_symbol()
+                            .add_span(ty)
                             .map(|g_sym| Self {
                                 ty: FnArgType::Global(g_sym.idx),
                                 is_mut: false,
@@ -133,12 +136,10 @@ impl FnArg {
                                 span: ty.span(),
                             })
                     }
-                    _ => Err(vec![
-                        m.error("Trait arguments must have only one trait type", ty)
-                    ]),
+                    _ => err("Trait arguments must have only one trait type", ty).err(),
                 }
             }
-            _ => Err(vec![m.error("Invalid argument type", ty)]),
+            _ => err("Invalid argument type", ty).err(),
         }
     }
 }
@@ -170,29 +171,20 @@ impl ItemSystem {
         attr: &AstAttribute,
         items: &Items,
         (m, cr, crates): ModInfo,
-    ) -> DiagnosticResult<Self> {
+    ) -> SpannedResult<Self> {
         let path = m.path.to_vec().push_into(fun.data.sig.ident.to_string());
-        let attr_args = parse_tokens(attr.args.clone()).in_mod(m)?;
-        FnArg::parse(&attr_args, items, &fun.data.sig, (m, cr, crates)).map(|args| ItemSystem {
-            path: ItemPath {
-                cr_idx: cr.idx,
-                path,
-            },
-            args,
-            attr_args,
-            file: m.get_file(),
-            span: fun.data.sig.ident.span(),
-            err_span: m.span.clone(),
+        parse_tokens(attr.args.clone()).and_then(|attr_args| {
+            FnArg::parse(&attr_args, items, &fun.data.sig, (m, cr, crates)).map(|args| ItemSystem {
+                path: ItemPath {
+                    cr_idx: cr.idx,
+                    path,
+                },
+                args,
+                attr_args,
+                file: m.get_file(),
+                span: fun.data.sig.ident.span(),
+                err_span: m.span.clone(),
+            })
         })
-    }
-
-    pub fn error(&self, msg: &str, span: impl Into<ErrorSpan>) -> Error {
-        let mut span: ErrorSpan = span.into();
-        span.offset_bytes(self.err_span.byte_start);
-        Error::spanned(msg, &self.file, span)
-    }
-
-    pub fn error_here(&self, msg: &str) -> Error {
-        self.error(msg, &self.span)
     }
 }

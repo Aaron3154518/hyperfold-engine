@@ -40,3 +40,18 @@ impl<T, U> MapNone<T> for Option<U> {
         }
     }
 }
+
+// Map Vec<Option<T>> to Option<Vec<T>>
+pub trait CombineOptions<T> {
+    fn combine(self) -> Option<Vec<T>>;
+}
+
+impl<T> CombineOptions<T> for Vec<Option<T>> {
+    fn combine(self) -> Option<Vec<T>> {
+        let mut vec = Vec::new();
+        for opt in self {
+            vec.push(opt?);
+        }
+        Some(vec)
+    }
+}
