@@ -3,7 +3,7 @@ use std::{
     path::{Display, PathBuf},
 };
 
-use diagnostic::{CatchErr, DiagnosticResult, Error, ErrorGivenSpan, ErrorSpan};
+use diagnostic::{CatchErr, ErrForEach, ErrorSpan, ResultsTrait};
 use proc_macro2::{Span, TokenStream};
 
 use syn::{spanned::Spanned, visit::Visit};
@@ -18,9 +18,16 @@ use super::{attributes::AstAttribute, Symbol};
 
 use shared::{
     macros::{expand_enum, ExpandEnum},
-    msg_result::{MsgTrait, ToMsgs},
+    msg_result::ToMsgs,
     parsing::{ComponentMacroArgs, GlobalMacroArgs},
-    syn::{add_use_item, use_path_from_syn, ToRange},
+    syn::{
+        add_use_item,
+        error::{
+            err, AsBuildResult, BuildResult, MsgResult, SpannedError, SpannedResult,
+            SplitBuildResult, ToError,
+        },
+        use_path_from_syn, ToRange,
+    },
     traits::{Catch, HandleErr, PushInto},
 };
 
@@ -58,21 +65,25 @@ pub struct AstItem<Data> {
 #[derive(Clone, Debug)]
 pub struct AstUse {
     pub ident: String,
+    pub first: String,
     pub path: Vec<String>,
     pub public: bool,
 }
 
 impl AstUse {
-    pub fn from(mut path: Vec<String>, ident: &syn::Ident, vis: &syn::Visibility) -> Self {
-        path.push(ident.to_string());
-        Self {
-            ident: ident.to_string(),
-            path,
-            public: match vis {
-                syn::Visibility::Public(_) => true,
-                syn::Visibility::Restricted(_) | syn::Visibility::Inherited => false,
-            },
-        }
+    pub fn from(mut path: Vec<String>, ident: &syn::Ident, vis: &syn::Visibility) -> Option<Self> {
+        path.first().cloned().map(|first| {
+            path.push(ident.to_string());
+            Self {
+                ident: ident.to_string(),
+                first,
+                path,
+                public: match vis {
+                    syn::Visibility::Public(_) => true,
+                    syn::Visibility::Restricted(_) | syn::Visibility::Inherited => false,
+                },
+            }
+        })
     }
 }
 
@@ -117,8 +128,9 @@ pub struct NewMod {
 pub struct AstMod {
     pub ty: AstModType,
     pub file: PathBuf,
-    pub span: ErrorSpan,
     pub path: Vec<String>,
+    pub span: ErrorSpan,
+    pub errs: Vec<SpannedError>,
     pub mods: Vec<AstMod>,
     pub uses: Vec<AstUse>,
     pub symbols: Vec<Symbol>,
@@ -132,8 +144,9 @@ impl AstMod {
         Self {
             ty,
             file,
-            span,
             path,
+            span,
+            errs: Vec::new(),
             mods: Vec::new(),
             uses: Vec::new(),
             symbols: Vec::new(),
@@ -141,10 +154,10 @@ impl AstMod {
         }
     }
 
-    pub fn parse(file: PathBuf, path: Vec<String>, ty: AstModType) -> DiagnosticResult<Self> {
+    pub fn parse(file: PathBuf, path: Vec<String>, ty: AstModType) -> MsgResult<Self> {
         let file_contents = fs::read_to_string(file.to_owned())
-            .catch_err(&format!("Failed to read file: {}", file.display()))?;
-        let ast = syn::parse_file(&file_contents).catch_err(&format!(
+            .catch_err(format!("Failed to read file: {}", file.display()))?;
+        let ast = syn::parse_file(&file_contents).catch_err(format!(
             "Failed to parse file contents of: {}",
             file.display()
         ))?;
@@ -153,7 +166,7 @@ impl AstMod {
 
         s.visit_file(ast)?;
         // Post processing
-        s.resolve_local_use_paths()?;
+        s.resolve_local_use_paths();
 
         Ok(s)
     }
@@ -177,58 +190,62 @@ impl AstMod {
         self.file.display().to_string()
     }
 
-    pub fn error(&self, msg: &str, span: impl Into<ErrorSpan>) -> Error {
-        Error::spanned(msg, "", span).in_mod(self)
+    pub fn error(&mut self, msg: &str, span: impl Into<ErrorSpan>) {
+        self.errs.push(SpannedError {
+            msg: msg.to_string(),
+            span: span.into(),
+        });
     }
 
     // E.g. mod Foo; use Foo::Bar;
-    fn resolve_local_use_paths(&mut self) -> DiagnosticResult<()> {
+    fn resolve_local_use_paths(&mut self) {
         for use_path in self.uses.iter_mut() {
-            let first = use_path.path.first().catch_err("Empty use path")?;
             if let Some(m) = self
                 .mods
                 .iter()
-                .find(|m| m.path.last().is_some_and(|p| p == first))
+                .find(|m| m.path.last().is_some_and(|p| p == &use_path.first))
             {
                 use_path.path = [m.path.to_vec(), use_path.path[1..].to_vec()].concat();
             }
         }
-
-        Ok(())
     }
 }
 
 // File/items
 impl AstMod {
-    fn visit_file(&mut self, i: syn::File) -> DiagnosticResult<()> {
+    fn visit_file(&mut self, i: syn::File) -> MsgResult<()> {
         self.visit_items(i.items)
     }
 
-    fn visit_items(&mut self, items: Vec<syn::Item>) -> DiagnosticResult<()> {
-        let mut errs = Vec::new();
-        for item in items {
-            self.visit_item(item).record_errs(&mut errs);
-        }
-        errs.err_or(())
+    fn visit_items(&mut self, items: Vec<syn::Item>) -> MsgResult<()> {
+        items.do_for_each(|item| self.visit_item(item)).err_or(())
     }
 
-    fn visit_item(&mut self, i: syn::Item) -> DiagnosticResult<()> {
-        // Match again to parse
+    fn visit_item(&mut self, i: syn::Item) -> MsgResult<()> {
         match i {
-            syn::Item::Mod(i) => self.visit_item_mod(i)?,
-            syn::Item::Use(i) => self.visit_item_use(i)?,
-            syn::Item::Fn(i) => self.visit_item_fn(i)?,
-            syn::Item::Enum(i) => self.visit_item_enum(i)?,
-            syn::Item::Struct(i) => self.visit_item_struct(i)?,
-            syn::Item::Macro(i) => self.visit_item_macro(i)?,
-            _ => (),
+            syn::Item::Use(i) => self.visit_item_use(i),
+            syn::Item::Fn(i) => self.visit_item_fn(i),
+            syn::Item::Enum(i) => self.visit_item_enum(i),
+            syn::Item::Struct(i) => self.visit_item_struct(i),
+            syn::Item::Macro(i) => self.visit_item_macro(i),
+            syn::Item::Mod(i) => {
+                self.visit_item_mod(i)
+                    .split_errs()
+                    .map_err(|(msgs, errs)| {
+                        self.errs.extend(errs);
+                        msgs
+                    })?;
+                Ok(())
+            }
+            _ => Ok(()),
         }
+        .record_errs(&mut self.errs);
         Ok(())
     }
 
     // Mod
-    fn visit_item_mod(&mut self, i: syn::ItemMod) -> DiagnosticResult<()> {
-        if let Some(attrs) = get_attributes_if_active(&i.attrs, &self.path, &Vec::new())? {
+    fn visit_item_mod(&mut self, i: syn::ItemMod) -> BuildResult<()> {
+        if let Some(attrs) = get_attributes_if_active(&i.attrs, &self.path, &Vec::new()).upcast()? {
             self.mods.push(match i.content {
                 // Parse inner mod
                 Some((_, items)) => {
@@ -248,14 +265,15 @@ impl AstMod {
                         .pop_into()
                         .push_into(i.ident.to_string()),
                     &[self.path.to_vec(), vec![i.ident.to_string()]].concat(),
-                )?,
+                )
+                .upcast()?,
             });
         }
         Ok(())
     }
 
     // Components
-    fn visit_item_struct(&mut self, i: syn::ItemStruct) -> DiagnosticResult<()> {
+    fn visit_item_struct(&mut self, i: syn::ItemStruct) -> SpannedResult<()> {
         if let Some(attrs) = get_attributes_if_active(&i.attrs, &self.path, &Vec::new())? {
             if !attrs.is_empty() {
                 self.items.structs.push(AstItem {
@@ -268,7 +286,7 @@ impl AstMod {
         Ok(())
     }
 
-    fn visit_item_enum(&mut self, i: syn::ItemEnum) -> DiagnosticResult<()> {
+    fn visit_item_enum(&mut self, i: syn::ItemEnum) -> SpannedResult<()> {
         if let Some(attrs) = get_attributes_if_active(&i.attrs, &self.path, &Vec::new())? {
             if !attrs.is_empty() {
                 self.items.enums.push(AstItem {
@@ -282,7 +300,7 @@ impl AstMod {
     }
 
     // Systems
-    fn visit_item_fn(&mut self, i: syn::ItemFn) -> DiagnosticResult<()> {
+    fn visit_item_fn(&mut self, i: syn::ItemFn) -> SpannedResult<()> {
         if let Some(attrs) = get_attributes_if_active(&i.attrs, &self.path, &Vec::new())? {
             if !attrs.is_empty() {
                 self.items.functions.push(AstItem {
@@ -296,13 +314,16 @@ impl AstMod {
     }
 
     // Macro call
-    fn visit_item_macro(&mut self, i: syn::ItemMacro) -> DiagnosticResult<()> {
+    fn visit_item_macro(&mut self, i: syn::ItemMacro) -> SpannedResult<()> {
         if let Some(_) = get_attributes_if_active(&i.attrs, &self.path, &Vec::new())? {
             // Some is for macro_rules!
             if i.ident.is_none() {
                 let path = use_path_from_syn(&self.path, &i.mac.path);
                 self.items.macro_calls.push(AstItem {
-                    ident: path.last().catch_err("Empty macro path")?.to_string(),
+                    ident: path
+                        .last()
+                        .catch_err(i.error("Empty macro path"))?
+                        .to_string(),
                     path,
                     data: AstMacroCall {
                         span: i.mac.span(),
@@ -320,7 +341,7 @@ impl AstMod {
 
 // Use paths
 impl AstMod {
-    fn visit_item_use(&mut self, i: syn::ItemUse) -> DiagnosticResult<()> {
+    fn visit_item_use(&mut self, i: syn::ItemUse) -> SpannedResult<()> {
         if let Some(attrs) = get_attributes_if_active(&i.attrs, &self.path, &Vec::new())? {
             let mut uses = Vec::new();
             self.visit_use_tree(i.tree, &mut Vec::new(), &mut uses)?;
@@ -340,12 +361,12 @@ impl AstMod {
         i: syn::UseTree,
         path: &mut Vec<String>,
         items: &mut Vec<AstUse>,
-    ) -> DiagnosticResult<()> {
+    ) -> SpannedResult<()> {
         Ok(match i {
             syn::UseTree::Path(i) => self.visit_use_path(i, path, items)?,
             syn::UseTree::Name(i) => self.visit_use_name(i, path, items)?,
-            syn::UseTree::Rename(i) => self.visit_use_rename(i, path, items),
-            syn::UseTree::Glob(i) => self.visit_use_glob(i, path, items),
+            syn::UseTree::Rename(i) => self.visit_use_rename(i, path, items)?,
+            syn::UseTree::Glob(i) => self.visit_use_glob(i, path, items)?,
             syn::UseTree::Group(i) => self.visit_use_group(i, path, items)?,
         })
     }
@@ -355,7 +376,7 @@ impl AstMod {
         i: syn::UsePath,
         path: &mut Vec<String>,
         items: &mut Vec<AstUse>,
-    ) -> DiagnosticResult<()> {
+    ) -> SpannedResult<()> {
         add_use_item(&self.path, path, i.ident.to_string());
         self.visit_use_tree(*i.tree, path, items)
     }
@@ -365,12 +386,16 @@ impl AstMod {
         i: syn::UseName,
         path: &mut Vec<String>,
         items: &mut Vec<AstUse>,
-    ) -> DiagnosticResult<()> {
+    ) -> SpannedResult<()> {
         add_use_item(&self.path, path, i.ident.to_string());
         items.push(AstUse {
             ident: path
                 .last()
-                .catch_err("Empty use path with 'self'")?
+                .catch_err(i.error("Empty use path with 'self'"))?
+                .to_string(),
+            first: path
+                .first()
+                .catch_err(i.error("Empty use path with 'self'"))?
                 .to_string(),
             path: path.to_vec(),
             public: false,
@@ -383,20 +408,35 @@ impl AstMod {
         i: syn::UseRename,
         path: &mut Vec<String>,
         items: &mut Vec<AstUse>,
-    ) {
+    ) -> SpannedResult<()> {
         items.push(AstUse {
             ident: i.rename.to_string(),
+            first: path
+                .first()
+                .catch_err(i.error("Empty use path with 'self'"))?
+                .to_string(),
             path: [path.to_owned(), vec![i.ident.to_string()]].concat(),
             public: false,
         });
+        Ok(())
     }
 
-    fn visit_use_glob(&mut self, i: syn::UseGlob, path: &mut Vec<String>, items: &mut Vec<AstUse>) {
+    fn visit_use_glob(
+        &mut self,
+        i: syn::UseGlob,
+        path: &mut Vec<String>,
+        items: &mut Vec<AstUse>,
+    ) -> SpannedResult<()> {
         items.push(AstUse {
             ident: "*".to_string(),
+            first: path
+                .first()
+                .catch_err(i.error("Empty use path with 'self'"))?
+                .to_string(),
             path: path.to_owned(),
             public: false,
         });
+        Ok(())
     }
 
     fn visit_use_group(
@@ -404,47 +444,12 @@ impl AstMod {
         i: syn::UseGroup,
         path: &mut Vec<String>,
         items: &mut Vec<AstUse>,
-    ) -> DiagnosticResult<()> {
+    ) -> SpannedResult<()> {
         let mut errs = Vec::new();
         for i in i.items {
             self.visit_use_tree(i, &mut path.to_vec(), items)
                 .record_errs(&mut errs);
         }
         errs.err_or(())
-    }
-}
-
-// Adds the mod's span information to the error
-pub trait ModError
-where
-    Self: Sized,
-{
-    fn set_mod(&mut self, m: &AstMod);
-
-    fn in_mod(mut self, m: &AstMod) -> Self {
-        self.set_mod(m);
-        self
-    }
-}
-
-impl ModError for Error {
-    fn set_mod(&mut self, m: &AstMod) {
-        match self {
-            Error::Spanned(span) => {
-                span.file = m.get_file();
-                span.span.offset_bytes(m.span.byte_start);
-            }
-            Error::Message { msg } => *self = Error::spanned(msg, &m.get_file(), &m.span),
-        }
-    }
-}
-
-impl<T> ModError for DiagnosticResult<T> {
-    fn set_mod(&mut self, m: &AstMod) {
-        if let Err(errs) = self {
-            for e in errs {
-                e.set_mod(m);
-            }
-        }
     }
 }

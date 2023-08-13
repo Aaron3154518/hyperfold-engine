@@ -1,6 +1,8 @@
+use diagnostic::CatchErr;
+
 use crate::traits::CollectVecInto;
 
-use super::error::{err, BuildResult, CatchErr};
+use super::error::{err, BuildResult};
 
 // To path
 pub fn vec_to_path(path: Vec<String>) -> BuildResult<syn::Path> {

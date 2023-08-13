@@ -1,4 +1,4 @@
-use diagnostic::{CatchErr, DiagnosticResult};
+use diagnostic::CatchErr;
 use parse_cfg::Cfg;
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, ToTokens};
@@ -6,7 +6,10 @@ use syn::spanned::Spanned;
 
 use shared::{
     msg_result::{MsgTrait, ToMsgs},
-    syn::use_path_from_vec,
+    syn::{
+        error::{SpannedResult, ToError},
+        use_path_from_vec,
+    },
     traits::NoneOr,
 };
 
@@ -61,7 +64,7 @@ pub fn get_attributes_if_active(
     attrs: &Vec<syn::Attribute>,
     path: &Vec<String>,
     features: &Vec<String>,
-) -> DiagnosticResult<Option<Vec<AstAttribute>>> {
+) -> SpannedResult<Option<Vec<AstAttribute>>> {
     let mut is_active = true;
     let new_attrs =
         get_attributes(attrs, path)?
@@ -82,7 +85,7 @@ pub fn get_attributes_if_active(
 pub fn get_attributes(
     attrs: &Vec<syn::Attribute>,
     path: &Vec<String>,
-) -> DiagnosticResult<Vec<Attribute>> {
+) -> SpannedResult<Vec<Attribute>> {
     let mut new_attrs = Vec::new();
     let mut errs = Vec::new();
     for a in attrs {
@@ -137,7 +140,8 @@ pub fn eval_cfg_args(cfg: &Cfg, features: &Vec<String>) -> Option<bool> {
 }
 
 // Parses arguments to a single ast attribute
-fn parse_attr_args(mut attr_type: Attribute, attr: &syn::Attribute) -> DiagnosticResult<Attribute> {
+// This is the only function that can produce Err
+fn parse_attr_args(mut attr_type: Attribute, attr: &syn::Attribute) -> SpannedResult<Attribute> {
     match &mut attr_type {
         Attribute::Ecs(ast_attr) => match &attr.meta {
             syn::Meta::List(l) => {
@@ -158,7 +162,7 @@ fn parse_attr_args(mut attr_type: Attribute, attr: &syn::Attribute) -> Diagnosti
                     .to_token_stream()
                     .to_string()
                     .parse()
-                    .catch_err("Could not parse cfg_str")?;
+                    .catch_err(attr.error("Could not parse cfg_str"))?;
             }
             _ => (),
         },

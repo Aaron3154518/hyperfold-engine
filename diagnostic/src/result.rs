@@ -1,5 +1,32 @@
 pub type Results<T, E> = Result<T, Vec<E>>;
 
+// Convert Vec<U> to Results<T, E>
+pub trait ErrForEach<U>
+where
+    Self: Sized,
+{
+    fn do_for_each<E>(self, f: impl Fn(U) -> Results<(), E>) -> Vec<E> {
+        let (_, errs) = self.try_for_each(f);
+        errs
+    }
+
+    fn try_for_each<T, E>(self, f: impl Fn(U) -> Results<T, E>) -> (Vec<T>, Vec<E>);
+}
+
+impl<U, V> ErrForEach<U> for V
+where
+    V: IntoIterator<Item = U>,
+{
+    fn try_for_each<T, E>(self, f: impl Fn(U) -> Results<T, E>) -> (Vec<T>, Vec<E>) {
+        let (mut vals, mut errs) = (Vec::new(), Vec::new());
+        self.into_iter().for_each(|u| match f(u) {
+            Ok(t) => vals.push(t),
+            Err(e) => errs.extend(e),
+        });
+        (vals, errs)
+    }
+}
+
 // Convert E to Results<T, E>
 pub trait ToErr<E> {
     fn vec(self) -> Vec<E>;
@@ -14,6 +41,26 @@ impl<E> ToErr<E> for E {
 
     fn err<T>(self) -> Results<T, E> {
         Err(self.vec())
+    }
+}
+
+// Convert error type F to error type E
+pub trait CatchErr<T, E> {
+    fn catch_err(self, err: E) -> Results<T, E>;
+}
+
+impl<T, E, F> CatchErr<T, E> for Result<T, F> {
+    fn catch_err(self, err: E) -> Results<T, E> {
+        self.map_err(|_| err.vec())
+    }
+}
+
+impl<T, E> CatchErr<T, E> for Option<T> {
+    fn catch_err(self, err: E) -> Results<T, E> {
+        match self {
+            Some(t) => Ok(t),
+            None => err.err(),
+        }
     }
 }
 
@@ -56,6 +103,9 @@ impl<E> ErrorsTrait<E> for Vec<E> {
 pub trait ResultsTrait<T, E> {
     // Adds/sets errors if rhs is Err
     fn take_errs<U>(self, rhs: Results<U, E>) -> Results<T, E>;
+
+    // Adds errs to vec
+    fn record_errs(self, errs: &mut Vec<E>) -> Option<T>;
 }
 
 impl<T, E> ResultsTrait<T, E> for Results<T, E> {
@@ -66,6 +116,16 @@ impl<T, E> ResultsTrait<T, E> for Results<T, E> {
             (Err(mut e1), Err(e2)) => {
                 e1.extend(e2);
                 Err(e1)
+            }
+        }
+    }
+
+    fn record_errs(self, errs: &mut Vec<E>) -> Option<T> {
+        match self {
+            Ok(t) => Some(t),
+            Err(es) => {
+                errs.extend(es);
+                None
             }
         }
     }

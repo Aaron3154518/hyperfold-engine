@@ -1,4 +1,4 @@
-use diagnostic::{CatchErr, DiagnosticResult, Error};
+use diagnostic::{CatchErr, CatchErr, DiagnosticResult, Error};
 use quote::ToTokens;
 use syn::{spanned::Spanned, Pat};
 
