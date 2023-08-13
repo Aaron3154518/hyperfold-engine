@@ -8,9 +8,9 @@ use std::{
     path::PathBuf,
 };
 
-use diagnostic::DiagnosticResult;
+use diagnostic::{CatchErr, ToErr};
 use shared::{
-    syn::{CatchErr, DiagnosticResult, GetVec, Msg},
+    syn::error::{GetVec, MsgResult},
     traits::{Call, Catch, CollectVec, CollectVecInto, ExpandEnum, GetSlice, PushInto},
 };
 
@@ -22,21 +22,21 @@ use super::{
 use crate::{
     codegen::Crates,
     parse::ItemPath,
-    utils::{constants::NAMESPACE, paths::Crate, SpanFiles},
+    utils::{constants::NAMESPACE, paths::Crate},
 };
 
 // TODO: hardcoded
 const ENGINE: &str = ".";
 const MACROS: &str = "macros";
 
-fn get_engine_dir() -> DiagnosticResult<PathBuf> {
-    fs::canonicalize(PathBuf::from(ENGINE)).catch_err(&format!(
+fn get_engine_dir() -> MsgResult<PathBuf> {
+    fs::canonicalize(PathBuf::from(ENGINE)).catch_err(format!(
         "Could not canonicalize engine crate path relative to: {:#?}",
         env::current_dir()
     ))
 }
 
-fn get_macros_dir() -> DiagnosticResult<PathBuf> {
+fn get_macros_dir() -> MsgResult<PathBuf> {
     Ok(get_engine_dir()?.join("macros"))
 }
 
@@ -50,9 +50,9 @@ pub struct AstCrate {
 }
 
 impl AstCrate {
-    pub fn new(dir: PathBuf, idx: usize, is_entry: bool) -> DiagnosticResult<Self> {
+    pub fn new(dir: PathBuf, idx: usize, is_entry: bool) -> MsgResult<Self> {
         let rel_dir = dir.to_owned();
-        let dir: PathBuf = fs::canonicalize(dir).catch_err(&format!(
+        let dir: PathBuf = fs::canonicalize(dir).catch_err(format!(
             "Could not canonicalize path: {}",
             rel_dir.display()
         ))?;
@@ -61,7 +61,7 @@ impl AstCrate {
             idx,
             name: dir
                 .file_name()
-                .catch_err(&format!("Could not parse file name: {}", rel_dir.display()))?
+                .catch_err(format!("Could not parse file name: {}", rel_dir.display()))?
                 .to_string_lossy()
                 .to_string(),
             dir: dir.to_owned(),
@@ -78,7 +78,7 @@ impl AstCrate {
         })
     }
 
-    pub fn parse(mut dir: PathBuf) -> DiagnosticResult<Crates> {
+    pub fn parse(mut dir: PathBuf) -> MsgResult<Crates> {
         let mut crates = vec![AstCrate::new(dir.to_owned(), 0, true)?];
 
         let engine_dir = get_engine_dir()?;
@@ -99,14 +99,14 @@ impl AstCrate {
         let engine_cr_idx = crates
             .iter()
             .find_map(|cr| (cr.dir == engine_dir).then_some(cr.idx))
-            .catch_err(&format!(
+            .catch_err(format!(
                 "Could not find engine crate: '{}'",
                 engine_dir.display()
             ))?;
         let macros_cr_idx = crates
             .iter()
             .find_map(|cr| (cr.dir == macros_dir).then_some(cr.idx))
-            .catch_err(&format!(
+            .catch_err(format!(
                 "Could not find macros crate: '{}'",
                 macros_dir.display()
             ))?;
@@ -127,12 +127,12 @@ impl AstCrate {
     fn get_crate_dependencies(
         cr_dir: PathBuf,
         crates: &Vec<AstCrate>,
-    ) -> DiagnosticResult<(Vec<(usize, String)>, Vec<String>)> {
+    ) -> MsgResult<(Vec<(usize, String)>, Vec<String>)> {
         let deps = AstCrate::parse_cargo_toml(cr_dir.to_owned())?;
         let mut new_deps = Vec::new();
         let mut cr_deps = Vec::new();
         for (name, path) in deps {
-            let dep_dir = fs::canonicalize(cr_dir.join(path.to_string())).catch_err(&format!(
+            let dep_dir = fs::canonicalize(cr_dir.join(path.to_string())).catch_err(format!(
                 "Could not canonicalize dependency path: {}: {}/{}",
                 name,
                 cr_dir.display(),
@@ -149,23 +149,23 @@ impl AstCrate {
         Ok((cr_deps, new_deps))
     }
 
-    fn parse_cargo_toml(dir: PathBuf) -> DiagnosticResult<HashMap<String, String>> {
+    fn parse_cargo_toml(dir: PathBuf) -> MsgResult<HashMap<String, String>> {
         // Get the path to the `Cargo.toml` file
         let cargo_toml_path = dir.join("Cargo.toml");
 
         // Read the `Cargo.toml` file into a string
         let mut cargo_toml = String::new();
-        let mut file = File::open(&cargo_toml_path).catch_err(&format!(
+        let mut file = File::open(&cargo_toml_path).catch_err(format!(
             "Could not open Cargo.toml: {}",
             cargo_toml_path.display()
         ))?;
-        file.read_to_string(&mut cargo_toml).catch_err(&format!(
+        file.read_to_string(&mut cargo_toml).catch_err(format!(
             "Could not read Cargo.toml: {}",
             cargo_toml_path.display()
         ))?;
 
         // Parse the `Cargo.toml` file as TOML
-        let cargo_toml = cargo_toml.parse::<toml::Value>().catch_err(&format!(
+        let cargo_toml = cargo_toml.parse::<toml::Value>().catch_err(format!(
             "Could not parse Cargo.toml: {}",
             cargo_toml_path.display()
         ))?;
@@ -173,9 +173,9 @@ impl AstCrate {
         // Extract the list of dependencies from the `Cargo.toml` file
         let deps = cargo_toml
             .get("dependencies")
-            .catch_err("Could not find 'dependencies' section in Cargo.toml")?
+            .catch_err("Could not find 'dependencies' section in Cargo.toml".to_string())?
             .as_table()
-            .catch_err("Could not convert 'dependencies' section to a table")?;
+            .catch_err("Could not convert 'dependencies' section to a table".to_string())?;
         Ok(deps
             .into_iter()
             .filter_map(|(k, v)| match v {
@@ -189,12 +189,10 @@ impl AstCrate {
     }
 
     // Insert things into crates
-    fn get_mod_from_path<'a>(&'a mut self, path: &[String]) -> DiagnosticResult<&'a mut AstMod> {
+    fn get_mod_from_path<'a>(&'a mut self, path: &[String]) -> MsgResult<&'a mut AstMod> {
         let mut path_it = path.iter();
         if !path_it.next().is_some_and(|s| s == "crate") {
-            return Err(vec![Error::new(&format!(
-                "No mod defined at the path: {path:#?}"
-            ))]);
+            return format!("No mod defined at the path: {path:#?}").err();
         }
         let mut m = &mut self.main;
         while let Some(ident) = path_it.next() {
@@ -202,23 +200,23 @@ impl AstCrate {
                 .mods
                 .iter_mut()
                 .find(|m| m.path.last().is_some_and(|p| p == ident))
-                .catch_err(&format!("No mod defined at the path: {path:#?}"))?;
+                .catch_err(format!("No mod defined at the path: {path:#?}"))?;
         }
         Ok(m)
     }
 
-    pub fn add_symbol(&mut self, sym: Symbol) -> DiagnosticResult<()> {
+    pub fn add_symbol(&mut self, sym: Symbol) -> MsgResult<()> {
         self.get_mod_from_path(sym.path.slice_to(-1))?
             .symbols
             .push(sym);
         Ok(())
     }
 
-    pub fn add_mod<'a>(&'a mut self, path: Vec<String>, mut data: NewMod) -> DiagnosticResult<()> {
+    pub fn add_mod<'a>(&'a mut self, path: Vec<String>, mut data: NewMod) -> MsgResult<()> {
         Ok(self.get_mod_from_path(&path)?.add_mod(data))
     }
 
-    pub fn add_hardcoded_symbol(crates: &mut Crates, sym: HardcodedSymbol) -> DiagnosticResult<()> {
+    pub fn add_hardcoded_symbol(crates: &mut Crates, sym: HardcodedSymbol) -> MsgResult<()> {
         let path = sym.get_path();
         crates.get_crate_mut(path.cr)?.add_symbol(Symbol {
             kind: SymbolType::Hardcoded(sym),

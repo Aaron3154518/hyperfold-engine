@@ -1,4 +1,4 @@
-use diagnostic::{ErrorSpan, Results};
+use diagnostic::{CatchErr, ErrorSpan, Results};
 use syn::spanned::Spanned;
 
 use crate::traits::CollectVecInto;
@@ -123,5 +123,22 @@ impl<T> SplitBuildResult<T> for BuildResult<T> {
             }
             (msgs, spanned)
         })
+    }
+}
+
+// Get element from vec or produce MsgResult
+pub trait GetVec<T> {
+    fn try_get<'a>(&'a self, i: usize) -> MsgResult<&'a T>;
+
+    fn try_get_mut<'a>(&'a mut self, i: usize) -> MsgResult<&'a mut T>;
+}
+
+impl<T> GetVec<T> for Vec<T> {
+    fn try_get<'a>(&'a self, i: usize) -> MsgResult<&'a T> {
+        self.get(i).catch_err(format!("Invalid index: {i}"))
+    }
+
+    fn try_get_mut<'a>(&'a mut self, i: usize) -> MsgResult<&'a mut T> {
+        self.get_mut(i).catch_err(format!("Invalid index: {i}"))
     }
 }
