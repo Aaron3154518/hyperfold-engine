@@ -1,7 +1,21 @@
-use crate::Error;
-
 pub type Results<T, E> = Result<T, Vec<E>>;
-pub type DiagnosticResult<T> = Results<T, Error>;
+
+// Convert E to Results<T, E>
+pub trait ToErr<E> {
+    fn vec(self) -> Vec<E>;
+
+    fn err<T>(self) -> Results<T, E>;
+}
+
+impl<E> ToErr<E> for E {
+    fn vec(self) -> Vec<E> {
+        vec![self]
+    }
+
+    fn err<T>(self) -> Results<T, E> {
+        Err(self.vec())
+    }
+}
 
 // Convert Vec<E> to Results<T, E>
 pub trait ErrorsTrait<E> {

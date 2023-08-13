@@ -126,33 +126,3 @@ impl Diagnostic {
         self.to_json().map(|msg| println!("cargo:warning={msg}"))
     }
 }
-
-impl From<SpannedError> for Diagnostic {
-    fn from(
-        SpannedError {
-            msg,
-            file,
-            span:
-                ErrorSpan {
-                    byte_start,
-                    byte_end,
-                    line_start,
-                    line_end,
-                    column_start,
-                    column_end,
-                },
-        }: SpannedError,
-    ) -> Self {
-        Self::new(
-            msg,
-            file,
-            DiagnosticLevel::Error,
-            byte_start,
-            byte_end,
-            line_start,
-            line_end,
-            column_start,
-            column_end,
-        )
-    }
-}

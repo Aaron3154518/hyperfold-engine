@@ -1,20 +1,17 @@
-use diagnostic::{CatchErr, DiagnosticResult, Error};
 use quote::ToTokens;
 
+use super::error::{err, BuildResult, CatchErr};
+
 // To type
-pub fn type_to_type(ty: &syn::Type, r: bool, m: bool) -> DiagnosticResult<syn::Type> {
+pub fn type_to_type(ty: &syn::Type, r: bool, m: bool) -> BuildResult<syn::Type> {
     string_to_type(ty.to_token_stream().to_string(), r, m)
 }
 
-pub fn arr_to_type<const N: usize>(
-    path: [&str; N],
-    r: bool,
-    m: bool,
-) -> DiagnosticResult<syn::Type> {
+pub fn arr_to_type<const N: usize>(path: [&str; N], r: bool, m: bool) -> BuildResult<syn::Type> {
     string_to_type(path.join("::"), r, m)
 }
 
-pub fn string_to_type(ty: String, r: bool, m: bool) -> DiagnosticResult<syn::Type> {
+pub fn string_to_type(ty: String, r: bool, m: bool) -> BuildResult<syn::Type> {
     syn::parse_str::<syn::Type>(
         format!(
             "{}{}{}",
@@ -24,7 +21,7 @@ pub fn string_to_type(ty: String, r: bool, m: bool) -> DiagnosticResult<syn::Typ
         )
         .as_str(),
     )
-    .catch_err("Could not parse type")
+    .catch_err(err("Could not parse type"))
 }
 
 // Get type generics

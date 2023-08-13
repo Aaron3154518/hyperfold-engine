@@ -1,4 +1,5 @@
 // mod msg;
+pub mod error;
 mod parse;
 mod path;
 mod quote;
