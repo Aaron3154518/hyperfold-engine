@@ -1,3 +1,4 @@
+use diagnostic::{CatchErr, DiagnosticResult, Error};
 use quote::ToTokens;
 use syn::{spanned::Spanned, Pat};
 
@@ -5,11 +6,11 @@ use crate::parse::{
     AstCrate, ModInfo, {AstMod, Symbol},
 };
 use shared::{
-    syn::{use_path_from_syn, CatchErr, DiagnosticResult, InjectSpan, Msg},
+    syn::use_path_from_syn,
     traits::{Catch, CollectVecInto},
 };
 
-use super::symbol::MatchSymbolTrait;
+use super::{symbol::MatchSymbolTrait, ModError};
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub struct ItemPath {
@@ -26,7 +27,7 @@ impl ItemPath {
     }
 }
 
-fn resolve_error(path: Vec<String>) -> Vec<Msg> {
+fn resolve_error(path: Vec<String>) -> Vec<Error> {
     let path = path.join("::");
     vec![Error::new(&format!("Could not resolve path: {path}"))]
 }

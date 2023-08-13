@@ -70,6 +70,6 @@ where
             }
             t.0
         }
-        Err(e) => Err(vec![Error::spanned(&format!("{e}"), "", e.span())]),
+        Err(e) => Err(vec![Error::spanned(&format!("{e}"), "", &e.span())]),
     }
 }

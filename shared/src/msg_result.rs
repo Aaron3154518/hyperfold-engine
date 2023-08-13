@@ -9,7 +9,7 @@ pub trait MsgTrait<T, E> {
     fn get_ref<'a>(&'a self) -> DiagnosticResult<&'a T, E>;
 
     // Add rhs errors, don't overwrite data
-    fn and_msgs<U>(self, rhs: DiagnosticResult<U, E>) -> DiagnosticResult<T, E>;
+    fn take_errs<U>(self, rhs: DiagnosticResult<U, E>) -> DiagnosticResult<T, E>;
 
     // Add rhs errors, do overwrite data
     fn then_msgs<U>(self, rhs: DiagnosticResult<U, E>) -> DiagnosticResult<U, E>;
@@ -34,7 +34,7 @@ where
         }
     }
 
-    fn and_msgs<U>(self, rhs: DiagnosticResult<U, E>) -> DiagnosticResult<T, E> {
+    fn take_errs<U>(self, rhs: DiagnosticResult<U, E>) -> DiagnosticResult<T, E> {
         match (self, rhs) {
             (Ok(t), Ok(_)) => Ok(t),
             (Ok(_), Err(e)) | (Err(e), Ok(_)) => Err(e),
@@ -43,7 +43,7 @@ where
     }
 
     fn then_msgs<U>(self, rhs: DiagnosticResult<U, E>) -> DiagnosticResult<U, E> {
-        rhs.and_msgs(self)
+        rhs.take_errs(self)
     }
 
     fn add_msg(self, f: impl FnOnce() -> E) -> DiagnosticResult<T, E> {

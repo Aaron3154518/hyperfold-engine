@@ -1,3 +1,4 @@
+use diagnostic::{DiagnosticResult, Error};
 use proc_macro2::Span;
 
 use syn::spanned::Spanned;
@@ -9,7 +10,6 @@ use super::AstMod;
 use shared::{
     macros::{expand_enum, ExpandEnum},
     parsing::{ComponentMacroArgs, GlobalMacroArgs},
-    syn::{DiagnosticResult, Msg},
 };
 
 // Symbol with path - Edit this to add new engine items
@@ -89,10 +89,10 @@ pub struct Symbol {
 type Location<'a> = (&'a AstMod, &'a dyn Spanned);
 
 impl Symbol {
-    fn error_msg(&self, expected: &str, location: Option<Location>) -> Msg {
+    fn error(&self, expected: &str, location: Option<Location>) -> Error {
         let msg = format!("Expected {} but found {}", expected, self.kind);
         match location {
-            Some((m, span)) => Msg::for_mod(&msg, m, span),
+            Some((m, span)) => m.error(&msg, &span.span()),
             None => Error::new(&msg),
         }
     }
@@ -139,7 +139,7 @@ mod match_symbol {
             self.and_then_impl(
                 |arg| match arg.kind {
                     SymbolType::Component(c_sym) => Ok((arg, c_sym)),
-                    _ => Err(vec![arg.error_msg("Component", l)]),
+                    _ => Err(vec![arg.error("Component", l)]),
                 },
                 l,
             )
@@ -152,7 +152,7 @@ mod match_symbol {
             self.and_then_impl(
                 |arg| match arg.kind {
                     SymbolType::Global(g_sym) => Ok((arg, g_sym)),
-                    _ => Err(vec![arg.error_msg("Global", l)]),
+                    _ => Err(vec![arg.error("Global", l)]),
                 },
                 l,
             )
@@ -165,7 +165,7 @@ mod match_symbol {
             self.and_then_impl(
                 |arg| match arg.kind {
                     SymbolType::Trait(g_sym) => Ok((arg, g_sym)),
-                    _ => Err(vec![arg.error_msg("Trait", l)]),
+                    _ => Err(vec![arg.error("Trait", l)]),
                 },
                 l,
             )
@@ -178,7 +178,7 @@ mod match_symbol {
             self.and_then_impl(
                 |arg| match arg.kind {
                     SymbolType::Global(g_sym) | SymbolType::Trait(g_sym) => Ok((arg, g_sym)),
-                    _ => Err(vec![arg.error_msg("Global or Trait", l)]),
+                    _ => Err(vec![arg.error("Global or Trait", l)]),
                 },
                 l,
             )
@@ -188,7 +188,7 @@ mod match_symbol {
             self.and_then_impl(
                 |arg| match arg.kind {
                     SymbolType::Event(i) => Ok((arg, i)),
-                    _ => Err(vec![arg.error_msg("Event", l)]),
+                    _ => Err(vec![arg.error("Event", l)]),
                 },
                 l,
             )
@@ -198,7 +198,7 @@ mod match_symbol {
             self.and_then_impl(
                 |arg| match arg.kind {
                     SymbolType::State(i) => Ok((arg, i)),
-                    _ => Err(vec![arg.error_msg("State", l)]),
+                    _ => Err(vec![arg.error("State", l)]),
                 },
                 l,
             )
@@ -211,7 +211,7 @@ mod match_symbol {
             self.and_then_impl(
                 |arg| match arg.kind {
                     SymbolType::System(i, s) => Ok((arg, (i, s))),
-                    _ => Err(vec![arg.error_msg("System", l)]),
+                    _ => Err(vec![arg.error("System", l)]),
                 },
                 l,
             )
@@ -224,7 +224,7 @@ mod match_symbol {
             self.and_then_impl(
                 |arg| match arg.kind {
                     SymbolType::ComponentSet(i) => Ok((arg, i)),
-                    _ => Err(vec![arg.error_msg("Component Set", l)]),
+                    _ => Err(vec![arg.error("Component Set", l)]),
                 },
                 l,
             )
@@ -237,7 +237,7 @@ mod match_symbol {
             self.and_then_impl(
                 |arg| match arg.kind {
                     SymbolType::Hardcoded(sym) => Ok((arg, sym)),
-                    _ => Err(vec![arg.error_msg("Hardcoded Symbol", l)]),
+                    _ => Err(vec![arg.error("Hardcoded Symbol", l)]),
                 },
                 l,
             )
@@ -251,9 +251,7 @@ mod match_symbol {
             self.expect_any_hardcoded_impl(l)
                 .and_then(|(s, h_sym)| match h_sym == sym {
                     true => Ok(s),
-                    false => Err(vec![
-                        s.error_msg(&format!("Hardcoded Symbol: '{h_sym:#?}'"), l)
-                    ]),
+                    false => Err(vec![s.error(&format!("Hardcoded Symbol: '{h_sym:#?}'"), l)]),
                 })
         }
     }

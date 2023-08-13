@@ -1,4 +1,4 @@
-use diagnostic::DiagnosticResult;
+use diagnostic::{DiagnosticResult, Error, ErrorSpan};
 use proc_macro2::Span;
 use quote::ToTokens;
 use syn::spanned::Spanned;
@@ -13,7 +13,7 @@ use shared::{
 use crate::{
     parse::{
         resolve_path, resolve_syn_path, AstAttribute, AstFunction, AstItem, DiscardSymbol,
-        HardcodedSymbol, ItemPath, MatchSymbol, ModInfo,
+        HardcodedSymbol, ItemPath, MatchSymbol, ModError, ModInfo,
     },
     resolve::Items,
 };
@@ -59,9 +59,7 @@ impl FnArg {
         sig.inputs
             .iter()
             .map_vec_into(|arg| match arg {
-                syn::FnArg::Receiver(r) => {
-                    Err(vec![Msg::for_mod("Cannot use self in function", m, r)])
-                }
+                syn::FnArg::Receiver(r) => Err(vec![m.error("Cannot use self in function", r)]),
                 syn::FnArg::Typed(syn::PatType { ty, .. }) => {
                     FnArg::parse_type(ty, (m, cr, crates))
                 }
@@ -83,7 +81,7 @@ impl FnArg {
                                 .discard_symbol()
                                 .map(|idx| FnArgType::Entities { idx, is_vec: true })
                         }
-                        _ => Err(vec![Msg::for_mod("Invalid argument type", m, ty)]),
+                        _ => Err(vec![m.error("Invalid argument type", ty)]),
                     },
                     _ => {
                         resolve_path(path, (m, cr, crates))
@@ -96,7 +94,7 @@ impl FnArg {
                                 crate::parse::SymbolType::ComponentSet(idx) => {
                                     Ok(FnArgType::Entities { idx, is_vec: false })
                                 }
-                                _ => Err(vec![Msg::for_mod("Invalid argument type", m, ty)]),
+                                _ => Err(vec![m.error("Invalid argument type", ty)]),
                             })
                     }
                 }
@@ -135,14 +133,12 @@ impl FnArg {
                                 span: ty.span(),
                             })
                     }
-                    _ => Err(vec![Msg::for_mod(
-                        "Trait arguments must have only one trait type",
-                        m,
-                        ty,
-                    )]),
+                    _ => Err(vec![
+                        m.error("Trait arguments must have only one trait type", ty)
+                    ]),
                 }
             }
-            _ => Err(vec![Msg::for_mod("Invalid argument type", m, ty)]),
+            _ => Err(vec![m.error("Invalid argument type", ty)]),
         }
     }
 }
@@ -163,9 +159,9 @@ pub struct ItemSystem {
     pub path: ItemPath,
     pub args: Vec<FnArg>,
     pub attr_args: SystemMacroArgs,
-    pub file: usize,
+    pub file: String,
     pub span: Span,
-    pub span_start: Option<usize>,
+    pub err_span: ErrorSpan,
 }
 
 impl ItemSystem {
@@ -176,7 +172,7 @@ impl ItemSystem {
         (m, cr, crates): ModInfo,
     ) -> DiagnosticResult<Self> {
         let path = m.path.to_vec().push_into(fun.data.sig.ident.to_string());
-        let attr_args = parse_tokens(attr.args.clone()).for_mod(m)?;
+        let attr_args = parse_tokens(attr.args.clone()).in_mod(m)?;
         FnArg::parse(&attr_args, items, &fun.data.sig, (m, cr, crates)).map(|args| ItemSystem {
             path: ItemPath {
                 cr_idx: cr.idx,
@@ -184,17 +180,19 @@ impl ItemSystem {
             },
             args,
             attr_args,
-            file: m.span_file,
+            file: m.get_file(),
             span: fun.data.sig.ident.span(),
-            span_start: m.span,
+            err_span: m.span.clone(),
         })
     }
 
-    pub fn new_msg(&self, msg: &str, span: &impl Spanned) -> Msg {
-        Msg::for_file(msg, self.file, span, self.span_start)
+    pub fn error(&self, msg: &str, span: impl Into<ErrorSpan>) -> Error {
+        let mut span: ErrorSpan = span.into();
+        span.offset_bytes(self.err_span.byte_start);
+        Error::spanned(msg, &self.file, span)
     }
 
-    pub fn msg(&self, msg: &str) -> Msg {
-        Msg::for_file(msg, self.file, &self.span, self.span_start)
+    pub fn error_here(&self, msg: &str) -> Error {
+        self.error(msg, &self.span)
     }
 }

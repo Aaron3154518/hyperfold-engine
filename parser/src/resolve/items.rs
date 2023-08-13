@@ -10,7 +10,7 @@ use crate::{
     parse::{
         resolve_path, AstCrate, AstFunction, AstItem, AstItems, AstMod, AstModType, AstUse,
         ComponentSymbol, DiscardSymbol, GlobalSymbol, HardcodedSymbol, ItemPath, MatchSymbol,
-        ModInfo, NewMod, Symbol, SymbolType,
+        ModError, ModInfo, NewMod, Symbol, SymbolType,
     },
     system::ItemSystem,
     utils::{
@@ -290,7 +290,7 @@ impl Items {
                     {
                         Ok(HardcodedSymbol::ComponentMacro) => {
                             if let Some(args) =
-                                parse_tokens(attr.args.clone()).for_mod(m).record_errs(errs)
+                                parse_tokens(attr.args.clone()).in_mod(m).record_errs(errs)
                             {
                                 symbols.push(NewSymbol::Symbol(items.add_component(
                                     cr.idx,
@@ -302,7 +302,7 @@ impl Items {
                         }
                         Ok(HardcodedSymbol::GlobalMacro) => {
                             if let Some(args) =
-                                parse_tokens(attr.args.clone()).for_mod(m).record_errs(errs)
+                                parse_tokens(attr.args.clone()).in_mod(m).record_errs(errs)
                             {
                                 symbols.push(NewSymbol::Symbol(items.add_global(
                                     cr.idx,

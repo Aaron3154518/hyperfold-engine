@@ -1,4 +1,4 @@
-use diagnostic::{CombineResults, DiagnosticResult, Error, NewError};
+use diagnostic::{CombineResults, DiagnosticResult, Error, ErrorGivenSpan};
 use proc_macro2::Span;
 use syn::spanned::Spanned;
 
@@ -141,7 +141,7 @@ impl ParseFrom<Vec<syn::Path>> for SystemMacroArgs {
                             path.join("::")
                         ),
                         "",
-                        span.span(),
+                        span,
                     )
                 })),
             },

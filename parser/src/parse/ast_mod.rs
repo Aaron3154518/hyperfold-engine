@@ -3,7 +3,7 @@ use std::{
     path::{Display, PathBuf},
 };
 
-use diagnostic::{CatchErr, DiagnosticResult, Error, ErrorSpan, ToResultsTrait};
+use diagnostic::{CatchErr, DiagnosticResult, Error, ErrorGivenSpan, ErrorSpan};
 use proc_macro2::{Span, TokenStream};
 
 use syn::{spanned::Spanned, visit::Visit};
@@ -149,7 +149,7 @@ impl AstMod {
             file.display()
         ))?;
 
-        let mut s = Self::new(file, path, ty, ast.span().to_range().ok().map(|r| r.start));
+        let mut s = Self::new(file, path, ty, (&ast).into());
 
         s.visit_file(ast)?;
         // Post processing
@@ -173,8 +173,16 @@ impl AstMod {
         self.mods.push(new_mod);
     }
 
+    pub fn get_file(&self) -> String {
+        self.file.display().to_string()
+    }
+
+    pub fn error(&self, msg: &str, span: impl Into<ErrorSpan>) -> Error {
+        Error::spanned(msg, "", span).in_mod(self)
+    }
+
     // E.g. mod Foo; use Foo::Bar;
-    pub fn resolve_local_use_paths(&mut self) -> DiagnosticResult<()> {
+    fn resolve_local_use_paths(&mut self) -> DiagnosticResult<()> {
         for use_path in self.uses.iter_mut() {
             let first = use_path.path.first().catch_err("Empty use path")?;
             if let Some(m) = self
@@ -403,5 +411,40 @@ impl AstMod {
                 .record_errs(&mut errs);
         }
         errs.err_or(())
+    }
+}
+
+// Adds the mod's span information to the error
+pub trait ModError
+where
+    Self: Sized,
+{
+    fn set_mod(&mut self, m: &AstMod);
+
+    fn in_mod(mut self, m: &AstMod) -> Self {
+        self.set_mod(m);
+        self
+    }
+}
+
+impl ModError for Error {
+    fn set_mod(&mut self, m: &AstMod) {
+        match self {
+            Error::Spanned(span) => {
+                span.file = m.get_file();
+                span.span.offset_bytes(m.span.byte_start);
+            }
+            Error::Message { msg } => *self = Error::spanned(msg, &m.get_file(), &m.span),
+        }
+    }
+}
+
+impl<T> ModError for DiagnosticResult<T> {
+    fn set_mod(&mut self, m: &AstMod) {
+        if let Err(errs) = self {
+            for e in errs {
+                e.set_mod(m);
+            }
+        }
     }
 }

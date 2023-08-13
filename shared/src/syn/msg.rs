@@ -61,7 +61,7 @@ pub type DiagnosticResult<T> = msg_result::DiagnosticResult<T, ParseMsg>;
 pub trait ToMsg<T> {
     fn for_file(self, file: usize, mod_start: Option<usize>) -> T;
 
-    fn for_mod(self, m: &impl SpanFile) -> T;
+    fn in_mod(self, m: &impl SpanFile) -> T;
 }
 
 impl ToMsg<Msg> for ParseMsg {
@@ -75,7 +75,7 @@ impl ToMsg<Msg> for ParseMsg {
         }
     }
 
-    fn for_mod(self, m: &impl SpanFile) -> Msg {
+    fn in_mod(self, m: &impl SpanFile) -> Msg {
         self.for_file(m.span_file(), m.span_start())
     }
 }
@@ -85,8 +85,8 @@ impl ToMsg<Vec<Msg>> for Vec<ParseMsg> {
         self.map_vec_into(|msg| msg.for_file(file, mod_start))
     }
 
-    fn for_mod(self, m: &impl SpanFile) -> Vec<Msg> {
-        self.map_vec_into(|msg| msg.for_mod(m))
+    fn in_mod(self, m: &impl SpanFile) -> Vec<Msg> {
+        self.map_vec_into(|msg| msg.in_mod(m))
     }
 }
 
@@ -95,8 +95,8 @@ impl<T> ToMsg<DiagnosticResult<T>> for DiagnosticResult<T> {
         self.map_err(|e| e.for_file(file, mod_start))
     }
 
-    fn for_mod(self, m: &impl SpanFile) -> DiagnosticResult<T> {
-        self.map_err(|e| e.for_mod(m))
+    fn in_mod(self, m: &impl SpanFile) -> DiagnosticResult<T> {
+        self.map_err(|e| e.in_mod(m))
     }
 }
 
@@ -129,7 +129,7 @@ pub enum Msg {
 }
 
 impl Msg {
-    pub fn for_mod(msg: &str, m: &impl SpanFile, span: &(impl Spanned + ?Sized)) -> Self {
+    pub fn in_mod(msg: &str, m: &impl SpanFile, span: &(impl Spanned + ?Sized)) -> Self {
         Self::from_span(msg.to_string(), m.span_file(), span.span(), m.span_start())
     }
 

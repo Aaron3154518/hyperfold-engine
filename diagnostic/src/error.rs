@@ -21,11 +21,24 @@ pub struct ErrorSpan {
     pub column_end: usize,
 }
 
-impl<S> From<S> for ErrorSpan
+impl ErrorSpan {
+    pub fn offset_bytes(&mut self, off: usize) {
+        self.byte_start += off;
+        self.byte_end += off;
+    }
+}
+
+impl From<&ErrorSpan> for ErrorSpan {
+    fn from(value: &ErrorSpan) -> Self {
+        value.clone()
+    }
+}
+
+impl<S> From<&S> for ErrorSpan
 where
     S: Spanned,
 {
-    fn from(span: S) -> Self {
+    fn from(span: &S) -> Self {
         let span = span.span();
 
         let LineColumn {
@@ -52,12 +65,14 @@ where
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct SpannedError {
     pub msg: String,
     pub file: String,
     pub span: ErrorSpan,
 }
 
+#[derive(Debug, Clone)]
 pub enum Error {
     Spanned(SpannedError),
     Message { msg: String },
@@ -89,12 +104,39 @@ impl Error {
     }
 }
 
-// Create new error from message and object
-pub trait NewError {
+pub trait SetError
+where
+    Self: Sized,
+{
+    fn set_span(&mut self, span: impl Into<ErrorSpan>);
+
+    fn with_span(mut self, span: impl Into<ErrorSpan>) {
+        self.set_span(span);
+        self
+    }
+
+    fn set_file(&mut self, file: &str);
+
+    fn with_file(mut self, file: &str) -> Self {
+        self.set_file(file);
+        self
+    }
+}
+
+impl SetError for Error {
+    fn set_span(&mut self, span: impl Into<ErrorSpan>) {}
+
+    fn set_file(&mut self, file: &str) {
+        todo!()
+    }
+}
+
+// Create new error from message and file
+pub trait ErrorGivenSpan {
     fn error<T>(self, msg: &str, file: &str) -> DiagnosticResult<T>;
 }
 
-impl<S> NewError for S
+impl<S> ErrorGivenSpan for S
 where
     S: Into<ErrorSpan>,
 {

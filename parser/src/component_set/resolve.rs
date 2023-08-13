@@ -151,7 +151,7 @@ impl ComponentSet {
     pub fn parse(tokens: TokenStream, (m, cr, crates): ModInfo) -> DiagnosticResult<Self> {
         let span = tokens.span();
         parse_tokens(tokens)
-            .for_mod(m)
+            .in_mod(m)
             .and_then(|cs| Self::resolve(cs, (m, cr, crates)))
     }
 

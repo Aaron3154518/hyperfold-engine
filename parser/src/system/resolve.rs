@@ -78,10 +78,10 @@ impl ComponentRefTracker {
         let (mut_cnt, immut_cnt) = (self.mut_refs.len(), self.immut_refs.len());
 
         (mut_cnt > 1)
-            .err(vec![sys.msg("Multiple mutable references")], ())
-            .and_msgs(
+            .err(vec![sys.error_here("Multiple mutable references")], ())
+            .take_errs(
                 (mut_cnt > 0 && immut_cnt > 0)
-                    .err(vec![sys.msg("Mutable and immutable references")], ()),
+                    .err(vec![sys.error_here("Mutable and immutable references")], ()),
             )
         // TODO: add hint
         // .map_err(|mut errs| {
@@ -118,9 +118,12 @@ impl ItemSystem {
                             idx: *idx,
                             is_mut: arg.is_mut,
                         }),
-                    FnArgType::Event(_) | FnArgType::Entities { .. } => Err(vec![
-                        self.msg(&format!("Init systems may not contain {}", arg.ty))
-                    ]),
+                    FnArgType::Event(_) | FnArgType::Entities { .. } => {
+                        Err(vec![self.error_here(&format!(
+                            "Init systems may not contain {}",
+                            arg.ty
+                        ))])
+                    }
                 })
                 .combine_results()
                 .map(|globals| FnArgs::Init { globals }),
@@ -133,9 +136,7 @@ impl ItemSystem {
                 self.args
                     .enumer_map_vec(|(arg_idx, arg)| match &arg.ty {
                         FnArgType::Event(idx) => match event {
-                            Some(_) => {
-                                Err(vec![self.new_msg("Event already specified", &arg.span)])
-                            }
+                            Some(_) => Err(vec![self.error("Event already specified", &arg.span)]),
                             None => self
                                 .validate_event(arg, *idx, items)
                                 .map(|_| event = Some(EventFnArg { arg_idx, idx: *idx })),
@@ -161,9 +162,9 @@ impl ItemSystem {
                     })
                     .combine_results()
                     // Require event
-                    .then_msgs(event.ok_or(vec![self.msg("System must specify an event")]))
+                    .then_msgs(event.ok_or(vec![self.error_here("System must specify an event")]))
                     // Check component reference mutability
-                    .and_msgs(
+                    .take_errs(
                         component_refs
                             .into_iter()
                             .map_vec_into(|(i, refs)| refs.validate(self))
@@ -196,11 +197,11 @@ impl ItemSystem {
                     Ok(g)
                 }
             })
-            .and_msgs(self.validate_ref(arg, 1))
-            .and_msgs(
+            .take_errs(self.validate_ref(arg, 1))
+            .take_errs(
                 globals
                     .insert(i)
-                    .ok((), vec![self.new_msg("Duplicate global", &arg.span)]),
+                    .ok((), vec![self.error("Duplicate global", &arg.span)]),
             )
     }
 
@@ -214,8 +215,8 @@ impl ItemSystem {
             .events
             .get(i)
             .ok_or(vec![Error::new(&format!("Invalid Event index: {i}"))])
-            .and_msgs(self.validate_ref(arg, 1))
-            .and_msgs(self.validate_mut(arg, false))
+            .take_errs(self.validate_ref(arg, 1))
+            .take_errs(self.validate_mut(arg, false))
     }
 
     fn validate_component_set<'a>(
@@ -250,8 +251,8 @@ impl ItemSystem {
                     true => Ok(cs),
                     // Must have a required singleton in the labels
                     false => {
-                        let err = self.new_msg(
-                            &format!("Entity set must contain singletons or be wrapped with Vec<>"),
+                        let err = self.error(
+                            "Entity set must contain singletons or be wrapped with Vec<>",
                             &arg.span,
                         );
                         // TODO: add help
@@ -273,14 +274,14 @@ impl ItemSystem {
                     }
                 }
             })
-            .and_msgs(self.validate_ref(arg, 0))
+            .take_errs(self.validate_ref(arg, 0))
     }
 
     // Validate conditions
     fn validate_ref(&self, arg: &FnArg, should_be_cnt: usize) -> DiagnosticResult<()> {
         (arg.ref_cnt == should_be_cnt).ok(
             (),
-            vec![self.new_msg(
+            vec![self.error(
                 &format!(
                     "Type should be taken by {}: \"{}\"",
                     if should_be_cnt == 0 {
@@ -300,7 +301,7 @@ impl ItemSystem {
     fn validate_mut(&self, arg: &FnArg, should_be_mut: bool) -> DiagnosticResult<()> {
         (arg.is_mut == should_be_mut).ok(
             (),
-            vec![self.new_msg(
+            vec![self.error(
                 &format!(
                     "Type should be taken {}: \"{}\"",
                     if should_be_mut {

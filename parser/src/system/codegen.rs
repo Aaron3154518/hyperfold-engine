@@ -1,10 +1,11 @@
+use diagnostic::{DiagnosticResult, Error};
 use proc_macro2::TokenStream;
 use quote::quote;
 
 use shared::{
     match_ok,
     msg_result::{CombineMsgs, MsgTrait, ToMsgs, Zip2Msgs, Zip3Msgs, Zip5Msgs},
-    syn::{DiagnosticResult, Msg, Quote},
+    syn::Quote,
     traits::{CollectVec, CollectVecInto},
 };
 
@@ -180,7 +181,7 @@ pub fn codegen_systems(
 
     systems
         .combine_results()
-        .and_msgs(errs.err_or(()))
+        .take_errs(errs.err_or(()))
         .map(|systems| SystemsCodegenResult {
             init_systems,
             systems,
