@@ -1,9 +1,10 @@
+use diagnostic::ToErr;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use shared::{
     match_ok,
     msg_result::{CombineMsgs, Zip2Msgs, Zip3Msgs},
-    syn::{vec_to_path, DiagnosticResult, Msg},
+    syn::{error::MsgResult, vec_to_path},
     traits::{CollectVec, CollectVecInto},
 };
 
@@ -26,7 +27,7 @@ pub fn trait_defs<const N: usize>(
     crates: &Crates,
     trait_ident: &syn::Ident,
     item_traits: [(&CratePath, &dyn GetTraitTypes); N],
-) -> DiagnosticResult<TokenStream> {
+) -> MsgResult<TokenStream> {
     let macro_cr_idx = crates.get_crate_index(Crate::Macros);
 
     let CodegenIdents { namespace, .. } = &*CODEGEN_IDENTS;
@@ -46,7 +47,7 @@ pub fn trait_defs<const N: usize>(
     let macro_cr_idx = crates.get_crate_index(Crate::Macros);
     let mut dep_traits = crates
         .get(cr_idx)
-        .ok_or(vec![Error::new(&format!("Invalid crate index: {cr_idx}"))])
+        .ok_or(format!("Invalid crate index: {cr_idx}").as_vec())
         .map(|cr| {
             cr.deps
                 .iter()

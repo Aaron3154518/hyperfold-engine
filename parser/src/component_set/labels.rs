@@ -1,5 +1,6 @@
 use std::{collections::HashMap, hash::Hash};
 
+use proc_macro2::Span;
 use shared::{
     hash_map,
     traits::{Call, CollectVec, CollectVecInto, Discard, MapNone, PushInto},
@@ -42,6 +43,7 @@ impl LabelItem {
     fn combine_symbols(
         op: &LabelOp,
         items: &Vec<LabelItem>,
+        span: Span,
         truth: &HashMap<ComponentSymbol, bool>,
     ) -> ExpressionResult {
         // Filter out literals
@@ -132,6 +134,7 @@ impl LabelItem {
                 _ => LabelItem::Expression {
                     op: *op,
                     items: new_labels,
+                    span,
                 },
             },
             symbols: symbs,
@@ -140,7 +143,7 @@ impl LabelItem {
 
     fn get_symbols(&self, truth: &HashMap<ComponentSymbol, bool>) -> ExpressionResult {
         match self {
-            LabelItem::Item { not, comp } => {
+            LabelItem::Item { not, comp, span } => {
                 let must_be = !*not;
                 match truth.get(&comp) {
                     Some(truth) => ExpressionResult::Literal(truth == &must_be),
@@ -148,16 +151,20 @@ impl LabelItem {
                         labels: LabelItem::Item {
                             not: *not,
                             comp: *comp,
+                            span: *span,
                         },
                         symbols: hash_map!({*comp => MustBe::Value(must_be)}),
                     },
                 }
             }
-            LabelItem::Expression { op, items } => Self::combine_symbols(op, items, truth),
+            LabelItem::Expression { op, items, span } => {
+                Self::combine_symbols(op, items, *span, truth)
+            }
         }
     }
 
     pub fn evaluate_labels(&self, mut truth: HashMap<ComponentSymbol, bool>) -> ComponentSetLabels {
+        let span = *self.span();
         // Collects symbols which must be true/false
         let mut true_symbols = Vec::new();
         let mut false_symbols = Vec::new();
@@ -174,6 +181,7 @@ impl LabelItem {
                             labels: LabelItem::Expression {
                                 op: LabelOp::And,
                                 items: fixed_labels,
+                                span,
                             },
                             true_symbols,
                             false_symbols,
@@ -196,6 +204,7 @@ impl LabelItem {
                             labels: LabelItem::Expression {
                                 op: LabelOp::And,
                                 items: fixed_labels.push_into(labels),
+                                span,
                             },
                             true_symbols,
                             false_symbols,
@@ -214,6 +223,7 @@ impl LabelItem {
                             fixed_labels.push(LabelItem::Item {
                                 not: !*v,
                                 comp: *sym,
+                                span,
                             });
                         }
                         eval_result = labels.get_symbols(&truth)
@@ -224,7 +234,7 @@ impl LabelItem {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug)]
 pub struct LabelsExpression {
     pub labels: LabelItem,
     pub true_symbols: Vec<ComponentSymbol>,
@@ -241,7 +251,7 @@ impl LabelsExpression {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug)]
 pub enum ComponentSetLabels {
     Constant(bool),
     Expression(LabelsExpression),

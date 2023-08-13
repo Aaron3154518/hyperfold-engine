@@ -165,7 +165,7 @@ macro_rules! engine_globals {
             pub fn get_global_vars(&self, crates: &Crates, cr_idx: usize) -> MsgResult<$ty_res> {
                 let cr = match crates.get(cr_idx) {
                     Some(cr) => cr,
-                    None => return format!("Invalid crate index: {cr_idx}").err(),
+                    None => return format!("Invalid crate index: {cr_idx}").as_err(),
                 };
                 let get_global = |cr_path| {
                     crates

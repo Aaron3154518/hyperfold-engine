@@ -1,3 +1,4 @@
+use diagnostic::{CatchErr, ToErr};
 use proc_macro2::{Span, TokenStream};
 use quote::quote;
 use syn::{
@@ -11,8 +12,8 @@ use crate::parse::ItemPath;
 use shared::{
     msg_result::MsgTrait,
     syn::{
-        get_type_generics, parse_tokens, use_path_from_syn, CatchSpanErr, DiagnosticResult, Parse,
-        ParseMsg, StreamParse,
+        error::{err, CatchSynError, SpannedResult},
+        get_type_generics, parse_tokens, use_path_from_syn, Parse, StreamParse,
     },
     traits::{CollectVec, PushInto},
 };
@@ -40,13 +41,13 @@ impl LabelOp {
 }
 
 impl Parse for LabelOp {
-    fn parse(input: syn::parse::ParseStream) -> DiagnosticResult<Self> {
+    fn parse(input: syn::parse::ParseStream) -> SpannedResult<Self> {
         let span = input.span();
         input
             .parse::<Token!(&&)>()
             .map(|_| Self::And)
             .or_else(|_| input.parse::<Token!(||)>().map(|_| Self::Or))
-            .catch_err_span("Expected Op: '||' or '&&'", span)
+            .catch_err(err("Expected Op: '||' or '&&'", &span))
     }
 }
 
@@ -66,20 +67,27 @@ enum Expression {
         first: AstLabelItem,
         noops: Vec<AstLabelItem>,
         ops: Vec<LabelOp>,
+        span: Span,
     },
 }
 
 impl Expression {
-    pub fn to_item(self, neg: bool) -> DiagnosticResult<AstLabelItem> {
+    pub fn to_item(self, neg: bool) -> SpannedResult<AstLabelItem> {
         let mut item = match self {
             Expression::Item(i) => i,
-            Expression::Expr { first, noops, ops } => {
+            Expression::Expr {
+                first,
+                noops,
+                ops,
+                span,
+            } => {
                 let mut get_item =
-                    |items: Vec<AstLabelItem>, op: LabelOp| -> DiagnosticResult<AstLabelItem> {
+                    |items: Vec<AstLabelItem>, op: LabelOp| -> SpannedResult<AstLabelItem> {
                         Ok(if items.len() <= 1 {
-                            items.into_iter().next().ok_or(vec![ParseMsg::String(
-                                "Empty label expression".to_string(),
-                            )])?
+                            items
+                                .into_iter()
+                                .next()
+                                .ok_or(err("Empty label expression", &span).as_vec())?
                         } else {
                             // Combine expressions with the same operation
                             let items = items.into_iter().fold(Vec::new(), |mut items, item| {
@@ -90,6 +98,7 @@ impl Expression {
                                     AstLabelItem::Expression {
                                         op: exp_op,
                                         items: exp_items,
+                                        span,
                                     } => {
                                         if op == exp_op {
                                             items.extend(exp_items);
@@ -97,13 +106,14 @@ impl Expression {
                                             items.push(AstLabelItem::Expression {
                                                 op: exp_op,
                                                 items: exp_items,
+                                                span,
                                             });
                                         }
                                     }
                                 }
                                 items
                             });
-                            AstLabelItem::Expression { op, items }
+                            AstLabelItem::Expression { op, items, span }
                         })
                     };
                 let mut ors = Vec::new();
@@ -129,7 +139,9 @@ impl Expression {
 }
 
 impl Parse for Expression {
-    fn parse(input: syn::parse::ParseStream) -> DiagnosticResult<Self> {
+    fn parse(input: syn::parse::ParseStream) -> SpannedResult<Self> {
+        let span = input.span();
+
         let first = input.parse_stream()?;
 
         let mut noops = vec![];
@@ -142,7 +154,12 @@ impl Parse for Expression {
 
         Ok(match ops.is_empty() {
             true => Self::Item(first),
-            false => Self::Expr { first, noops, ops },
+            false => Self::Expr {
+                first,
+                noops,
+                ops,
+                span,
+            },
         })
     }
 }
@@ -158,6 +175,7 @@ pub enum AstLabelItem {
     Expression {
         op: LabelOp,
         items: Vec<AstLabelItem>,
+        span: Span,
     },
 }
 
@@ -165,7 +183,7 @@ impl AstLabelItem {
     pub fn negate(&mut self) {
         match self {
             AstLabelItem::Item { not, .. } => *not = !*not,
-            AstLabelItem::Expression { op, items } => {
+            AstLabelItem::Expression { op, items, .. } => {
                 op.negate();
                 items.iter_mut().for_each(|i| i.negate());
             }
@@ -174,17 +192,19 @@ impl AstLabelItem {
 }
 
 impl Parse for AstLabelItem {
-    fn parse(input: syn::parse::ParseStream) -> DiagnosticResult<Self> {
+    fn parse(input: syn::parse::ParseStream) -> SpannedResult<Self> {
         let mut not = false;
         while input.parse::<Token!(!)>().is_ok() {
             not = !not;
         }
 
+        let span = input.span();
+
         input.parse::<proc_macro2::Group>().map_or_else(
             |_| {
                 input
                     .parse::<syn::TypePath>()
-                    .catch_err("Expected label type")
+                    .catch_err(err("Expected label type", &span))
                     .map(|p| Self::Item {
                         not,
                         span: p.span(),
@@ -209,7 +229,7 @@ impl std::fmt::Display for AstLabelItem {
                 if *not { "!" } else { "" },
                 ty.join("::")
             )),
-            AstLabelItem::Expression { op, items } => f.write_fmt(format_args!(
+            AstLabelItem::Expression { op, items, .. } => f.write_fmt(format_args!(
                 "({})",
                 items
                     .map_vec(|i| format!("{i}"))
@@ -230,39 +250,28 @@ pub struct AstComponentSetItem {
 }
 
 impl AstComponentSetItem {
-    pub fn from(var: String, ty: &syn::Type) -> DiagnosticResult<Self> {
+    pub fn from(var: String, ty: &syn::Type) -> SpannedResult<Self> {
         let span = ty.span();
         match ty {
             syn::Type::Path(ty) => {
                 let mut path = use_path_from_syn(&Vec::new(), &ty.path);
                 match path.join("::").as_str() {
                     "Option" => {
-                        match get_type_generics(&ty).ok_or(vec![ParseMsg::from_span(
-                            "Missing generics after Option<>",
-                            ty.span(),
-                        )])?[..]
+                        match get_type_generics(&ty)
+                            .ok_or(err("Missing generics after Option<>", &ty).as_vec())?[..]
                         {
                             [arg] => match arg {
                                 syn::GenericArgument::Type(ty) => {
                                     let mut i = Self::from(var, ty)?;
                                     if i.is_opt {
-                                        return Err(vec![ParseMsg::from_span(
-                                            "Cannot nest Option<>",
-                                            ty.span(),
-                                        )]);
+                                        return err("Cannot nest Option<>", &ty).as_err();
                                     }
                                     i.is_opt = true;
                                     Ok(i)
                                 }
-                                _ => Err(vec![ParseMsg::from_span(
-                                    "Expected type generic",
-                                    arg.span(),
-                                )]),
+                                _ => err("Expected type generic", &arg).as_err(),
                             },
-                            _ => Err(vec![ParseMsg::from_span(
-                                "Multiple generics after Option<>",
-                                ty.span(),
-                            )]),
+                            _ => err("Multiple generics after Option<>", &ty).as_err(),
                         }
                     }
                     _ => Ok(Self {
@@ -277,29 +286,27 @@ impl AstComponentSetItem {
             }
             syn::Type::Reference(ty) => Self::from(var, &ty.elem).and_then(|mut i| {
                 if i.is_mut {
-                    return Err(vec![ParseMsg::from_span(
-                        "Option args may not be taken by reference",
-                        ty.span(),
-                    )]);
+                    return err("Option args may not be taken by reference", &ty).as_err();
                 }
                 i.ref_cnt += 1;
                 i.is_mut |= ty.mutability.is_some();
                 Ok(i)
             }),
-            _ => Err(vec![ParseMsg::from_span("Invalid variable type", span)]),
+            _ => err("Invalid variable type", &span).as_err(),
         }
     }
 }
 
 impl Parse for AstComponentSetItem {
-    fn parse(input: syn::parse::ParseStream) -> DiagnosticResult<Self> {
+    fn parse(input: syn::parse::ParseStream) -> SpannedResult<Self> {
+        let span = input.span();
         // var : type
         let var = input
             .parse::<syn::Ident>()
             .map(|i| i.to_string())
-            .catch_err("Expected variable name")?;
-        input.parse::<Colon>().catch_err("Expected ':'")?;
-        AstComponentSetItem::from(var, &input.parse().catch_err("Expected variable type")?)
+            .catch_syn_err("Expected variable name")?;
+        input.parse::<Colon>().catch_syn_err("Expected ':'")?;
+        AstComponentSetItem::from(var, &input.parse().catch_syn_err("Expected variable type")?)
     }
 }
 
@@ -311,16 +318,16 @@ pub struct AstComponentSet {
 }
 
 impl Parse for AstComponentSet {
-    fn parse(input: syn::parse::ParseStream) -> DiagnosticResult<Self> {
+    fn parse(input: syn::parse::ParseStream) -> SpannedResult<Self> {
         let mut labels = None;
 
         // First ident
-        let mut first_ident: syn::Ident = input.parse().catch_err("Expected ident")?;
+        let mut first_ident: syn::Ident = input.parse().catch_syn_err("Expected ident")?;
         if first_ident == "labels" {
             // Labels
             labels = input
                 .parse::<proc_macro2::Group>()
-                .catch_err("Expected parentheses after labels")
+                .catch_syn_err("Expected parentheses after labels")
                 .and_then(|g| {
                     let stream = g.stream();
                     Ok(match stream.is_empty() {
@@ -330,8 +337,8 @@ impl Parse for AstComponentSet {
                         ),
                     })
                 })?;
-            input.parse::<Comma>().catch_err("Expected ','")?;
-            first_ident = input.parse().catch_err("Expected ident")?;
+            input.parse::<Comma>().catch_syn_err("Expected ','")?;
+            first_ident = input.parse().catch_syn_err("Expected ident")?;
         }
 
         let mut args = Vec::new();

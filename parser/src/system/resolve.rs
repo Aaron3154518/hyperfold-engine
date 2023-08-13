@@ -1,4 +1,4 @@
-use diagnostic::{DiagnosticResult, Error};
+use diagnostic::ToErr;
 use proc_macro2::Span;
 use std::collections::{HashMap, HashSet};
 
@@ -6,6 +6,7 @@ use shared::{
     constants::TAB,
     msg_result::{CombineMsgs, MsgTrait},
     parsing::SystemMacroArgs,
+    syn::error::{SpannedResult, ToError},
     traits::{CollectVec, CollectVecInto, PushInto, ThenOk},
 };
 
@@ -74,15 +75,15 @@ impl ComponentRefTracker {
         }
     }
 
-    pub fn validate(&self, sys: &ItemSystem) -> DiagnosticResult<()> {
+    pub fn validate(&self, sys: &ItemSystem) -> SpannedResult<()> {
         let (mut_cnt, immut_cnt) = (self.mut_refs.len(), self.immut_refs.len());
 
         (mut_cnt > 1)
-            .err(vec![sys.error_here("Multiple mutable references")], ())
-            .take_errs(
-                (mut_cnt > 0 && immut_cnt > 0)
-                    .err(vec![sys.error_here("Mutable and immutable references")], ()),
-            )
+            .err(sys.span.error("Multiple mutable references").as_vec(), ())
+            .take_errs((mut_cnt > 0 && immut_cnt > 0).err(
+                sys.span.error("Mutable and immutable references").as_vec(),
+                (),
+            ))
         // TODO: add hint
         // .map_err(|mut errs| {
         //     if !self.mut_refs.is_empty() {
@@ -104,7 +105,7 @@ impl ComponentRefTracker {
 }
 
 impl ItemSystem {
-    pub fn validate(&self, items: &Items) -> DiagnosticResult<FnArgs> {
+    pub fn validate(&self, items: &Items) -> SpannedResult<FnArgs> {
         let mut global_idxs = HashSet::new();
 
         match self.attr_args {
@@ -118,12 +119,10 @@ impl ItemSystem {
                             idx: *idx,
                             is_mut: arg.is_mut,
                         }),
-                    FnArgType::Event(_) | FnArgType::Entities { .. } => {
-                        Err(vec![self.error_here(&format!(
-                            "Init systems may not contain {}",
-                            arg.ty
-                        ))])
-                    }
+                    FnArgType::Event(_) | FnArgType::Entities { .. } => self
+                        .span
+                        .error(&format!("Init systems may not contain {}", arg.ty))
+                        .as_err(),
                 })
                 .combine_results()
                 .map(|globals| FnArgs::Init { globals }),
@@ -136,7 +135,7 @@ impl ItemSystem {
                 self.args
                     .enumer_map_vec(|(arg_idx, arg)| match &arg.ty {
                         FnArgType::Event(idx) => match event {
-                            Some(_) => Err(vec![self.error("Event already specified", &arg.span)]),
+                            Some(_) => arg.span.error("Event already specified").as_err(),
                             None => self
                                 .validate_event(arg, *idx, items)
                                 .map(|_| event = Some(EventFnArg { arg_idx, idx: *idx })),
@@ -162,7 +161,9 @@ impl ItemSystem {
                     })
                     .combine_results()
                     // Require event
-                    .then_msgs(event.ok_or(vec![self.error_here("System must specify an event")]))
+                    .then_msgs(
+                        event.ok_or(self.span.error("System must specify an event").as_vec()),
+                    )
                     // Check component reference mutability
                     .take_errs(
                         component_refs
@@ -185,11 +186,15 @@ impl ItemSystem {
         i: usize,
         globals: &mut HashSet<usize>,
         items: &'a Items,
-    ) -> DiagnosticResult<&'a ItemGlobal> {
+    ) -> SpannedResult<&'a ItemGlobal> {
         items
             .globals
             .get(i)
-            .ok_or(vec![Error::new(&format!("Invalid Global index: {i}"))])
+            .ok_or(
+                self.span
+                    .error(&format!("Invalid Global index: {i}"))
+                    .as_vec(),
+            )
             .and_then(|g| {
                 if g.args.is_const {
                     self.validate_mut(arg, false).map(|_| g)
@@ -201,7 +206,7 @@ impl ItemSystem {
             .take_errs(
                 globals
                     .insert(i)
-                    .ok((), vec![self.error("Duplicate global", &arg.span)]),
+                    .ok((), arg.span.error("Duplicate global").as_vec()),
             )
     }
 
@@ -210,11 +215,15 @@ impl ItemSystem {
         arg: &FnArg,
         i: usize,
         items: &'a Items,
-    ) -> DiagnosticResult<&'a ItemEvent> {
+    ) -> SpannedResult<&'a ItemEvent> {
         items
             .events
             .get(i)
-            .ok_or(vec![Error::new(&format!("Invalid Event index: {i}"))])
+            .ok_or(
+                self.span
+                    .error(&format!("Invalid Event index: {i}"))
+                    .as_vec(),
+            )
             .take_errs(self.validate_ref(arg, 1))
             .take_errs(self.validate_mut(arg, false))
     }
@@ -226,13 +235,15 @@ impl ItemSystem {
         is_vec: bool,
         component_refs: &mut HashMap<usize, ComponentRefTracker>,
         items: &'a Items,
-    ) -> DiagnosticResult<&'a ComponentSet> {
+    ) -> SpannedResult<&'a ComponentSet> {
         items
             .component_sets
             .get(i)
-            .ok_or(vec![Error::new(&format!(
-                "Invalid component set index: {i}"
-            ))])
+            .ok_or(
+                self.span
+                    .error(&format!("Invalid component set index: {i}"))
+                    .as_vec(),
+            )
             .and_then(|cs| {
                 let path = cs.path.path.join("::");
 
@@ -251,10 +262,9 @@ impl ItemSystem {
                     true => Ok(cs),
                     // Must have a required singleton in the labels
                     false => {
-                        let err = self.error(
-                            "Entity set must contain singletons or be wrapped with Vec<>",
-                            &arg.span,
-                        );
+                        let err = arg
+                            .span
+                            .error("Entity set must contain singletons or be wrapped with Vec<>");
                         // TODO: add help
                         // if let Some(ComponentSetLabels::Expression(e)) = &cs.labels {
                         //     for (symbs, verb) in [(&e.false_symbols, "must"), (&e.unknown_symbols, "may")] {
@@ -270,7 +280,7 @@ impl ItemSystem {
                         //         }
                         //     }
                         // }
-                        Err(vec![err])
+                        err.as_err()
                     }
                 }
             })
@@ -278,11 +288,11 @@ impl ItemSystem {
     }
 
     // Validate conditions
-    fn validate_ref(&self, arg: &FnArg, should_be_cnt: usize) -> DiagnosticResult<()> {
+    fn validate_ref(&self, arg: &FnArg, should_be_cnt: usize) -> SpannedResult<()> {
         (arg.ref_cnt == should_be_cnt).ok(
             (),
-            vec![self.error(
-                &format!(
+            arg.span
+                .error(&format!(
                     "Type should be taken by {}: \"{}\"",
                     if should_be_cnt == 0 {
                         "borrow".to_string()
@@ -292,17 +302,16 @@ impl ItemSystem {
                         format!("{} references", should_be_cnt)
                     },
                     arg
-                ),
-                &arg.span,
-            )],
+                ))
+                .as_vec(),
         )
     }
 
-    fn validate_mut(&self, arg: &FnArg, should_be_mut: bool) -> DiagnosticResult<()> {
+    fn validate_mut(&self, arg: &FnArg, should_be_mut: bool) -> SpannedResult<()> {
         (arg.is_mut == should_be_mut).ok(
             (),
-            vec![self.error(
-                &format!(
+            arg.span
+                .error(&format!(
                     "Type should be taken {}: \"{}\"",
                     if should_be_mut {
                         "mutably"
@@ -310,9 +319,8 @@ impl ItemSystem {
                         "immutably"
                     },
                     arg
-                ),
-                &arg.span,
-            )],
+                ))
+                .as_vec(),
         )
     }
 }

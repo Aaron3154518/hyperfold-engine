@@ -192,7 +192,7 @@ impl AstCrate {
     fn get_mod_from_path<'a>(&'a mut self, path: &[String]) -> MsgResult<&'a mut AstMod> {
         let mut path_it = path.iter();
         if !path_it.next().is_some_and(|s| s == "crate") {
-            return format!("No mod defined at the path: {path:#?}").err();
+            return format!("No mod defined at the path: {path:#?}").as_err();
         }
         let mut m = &mut self.main;
         while let Some(ident) = path_it.next() {

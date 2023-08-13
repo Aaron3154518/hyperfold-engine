@@ -1,12 +1,15 @@
-use diagnostic::{DiagnosticResult, Error};
+use diagnostic::{ErrForEach, Error, SpannedResult};
 use proc_macro2::TokenStream;
 use quote::quote;
 
 use shared::{
     match_ok,
     msg_result::{CombineMsgs, MsgTrait, ToMsgs, Zip2Msgs, Zip3Msgs, Zip5Msgs},
-    syn::Quote,
-    traits::{CollectVec, CollectVecInto},
+    syn::{
+        error::{AddSpan, GetVec, MsgResult},
+        Quote,
+    },
+    traits::{CollectVec, CollectVecInto, GetResult},
 };
 
 use crate::{
@@ -117,7 +120,7 @@ pub fn codegen_systems(
     cr_idx: usize,
     items: &Items,
     crates: &Crates,
-) -> DiagnosticResult<SystemsCodegenResult> {
+) -> MsgResult<SystemsCodegenResult> {
     let event_trait = crates.get_syn_path(cr_idx, &ENGINE_TRAITS.add_event);
     let intersect = crates.get_syn_path(cr_idx, &ENGINE_PATHS.intersect);
     let intersect_opt = crates.get_syn_path(cr_idx, &ENGINE_PATHS.intersect_opt);
@@ -126,11 +129,11 @@ pub fn codegen_systems(
     let mut systems = Vec::new();
     let mut system_events = Vec::new();
 
-    let mut errs = Vec::new();
-
-    match_ok!(Zip3Msgs, event_trait, intersect, intersect_opt, {
-        for system in &items.systems {
-            let func_name = crates.get_item_syn_path(cr_idx, &system.path);
+    let errs = match_ok!(Zip3Msgs, event_trait, intersect, intersect_opt, {
+        items.systems.do_for_each(|system| {
+            let func_name = crates
+                .get_item_syn_path(cr_idx, &system.path)
+                .add_span(&system.span);
             let args = system.validate(items);
             match_ok!(Zip2Msgs, func_name, args, {
                 match args {
@@ -146,16 +149,13 @@ pub fn codegen_systems(
                             .map_vec_into(|fn_arg| {
                                 items
                                     .component_sets
-                                    .get(fn_arg.idx)
-                                    .ok_or(vec![Error::new(&format!(
-                                        "Invalid component set index: {}",
-                                        fn_arg.idx
-                                    ))])
+                                    .try_get(fn_arg.idx)
                                     .and_then(|cs| {
                                         crates
                                             .get_item_syn_path(cr_idx, &cs.path)
                                             .map(|ty| BuildSetsArg { cs, fn_arg, ty })
                                     })
+                                    .add_span(&system.span)
                             })
                             .combine_results();
 
@@ -175,9 +175,8 @@ pub fn codegen_systems(
                     }
                 }
             })
-            .record_errs(&mut errs);
-        }
-    });
+        })
+    })?;
 
     systems
         .combine_results()

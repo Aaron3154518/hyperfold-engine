@@ -131,6 +131,7 @@ pub struct AstMod {
     pub path: Vec<String>,
     pub span: ErrorSpan,
     pub errs: Vec<SpannedError>,
+    pub warns: Vec<SpannedError>,
     pub mods: Vec<AstMod>,
     pub uses: Vec<AstUse>,
     pub symbols: Vec<Symbol>,
@@ -147,6 +148,7 @@ impl AstMod {
             path,
             span,
             errs: Vec::new(),
+            warns: Vec::new(),
             mods: Vec::new(),
             uses: Vec::new(),
             symbols: Vec::new(),
@@ -191,10 +193,11 @@ impl AstMod {
     }
 
     pub fn error(&mut self, msg: &str, span: impl Into<ErrorSpan>) {
-        self.errs.push(SpannedError {
-            msg: msg.to_string(),
-            span: span.into(),
-        });
+        self.errs.push(err(msg, span));
+    }
+
+    pub fn warn(&mut self, msg: &str, span: impl Into<ErrorSpan>) {
+        self.warns.push(err(msg, span))
     }
 
     pub fn take_errors(&mut self) -> Vec<SpannedError> {

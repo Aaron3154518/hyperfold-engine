@@ -1,6 +1,6 @@
 use std::{collections::VecDeque, fmt::Display, ops::Neg};
 
-use proc_macro2::TokenStream;
+use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
 use syn::{spanned::Spanned, Error, Token};
 
@@ -8,35 +8,50 @@ use super::{
     labels::{ComponentSetLabels, LabelsExpression},
     parse::{AstComponentSet, AstComponentSetItem, AstLabelItem, LabelOp},
 };
-use crate::{
-    parse::{resolve_path, ComponentSymbol, DiscardSymbol, ItemPath, MatchSymbol, ModInfo},
-    utils::warn,
-};
+use crate::parse::{resolve_path, ComponentSymbol, DiscardSymbol, ItemPath, MatchSymbol, ModInfo};
 use shared::{
     msg_result::{CombineMsgs, MsgTrait, Zip2Msgs},
-    syn::{get_fn_name, parse_tokens, DiagnosticResult, Msg, ParseMsg, ToMsg, ToRange},
+    syn::{
+        error::{AddSpan, SpannedResult},
+        get_fn_name, parse_tokens, ToRange,
+    },
     traits::{Call, CollectVec, CollectVecInto, PushInto, ThenNone},
 };
 
 // Resolve Ast structs to actual items
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, Clone)]
 pub enum LabelItem {
-    Item { not: bool, comp: ComponentSymbol },
-    Expression { op: LabelOp, items: Vec<LabelItem> },
+    Item {
+        not: bool,
+        comp: ComponentSymbol,
+        span: Span,
+    },
+    Expression {
+        op: LabelOp,
+        items: Vec<LabelItem>,
+        span: Span,
+    },
 }
 
 impl LabelItem {
-    fn resolve(item: AstLabelItem, (m, cr, crates): ModInfo) -> DiagnosticResult<Self> {
+    fn resolve(item: AstLabelItem, (m, cr, crates): ModInfo) -> SpannedResult<Self> {
         match item {
             AstLabelItem::Item { not, ty, span } => resolve_path(ty, (m, cr, crates))
-                .expect_component_in_mod(m, &span)
+                .expect_component()
                 .discard_symbol()
-                .map(|comp| Self::Item { not, comp: comp }),
-            AstLabelItem::Expression { op, items } => items
+                .add_span(&m.span)
+                .map(|comp| Self::Item { not, comp, span }),
+            AstLabelItem::Expression { op, items, span } => items
                 .into_iter()
                 .map_vec_into(|item| Self::resolve(item, (m, cr, crates)))
                 .combine_results()
-                .map(|items| Self::Expression { op, items }),
+                .map(|items| Self::Expression { op, items, span }),
+        }
+    }
+
+    pub fn span(&self) -> &Span {
+        match self {
+            LabelItem::Item { span, .. } | LabelItem::Expression { span, .. } => span,
         }
     }
 }
@@ -44,10 +59,10 @@ impl LabelItem {
 impl std::fmt::Display for LabelItem {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            LabelItem::Item { not, comp } => {
+            LabelItem::Item { not, comp, .. } => {
                 f.write_fmt(format_args!("{}{}", if *not { "!" } else { "" }, comp.idx))
             }
-            LabelItem::Expression { op, items } => f.write_fmt(format_args!(
+            LabelItem::Expression { op, items, .. } => f.write_fmt(format_args!(
                 "({})",
                 items
                     .map_vec(|i| format!("{i}"))
@@ -77,10 +92,11 @@ impl ComponentSetItem {
             span,
         }: AstComponentSetItem,
         (m, cr, crates): ModInfo,
-    ) -> DiagnosticResult<Self> {
+    ) -> SpannedResult<Self> {
         resolve_path(ty.path.to_vec(), (m, cr, crates))
-            .expect_component_in_mod(m, &span)
+            .expect_component()
             .discard_symbol()
+            .add_span(&m.span)
             .map(|comp| Self {
                 var,
                 comp,
@@ -148,11 +164,9 @@ impl ComponentSet {
             .is_some_and(|comp| comp.args.is_singleton)
     }
 
-    pub fn parse(tokens: TokenStream, (m, cr, crates): ModInfo) -> DiagnosticResult<Self> {
+    pub fn parse(tokens: TokenStream, (m, cr, crates): ModInfo) -> SpannedResult<Self> {
         let span = tokens.span();
-        parse_tokens(tokens)
-            .in_mod(m)
-            .and_then(|cs| Self::resolve(cs, (m, cr, crates)))
+        parse_tokens(tokens).and_then(|cs| Self::resolve(cs, (m, cr, crates)))
     }
 
     fn resolve(
@@ -162,7 +176,7 @@ impl ComponentSet {
             labels,
         }: AstComponentSet,
         (m, cr, crates): ModInfo,
-    ) -> DiagnosticResult<Self> {
+    ) -> SpannedResult<Self> {
         args.into_iter()
             .map_vec_into(|arg| ComponentSetItem::resolve(arg, (m, cr, crates)))
             .combine_results()
@@ -170,22 +184,24 @@ impl ComponentSet {
                 LabelItem::resolve(l, (m, cr, crates)).map(|t| Some(t))
             }))
             .map(|(args, labels)| {
-                let labels = labels.map(|labels| {
-                    labels
-                        .evaluate_labels(
-                            args.iter()
-                                .filter_map(|sym| sym.is_opt.then_none((sym.comp, true)))
-                                .collect(),
-                        )
-                        .call_into(|labels| {
-                            match labels {
-                                ComponentSetLabels::Constant(false) => warn(&format!(
+                let labels = labels.map(|item| {
+                    item.evaluate_labels(
+                        args.iter()
+                            .filter_map(|sym| sym.is_opt.then_none((sym.comp, true)))
+                            .collect(),
+                    )
+                    .call_into(|labels| {
+                        match labels {
+                            ComponentSetLabels::Constant(false) => m.warn(
+                                &format!(
                                     "In Component set '{ident}': Label expression is never true"
-                                )),
-                                _ => (),
-                            }
-                            labels
-                        })
+                                ),
+                                item.span(),
+                            ),
+                            _ => (),
+                        }
+                        labels
+                    })
                 });
                 Self {
                     path: ItemPath {

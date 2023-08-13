@@ -4,7 +4,7 @@ use shared::{
     constants::{STATE_DATA, STATE_ENTER_EVENT, STATE_EXIT_EVENT},
     match_ok,
     msg_result::{CombineMsgs, Zip2Msgs, Zip5Msgs},
-    syn::{vec_to_path, DiagnosticResult, Msg},
+    syn::{error::MsgResult, vec_to_path},
     traits::{unzip::Unzip3, CollectVec, CollectVecInto, MapNone},
 };
 
@@ -82,7 +82,7 @@ pub fn events(
     events: &Vec<ItemEvent>,
     states: &Vec<ItemState>,
     crates: &Crates,
-) -> DiagnosticResult<TokenStream> {
+) -> MsgResult<TokenStream> {
     let CodegenIdents {
         events: events_type,
         events_var,
@@ -210,7 +210,7 @@ pub fn event_trait_defs(
     events: &Vec<ItemEvent>,
     states: &Vec<ItemState>,
     crates: &Crates,
-) -> DiagnosticResult<TokenStream> {
+) -> MsgResult<TokenStream> {
     trait_defs(
         cr_idx,
         crates,
@@ -227,7 +227,7 @@ pub fn event_trait_impls(
     events: &Vec<ItemEvent>,
     states: &Vec<ItemState>,
     crates: &Crates,
-) -> DiagnosticResult<TokenStream> {
+) -> MsgResult<TokenStream> {
     let macro_cr_idx = crates.get_crate_index(Crate::Macros);
 
     // Implement trait for every event

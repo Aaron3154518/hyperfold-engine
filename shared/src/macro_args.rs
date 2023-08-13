@@ -56,10 +56,10 @@ impl ParseFrom<Vec<syn::Ident>> for ComponentMacroArgs {
             "Singleton" => Ok(c.is_singleton = true),
             "Const" => i
                 .error("Component cannot be Const\nPerhaps you meant to declare this as 'global'?")
-                .err(),
+                .as_err(),
             _ => i
                 .error(&format!("Unknown macro argument for component: {i}"))
-                .err(),
+                .as_err(),
         })
         .combine_results()?;
         Ok(c)
@@ -97,8 +97,8 @@ impl ParseFrom<Vec<syn::Ident>> for GlobalMacroArgs {
             "Const" => Ok(g.is_const = true),
             "Singleton" => i.error(
                 "Global cannot be a Singleton\nPerhaps you meant to declare this as 'component'?",
-            ).err(),
-            _ => i.error(&format!("Unknown macro argument for global: {i}")).err(),
+            ).as_err(),
+            _ => i.error(&format!("Unknown macro argument for global: {i}")).as_err(),
         }
         })
         .combine_results()

@@ -70,6 +70,6 @@ where
             }
             t.0
         }
-        Err(e) => err(&format!("{e}"), &e.span()).err(),
+        Err(e) => err(&format!("{e}"), &e.span()).as_err(),
     }
 }

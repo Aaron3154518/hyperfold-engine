@@ -1,7 +1,7 @@
 use std::ops::Range;
 
 use proc_macro2::LineColumn;
-use syn::spanned::Spanned;
+use syn::{parse::ParseStream, spanned::Spanned};
 
 use crate::span::ToRange;
 

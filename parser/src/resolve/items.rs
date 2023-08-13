@@ -353,14 +353,13 @@ impl Items {
         });
 
         // Resolve component sets
-        items.add_symbols(&mut errs, crates, |errs, items, mod_info| {
+        items.add_symbols_result(&mut errs, crates, |errs, items, mod_info| {
             mod_info.0.items.macro_calls.filter_map_vec(|call| {
                 resolve_path(call.path.to_vec(), mod_info)
                     .expect_hardcoded(HardcodedSymbol::ComponentsMacro)
                     .ok()
-                    .and_then(|_| {
+                    .map(|_| {
                         ComponentSet::parse(call.data.args.clone(), mod_info)
-                            .handle_err(|es| errs.extend(es))
                             .map(|cs| NewSymbol::Symbol(items.add_component_set(cs)))
                     })
             })

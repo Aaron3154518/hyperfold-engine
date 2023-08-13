@@ -1,4 +1,4 @@
-use diagnostic::{CatchErr, ErrorSpan, Results};
+use diagnostic::{CatchErr, ErrorSpan, Results, ToErr};
 use syn::spanned::Spanned;
 
 use crate::traits::CollectVecInto;
@@ -22,6 +22,17 @@ impl SpannedError {
 }
 
 pub type SpannedResult<T> = Results<T, SpannedError>;
+
+// special case for F = syn::Error
+pub trait CatchSynError<T> {
+    fn catch_syn_err(self, msg: &str) -> SpannedResult<T>;
+}
+
+impl<T> CatchSynError<T> for Result<T, syn::Error> {
+    fn catch_syn_err(self, msg: &str) -> SpannedResult<T> {
+        self.map_err(|e| err(msg, &e.span()).as_vec())
+    }
+}
 
 // Error that may have a span
 #[derive(Debug, Clone)]

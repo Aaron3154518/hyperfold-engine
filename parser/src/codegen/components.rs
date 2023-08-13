@@ -5,7 +5,7 @@ use std::array;
 use shared::{
     match_ok,
     msg_result::{CombineMsgs, Zip5Msgs},
-    syn::{vec_to_path, DiagnosticResult, Msg},
+    syn::{error::MsgResult, vec_to_path},
     traits::{AndThen, CollectVec, CollectVecInto, ThenOk},
 };
 
@@ -102,7 +102,7 @@ pub fn components(
     cr_idx: usize,
     components: &Vec<ItemComponent>,
     crates: &Crates,
-) -> DiagnosticResult<TokenStream> {
+) -> MsgResult<TokenStream> {
     let vars = (0..components.len()).map_vec_into(|i| component_var(i));
     let types = components
         .map_vec(|c| crates.get_item_syn_path(cr_idx, &c.path))
@@ -144,7 +144,7 @@ pub fn component_trait_defs(
     cr_idx: usize,
     components: &Vec<ItemComponent>,
     crates: &Crates,
-) -> DiagnosticResult<TokenStream> {
+) -> MsgResult<TokenStream> {
     trait_defs(
         cr_idx,
         crates,
@@ -157,7 +157,7 @@ pub fn component_trait_impls(
     cr_idx: usize,
     components: &Vec<ItemComponent>,
     crates: &Crates,
-) -> DiagnosticResult<TokenStream> {
+) -> MsgResult<TokenStream> {
     let macro_cr_idx = crates.get_crate_index(Crate::Macros);
 
     let types = components

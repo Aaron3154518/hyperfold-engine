@@ -63,9 +63,9 @@ pub fn resolve_path_from_crate<'a>(
                     })
                 }),
             }
-            .map_or(resolve_error(path).err(), |r| r)
+            .map_or(resolve_error(path).as_err(), |r| r)
         }
-        None => resolve_error(path).err(),
+        None => resolve_error(path).as_err(),
     }
 }
 
@@ -103,7 +103,7 @@ fn resolve_path_from_mod<'a>(
             // println!("Found Mod: {}", name);
             return if is_path_end {
                 // The path points to a mod
-                resolve_error(path).err()
+                resolve_error(path).as_err()
             } else {
                 resolve_path_from_mod(path, idx + 1, (m, cr, crates))
             };
@@ -117,7 +117,7 @@ fn resolve_path_from_mod<'a>(
             return if is_path_end {
                 Ok(sym)
             } else {
-                resolve_error(sym.path.to_vec()).err()
+                resolve_error(sym.path.to_vec()).as_err()
             };
         }
     }
@@ -137,7 +137,7 @@ fn resolve_path_from_mod<'a>(
         }
     }
 
-    resolve_error(path).err()
+    resolve_error(path).as_err()
 }
 
 // Paths that start relative to some mod item

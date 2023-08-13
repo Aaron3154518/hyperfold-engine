@@ -62,7 +62,7 @@ impl FnArg {
         sig.inputs
             .iter()
             .map_vec_into(|arg| match arg {
-                syn::FnArg::Receiver(r) => err("Cannot use self in function", r).err(),
+                syn::FnArg::Receiver(r) => err("Cannot use self in function", r).as_err(),
                 syn::FnArg::Typed(syn::PatType { ty, .. }) => {
                     FnArg::parse_type(ty, (m, cr, crates))
                 }
@@ -85,7 +85,7 @@ impl FnArg {
                                 .add_span(ty)
                                 .map(|idx| FnArgType::Entities { idx, is_vec: true })
                         }
-                        _ => err("Invalid argument type", ty).err(),
+                        _ => err("Invalid argument type", ty).as_err(),
                     },
                     _ => resolve_path(path, (m, cr, crates))
                         .add_span(ty)
@@ -97,7 +97,7 @@ impl FnArg {
                             crate::parse::SymbolType::ComponentSet(idx) => {
                                 Ok(FnArgType::Entities { idx, is_vec: false })
                             }
-                            _ => err("Invalid argument type", ty).err(),
+                            _ => err("Invalid argument type", ty).as_err(),
                         }),
                 }
                 .map(|data| Self {
@@ -136,10 +136,10 @@ impl FnArg {
                                 span: ty.span(),
                             })
                     }
-                    _ => err("Trait arguments must have only one trait type", ty).err(),
+                    _ => err("Trait arguments must have only one trait type", ty).as_err(),
                 }
             }
-            _ => err("Invalid argument type", ty).err(),
+            _ => err("Invalid argument type", ty).as_err(),
         }
     }
 }

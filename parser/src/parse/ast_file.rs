@@ -45,7 +45,7 @@ impl AstMod {
             if f_path.is_file() {
                 Self::parse_file(f_path, mods, AstModType::File)
             } else {
-                format!("File does not exist: {}", f_path.display()).err()
+                format!("File does not exist: {}", f_path.display()).as_err()
             }
         }
     }

@@ -29,18 +29,18 @@ where
 
 // Convert E to Results<T, E>
 pub trait ToErr<E> {
-    fn vec(self) -> Vec<E>;
+    fn as_vec(self) -> Vec<E>;
 
-    fn err<T>(self) -> Results<T, E>;
+    fn as_err<T>(self) -> Results<T, E>;
 }
 
 impl<E> ToErr<E> for E {
-    fn vec(self) -> Vec<E> {
+    fn as_vec(self) -> Vec<E> {
         vec![self]
     }
 
-    fn err<T>(self) -> Results<T, E> {
-        Err(self.vec())
+    fn as_err<T>(self) -> Results<T, E> {
+        Err(self.as_vec())
     }
 }
 
@@ -51,7 +51,7 @@ pub trait CatchErr<T, E> {
 
 impl<T, E, F> CatchErr<T, E> for Result<T, F> {
     fn catch_err(self, err: E) -> Results<T, E> {
-        self.map_err(|_| err.vec())
+        self.map_err(|_| err.as_vec())
     }
 }
 
@@ -59,7 +59,7 @@ impl<T, E> CatchErr<T, E> for Option<T> {
     fn catch_err(self, err: E) -> Results<T, E> {
         match self {
             Some(t) => Ok(t),
-            None => err.err(),
+            None => err.as_err(),
         }
     }
 }

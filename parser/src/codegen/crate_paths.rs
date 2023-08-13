@@ -108,7 +108,7 @@ impl Crates {
 
     pub fn get_crate_syn_path(&self, start_idx: usize, end_idx: usize) -> MsgResult<syn::Path> {
         self.get_crate_path(start_idx, end_idx)
-            .ok_or(format!("No path from {start_idx} to {end_idx}").vec())
+            .ok_or(format!("No path from {start_idx} to {end_idx}").as_vec())
             .and_then(|v| vec_to_path(v))
     }
 
@@ -118,7 +118,7 @@ impl Crates {
 
     pub fn get_named_crate_syn_path(&self, start_idx: usize, cr: Crate) -> MsgResult<syn::Path> {
         self.get_named_crate_path(start_idx, cr)
-            .ok_or(format!("No path from {start_idx} to {cr:#?} crate").vec())
+            .ok_or(format!("No path from {start_idx} to {cr:#?} crate").as_vec())
             .and_then(|v| vec_to_path(v))
     }
 
@@ -129,7 +129,7 @@ impl Crates {
             0
         };
         self.get_crate_path(start_idx, path.cr_idx).map_or(
-            format!("No path from crate {start_idx} to crate {}", path.cr_idx).err(),
+            format!("No path from crate {start_idx} to crate {}", path.cr_idx).as_err(),
             |pre| Ok([pre, path.path[i..].to_vec()].concat()),
         )
     }

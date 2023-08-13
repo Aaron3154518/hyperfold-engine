@@ -4,7 +4,7 @@ use quote::quote;
 use shared::{
     match_ok,
     msg_result::{Zip5Msgs, Zip6Msgs},
-    syn::DiagnosticResult,
+    syn::error::MsgResult,
     traits::CollectVecInto,
 };
 
@@ -48,7 +48,7 @@ pub fn manager_def() -> TokenStream {
 }
 
 // Function to set initial events on each tick
-fn init_events_fn(cr_idx: usize, items: &Items, crates: &Crates) -> DiagnosticResult<TokenStream> {
+fn init_events_fn(cr_idx: usize, items: &Items, crates: &Crates) -> MsgResult<TokenStream> {
     let CodegenIdents {
         events,
         efoo_var: events_var,
@@ -84,11 +84,7 @@ fn init_events_fn(cr_idx: usize, items: &Items, crates: &Crates) -> DiagnosticRe
     )
 }
 
-pub fn manager_impl(
-    cr_idx: usize,
-    items: &Items,
-    crates: &Crates,
-) -> DiagnosticResult<TokenStream> {
+pub fn manager_impl(cr_idx: usize, items: &Items, crates: &Crates) -> MsgResult<TokenStream> {
     let CodegenIdents {
         manager,
         globals,
