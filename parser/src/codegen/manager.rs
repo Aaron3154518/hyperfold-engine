@@ -134,8 +134,8 @@ pub fn manager_impl(cr_idx: usize, items: &Items, crates: &Crates) -> MsgResult<
             } = global_paths;
             // Add state cleanup systems
             for state in &items.states {
-                let s_label = component_var(state.label);
-                system_events.push(event_variant(state.exit_event));
+                let s_label = component_var(state.data.label);
+                system_events.push(event_variant(state.data.exit_event));
                 systems.push(quote!(
                     #gfoo_var.#g_entity_trash.0.extend(#cfoo_var.#s_label.keys());
                 ));

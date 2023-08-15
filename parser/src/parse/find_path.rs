@@ -19,7 +19,13 @@ pub struct ItemPath {
 }
 
 impl ItemPath {
-    pub fn new() -> Self {
+    pub fn new(cr_idx: usize, path: Vec<String>) -> Self {
+        Self { cr_idx, path }
+    }
+}
+
+impl Default for ItemPath {
+    fn default() -> Self {
         Self {
             cr_idx: 0,
             path: Vec::new(),
@@ -48,7 +54,7 @@ pub fn resolve_path_from_crate<'a>(
                 "crate" => Some(resolve_path_from_mod(
                     path.to_vec(),
                     1,
-                    (&cr.main, cr, crates),
+                    (cr.get_main_mod()?, cr, crates),
                 )),
                 // Match dependency
                 _ => cr.deps.iter().find_map(|(idx, alias)| {
@@ -98,8 +104,8 @@ fn resolve_path_from_mod<'a>(
 
     // println!("Finding: {name}");
     // Check sub modules
-    for m in m.mods.iter() {
-        if name == *m.path.last().catch_err("Mod path is empty".to_string())? {
+    for m in cr.get_mods(m.mods)? {
+        if name == m.name {
             // println!("Found Mod: {}", name);
             return if is_path_end {
                 // The path points to a mod
@@ -166,11 +172,7 @@ pub fn resolve_path<'a>(path: Vec<String>, (m, cr, crates): ModInfo<'a>) -> MsgR
     }
 
     // Check mods
-    if let Some(m) = m
-        .mods
-        .iter()
-        .find(|m| m.path.last().is_some_and(|s| s == name))
-    {
+    if let Some(m) = cr.get_mods(m.mods)?.into_iter().find(|m| name == &m.name) {
         return resolve_path_from_crate([m.path.to_vec(), path[1..].to_vec()].concat(), cr, crates);
     }
 

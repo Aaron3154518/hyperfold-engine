@@ -3,7 +3,7 @@ use std::{
     path::{Display, PathBuf},
 };
 
-use diagnostic::{CatchErr, ErrForEach, ErrorSpan, ResultsTrait};
+use diagnostic::{CatchErr, ErrForEach, ErrorSpan, ResultsTrait, ToErr};
 use proc_macro2::{Span, TokenStream};
 
 use syn::{spanned::Spanned, visit::Visit};
@@ -11,7 +11,10 @@ use syn::{spanned::Spanned, visit::Visit};
 use crate::{
     parse::attributes::{get_attributes_if_active, Attribute, EcsAttribute},
     parse::ItemPath,
-    utils::paths::{CratePath, ENGINE_PATHS, MACRO_PATHS},
+    utils::{
+        paths::{CratePath, ENGINE_PATHS, MACRO_PATHS},
+        tree::Tree,
+    },
 };
 
 use super::{attributes::AstAttribute, Symbol};
@@ -28,7 +31,7 @@ use shared::{
         },
         use_path_from_syn, ToRange,
     },
-    traits::{Catch, HandleErr, PushInto},
+    traits::{Call, Catch, CollectVecInto, HandleErr, PushInto},
 };
 
 #[derive(Debug)]
@@ -50,15 +53,20 @@ pub struct AstFunction {
 #[derive(Debug)]
 pub struct AstMacroCall {
     pub args: TokenStream,
+}
+
+#[derive(Debug)]
+pub struct AstItemData {
+    // Includes ident
+    pub path: Vec<String>,
+    pub ident: String,
     pub span: Span,
 }
 
 #[derive(Debug)]
 pub struct AstItem<Data> {
     pub data: Data,
-    // Includes ident
-    pub path: Vec<String>,
-    pub ident: String,
+    pub item: AstItemData,
 }
 
 // Use statement
@@ -122,17 +130,20 @@ pub struct NewMod {
     pub mods: Vec<NewMod>,
     pub uses: Vec<AstUse>,
     pub symbols: Vec<Symbol>,
+    pub span: ErrorSpan,
 }
 
 #[derive(Debug)]
 pub struct AstMod {
+    pub idx: usize,
     pub ty: AstModType,
     pub file: PathBuf,
     pub path: Vec<String>,
+    pub name: String,
     pub span: ErrorSpan,
     pub errs: Vec<SpannedError>,
     pub warns: Vec<SpannedError>,
-    pub mods: Vec<AstMod>,
+    pub mods: Vec<usize>,
     pub uses: Vec<AstUse>,
     pub symbols: Vec<Symbol>,
     pub items: AstItems,
@@ -141,11 +152,22 @@ pub struct AstMod {
 // TODO: ignore private mods to avoid name collisions
 // Pass 1: parsing
 impl AstMod {
-    pub fn new(file: PathBuf, path: Vec<String>, ty: AstModType, span: ErrorSpan) -> Self {
-        Self {
+    pub fn new(
+        idx: usize,
+        file: PathBuf,
+        path: Vec<String>,
+        ty: AstModType,
+        span: ErrorSpan,
+    ) -> MsgResult<Self> {
+        Ok(Self {
+            idx,
             ty,
             file,
             path,
+            name: path
+                .last()
+                .catch_err(format!("Mod path is empty: {}", path.join("::")))?
+                .to_string(),
             span,
             errs: Vec::new(),
             warns: Vec::new(),
@@ -153,10 +175,10 @@ impl AstMod {
             uses: Vec::new(),
             symbols: Vec::new(),
             items: AstItems::new(),
-        }
+        })
     }
 
-    pub fn parse(file: PathBuf, path: Vec<String>, ty: AstModType) -> MsgResult<Self> {
+    pub fn parse(file: PathBuf, path: Vec<String>, ty: AstModType) -> MsgResult<Tree<Self>> {
         let file_contents = fs::read_to_string(file.to_owned())
             .catch_err(format!("Failed to read file: {}", file.display()))?;
         let ast = syn::parse_file(&file_contents).catch_err(format!(
@@ -164,28 +186,46 @@ impl AstMod {
             file.display()
         ))?;
 
-        let mut s = Self::new(file, path, ty, (&ast).into());
+        let mut s = Self::new(0, file, path, ty, (&ast).into())?;
 
-        s.visit_file(ast)?;
-        // Post processing
-        s.resolve_local_use_paths();
+        let mods = s.visit_items(ast.items)?;
+        // Resolve local use paths
+        // E.g. mod Foo; use Foo::Bar;
+        for use_path in s.uses.iter_mut() {
+            if let Some(m) = mods
+                .iter()
+                .find(|m| m.root.path.last().is_some_and(|p| p == &use_path.first))
+            {
+                use_path.path = [m.root.path.to_vec(), use_path.path[1..].to_vec()].concat();
+            }
+        }
 
-        Ok(s)
+        Ok(Tree {
+            root: s,
+            children: mods,
+        })
     }
 
-    pub fn add_mod(&mut self, data: NewMod) {
+    pub fn add_mod(&mut self, mods: &mut Vec<AstMod>, data: NewMod) -> MsgResult<()> {
         let mut new_mod = AstMod::new(
+            0,
             self.file.clone(),
             self.path.to_vec().push_into(data.name),
             AstModType::Internal,
-            self.span,
-        );
+            data.span,
+        )?;
         new_mod.symbols = data.symbols;
         new_mod.uses = data.uses;
         for m in data.mods {
-            new_mod.add_mod(m);
+            new_mod.add_mod(mods, m);
         }
-        self.mods.push(new_mod);
+        self.mods.push(mods.len());
+        mods.push(new_mod);
+        Ok(())
+    }
+
+    pub fn add_symbol(&mut self, symbol: Symbol) {
+        self.symbols.push(symbol)
     }
 
     pub fn get_file(&self) -> String {
@@ -203,67 +243,48 @@ impl AstMod {
     pub fn take_errors(&mut self) -> Vec<SpannedError> {
         std::mem::replace(&mut self.errs, Vec::new())
     }
-
-    // E.g. mod Foo; use Foo::Bar;
-    fn resolve_local_use_paths(&mut self) {
-        for use_path in self.uses.iter_mut() {
-            if let Some(m) = self
-                .mods
-                .iter()
-                .find(|m| m.path.last().is_some_and(|p| p == &use_path.first))
-            {
-                use_path.path = [m.path.to_vec(), use_path.path[1..].to_vec()].concat();
-            }
-        }
-    }
 }
 
 // File/items
 impl AstMod {
-    fn visit_file(&mut self, i: syn::File) -> MsgResult<()> {
-        self.visit_items(i.items)
-    }
-
-    fn visit_items(&mut self, items: Vec<syn::Item>) -> MsgResult<()> {
-        items.do_for_each(|item| self.visit_item(item)).err_or(())
-    }
-
-    fn visit_item(&mut self, i: syn::Item) -> MsgResult<()> {
-        match i {
-            syn::Item::Use(i) => self.visit_item_use(i),
-            syn::Item::Fn(i) => self.visit_item_fn(i),
-            syn::Item::Enum(i) => self.visit_item_enum(i),
-            syn::Item::Struct(i) => self.visit_item_struct(i),
-            syn::Item::Macro(i) => self.visit_item_macro(i),
-            syn::Item::Mod(i) => {
-                self.visit_item_mod(i)
-                    .split_errs()
-                    .map_err(|(msgs, errs)| {
-                        self.errs.extend(errs);
-                        msgs
-                    })?;
-                Ok(())
-            }
-            _ => Ok(()),
-        }
-        .record_errs(&mut self.errs);
-        Ok(())
+    fn visit_items(&mut self, items: Vec<syn::Item>) -> MsgResult<Vec<Tree<Self>>> {
+        items
+            .try_for_each(|i| {
+                match i {
+                    syn::Item::Use(i) => self.visit_item_use(i),
+                    syn::Item::Fn(i) => self.visit_item_fn(i),
+                    syn::Item::Enum(i) => self.visit_item_enum(i),
+                    syn::Item::Struct(i) => self.visit_item_struct(i),
+                    syn::Item::Macro(i) => self.visit_item_macro(i),
+                    syn::Item::Mod(i) => {
+                        return self.visit_item_mod(i).record_spanned_errs(&mut self.errs);
+                    }
+                    _ => Ok(()),
+                }
+                .record_errs(&mut self.errs);
+                Ok(None)
+            })
+            .call_into(|(mods, errs)| errs.err_or(mods.filter_map_vec_into(|t| t)))
     }
 
     // Mod
-    fn visit_item_mod(&mut self, i: syn::ItemMod) -> BuildResult<()> {
+    fn visit_item_mod(&mut self, i: syn::ItemMod) -> BuildResult<Option<Tree<Self>>> {
         if let Some(attrs) = get_attributes_if_active(&i.attrs, &self.path, &Vec::new()).upcast()? {
-            self.mods.push(match i.content {
+            match i.content {
                 // Parse inner mod
                 Some((_, items)) => {
                     let mut new_mod = Self::new(
+                        0,
                         self.file.to_owned(),
                         [self.path.to_vec(), vec![i.ident.to_string()]].concat(),
                         AstModType::Internal,
                         self.span,
-                    );
-                    new_mod.visit_items(items);
-                    new_mod
+                    )
+                    .upcast()?;
+                    new_mod.visit_items(items).map(|mods| Tree {
+                        root: new_mod,
+                        children: mods,
+                    })
                 }
                 // Parse file mod
                 None => Self::parse_mod(
@@ -272,11 +293,13 @@ impl AstMod {
                         .pop_into()
                         .push_into(i.ident.to_string()),
                     &[self.path.to_vec(), vec![i.ident.to_string()]].concat(),
-                )
-                .upcast()?,
-            });
+                ),
+            }
+            .map(|m| Some(m))
+            .upcast()
+        } else {
+            Ok(None)
         }
-        Ok(())
     }
 
     // Components
@@ -285,8 +308,11 @@ impl AstMod {
             if !attrs.is_empty() {
                 self.items.structs.push(AstItem {
                     data: AstStruct { attrs },
-                    path: self.path.to_vec().push_into(i.ident.to_string()),
-                    ident: i.ident.to_string(),
+                    item: AstItemData {
+                        path: self.path.to_vec().push_into(i.ident.to_string()),
+                        ident: i.ident.to_string(),
+                        span: i.span(),
+                    },
                 });
             }
         }
@@ -298,8 +324,11 @@ impl AstMod {
             if !attrs.is_empty() {
                 self.items.enums.push(AstItem {
                     data: AstEnum { attrs },
-                    path: self.path.to_vec().push_into(i.ident.to_string()),
-                    ident: i.ident.to_string(),
+                    item: AstItemData {
+                        path: self.path.to_vec().push_into(i.ident.to_string()),
+                        ident: i.ident.to_string(),
+                        span: i.span(),
+                    },
                 });
             }
         }
@@ -311,9 +340,12 @@ impl AstMod {
         if let Some(attrs) = get_attributes_if_active(&i.attrs, &self.path, &Vec::new())? {
             if !attrs.is_empty() {
                 self.items.functions.push(AstItem {
-                    path: self.path.to_vec().push_into(i.sig.ident.to_string()),
-                    ident: i.sig.ident.to_string(),
                     data: AstFunction { sig: i.sig, attrs },
+                    item: AstItemData {
+                        path: self.path.to_vec().push_into(i.sig.ident.to_string()),
+                        ident: i.sig.ident.to_string(),
+                        span: i.span(),
+                    },
                 });
             }
         }
@@ -327,14 +359,14 @@ impl AstMod {
             if i.ident.is_none() {
                 let path = use_path_from_syn(&self.path, &i.mac.path);
                 self.items.macro_calls.push(AstItem {
-                    ident: path
-                        .last()
-                        .catch_err(i.error("Empty macro path"))?
-                        .to_string(),
-                    path,
-                    data: AstMacroCall {
+                    data: AstMacroCall { args: i.mac.tokens },
+                    item: AstItemData {
+                        ident: path
+                            .last()
+                            .catch_err(i.error("Empty macro path"))?
+                            .to_string(),
+                        path,
                         span: i.mac.span(),
-                        args: i.mac.tokens,
                     },
                 });
             }

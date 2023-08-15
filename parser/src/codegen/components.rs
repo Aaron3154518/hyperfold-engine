@@ -48,7 +48,7 @@ fn codegen<'a>(
     let [mut tys, mut news, mut adds, mut appends, mut removes] = array::from_fn(|_| Vec::new());
     for (i, (c, ty)) in components.iter().zip(types).enumerate() {
         let var = component_var(i);
-        if c.args.is_singleton {
+        if c.data.args.is_singleton {
             tys.push(quote!(#singleton<#ty>));
             news.push(quote!(#singleton::None));
             adds.push(quote!(self.#var = #singleton::new(e, t)));
@@ -188,7 +188,7 @@ pub fn component_trait_impls(
             let mut adds = Vec::new();
             for (i, c) in components.iter().enumerate() {
                 let var = component_var(i);
-                adds.push(if c.args.is_singleton {
+                adds.push(if c.data.args.is_singleton {
                     quote!(self.#var = #singleton::new(e, t))
                 } else {
                     quote!(self.#var.insert(e, t);)

@@ -8,8 +8,9 @@ use std::{
     path::PathBuf,
 };
 
-use diagnostic::{CatchErr, ToErr};
+use diagnostic::{CatchErr, ErrForEach, ToErr};
 use shared::{
+    msg_result::ToMsgs,
     syn::error::{GetVec, MsgResult},
     traits::{Call, Catch, CollectVec, CollectVecInto, ExpandEnum, GetSlice, PushInto},
 };
@@ -22,7 +23,11 @@ use super::{
 use crate::{
     codegen::Crates,
     parse::ItemPath,
-    utils::{constants::NAMESPACE, paths::Crate},
+    utils::{
+        constants::NAMESPACE,
+        paths::Crate,
+        tree::{FlattenTree, Tree},
+    },
 };
 
 // TODO: hardcoded
@@ -45,7 +50,8 @@ pub struct AstCrate {
     pub idx: usize,
     pub name: String,
     pub dir: PathBuf,
-    pub main: AstMod,
+    pub main: usize,
+    pub mods: Vec<AstMod>,
     pub deps: HashMap<usize, String>,
 }
 
@@ -57,6 +63,23 @@ impl AstCrate {
             rel_dir.display()
         ))?;
 
+        let mods = AstMod::parse_dir(
+            dir.join("src"),
+            &vec!["crate".to_string()],
+            if is_entry {
+                DirType::Main
+            } else {
+                DirType::Lib
+            },
+        )?
+        .flatten()
+        .enumer_map_vec_into(|(i, (m, idxs))| {
+            m.mods = idxs;
+            m.idx = i;
+            m
+        });
+        let main = mods.len();
+
         Ok(Self {
             idx,
             name: dir
@@ -65,15 +88,8 @@ impl AstCrate {
                 .to_string_lossy()
                 .to_string(),
             dir: dir.to_owned(),
-            main: AstMod::parse_dir(
-                dir.join("src"),
-                &vec!["crate".to_string()],
-                if is_entry {
-                    DirType::Main
-                } else {
-                    DirType::Lib
-                },
-            )?,
+            main,
+            mods,
             deps: HashMap::new(),
         })
     }
@@ -189,31 +205,17 @@ impl AstCrate {
     }
 
     // Insert things into crates
-    fn get_mod_from_path<'a>(&'a mut self, path: &[String]) -> MsgResult<&'a mut AstMod> {
-        let mut path_it = path.iter();
-        if !path_it.next().is_some_and(|s| s == "crate") {
-            return format!("No mod defined at the path: {path:#?}").as_err();
-        }
-        let mut m = &mut self.main;
-        while let Some(ident) = path_it.next() {
-            m = m
-                .mods
-                .iter_mut()
-                .find(|m| m.path.last().is_some_and(|p| p == ident))
-                .catch_err(format!("No mod defined at the path: {path:#?}"))?;
-        }
-        Ok(m)
-    }
-
     pub fn add_symbol(&mut self, sym: Symbol) -> MsgResult<()> {
-        self.get_mod_from_path(sym.path.slice_to(-1))?
-            .symbols
-            .push(sym);
+        self.find_mod_mut(sym.path.slice_to(-1))?.symbols.push(sym);
         Ok(())
     }
 
-    pub fn add_mod<'a>(&'a mut self, path: Vec<String>, mut data: NewMod) -> MsgResult<()> {
-        Ok(self.get_mod_from_path(&path)?.add_mod(data))
+    pub fn add_mod(&mut self, path: Vec<String>, mut data: NewMod) -> MsgResult<()> {
+        self.find_mod_mut(&path)?.add_mod(&mut self.mods, data)
+    }
+
+    pub fn add_child_mod(&mut self, mod_idx: usize, mut data: NewMod) -> MsgResult<()> {
+        self.get_mod_mut(mod_idx)?.add_mod(&mut self.mods, data)
     }
 
     pub fn add_hardcoded_symbol(crates: &mut Crates, sym: HardcodedSymbol) -> MsgResult<()> {
@@ -225,60 +227,48 @@ impl AstCrate {
         });
         Ok(())
     }
-
-    pub fn iter_mods_mut(&self) -> MutIter {
-        MutIter::new(self)
-    }
-
-    pub fn iter_mods<'a>(&'a self) -> impl Iterator<Item = &'a AstMod> {
-        self.get_mods().into_iter()
-    }
-
-    pub fn get_mods<'a>(&'a self) -> Vec<&'a AstMod> {
-        Self::add_mods(&self.main, Vec::new())
-    }
-
-    fn add_mods<'a>(m: &'a AstMod, mut mods: Vec<&'a AstMod>) -> Vec<&'a AstMod> {
-        mods.push(m);
-        for m in m.mods.iter() {
-            mods = Self::add_mods(m, mods)
-        }
-        mods
-    }
 }
 
-pub struct MutIter {
-    idxs: <Vec<Vec<usize>> as IntoIterator>::IntoIter,
-}
-
-impl MutIter {
-    pub fn new(cr: &AstCrate) -> Self {
-        Self {
-            idxs: Self::get_idxs(&cr.main, Vec::new(), Vec::new()).into_iter(),
-        }
+// Mod access
+impl AstCrate {
+    pub fn get_main_mod(&self) -> MsgResult<&AstMod> {
+        self.get_mod(self.main)
     }
 
-    fn get_idxs(m: &AstMod, curr_idxs: Vec<usize>, mut idxs: Vec<Vec<usize>>) -> Vec<Vec<usize>> {
-        idxs.push(curr_idxs.to_vec());
-        for (i, m) in m.mods.iter().enumerate() {
-            idxs = Self::get_idxs(m, curr_idxs.to_vec().push_into(i), idxs)
-        }
-        idxs
+    pub fn get_main_mod_mut(&mut self) -> MsgResult<&mut AstMod> {
+        self.get_mod_mut(self.main)
     }
 
-    pub fn next<'a>(&mut self, cr: &'a mut AstCrate) -> Option<&'a mut AstMod> {
-        match self.idxs.next() {
-            Some(idxs) => {
-                let mut m = &mut cr.main;
-                for i in idxs {
-                    m = match m.mods.get_mut(i) {
-                        Some(m) => m,
-                        None => return None,
-                    }
-                }
-                Some(m)
-            }
-            None => None,
-        }
+    pub fn get_mod(&self, i: usize) -> MsgResult<&AstMod> {
+        self.mods.try_get(i)
+    }
+
+    pub fn get_mod_mut(&mut self, i: usize) -> MsgResult<&mut AstMod> {
+        self.mods.try_get_mut(i)
+    }
+
+    pub fn get_mods(&self, idxs: Vec<usize>) -> MsgResult<Vec<&AstMod>> {
+        let (mods, errs) = idxs.try_for_each(|i| self.get_mod(i));
+        errs.err_or(mods)
+    }
+
+    pub fn find_mod<'a>(&'a self, path: &[String]) -> MsgResult<&'a AstMod> {
+        self.iter_mods()
+            .find(|m| m.path == path)
+            .ok_or(format!("No mod defined at path: {path:#?}").as_vec())
+    }
+
+    pub fn find_mod_mut<'a>(&'a mut self, path: &[String]) -> MsgResult<&'a mut AstMod> {
+        self.iter_mods_mut()
+            .find(|m| m.path == path)
+            .ok_or(format!("No mod defined at path: {path:#?}").as_vec())
+    }
+
+    pub fn iter_mods(&self) -> impl Iterator<Item = &AstMod> {
+        self.mods.iter()
+    }
+
+    pub fn iter_mods_mut(&mut self) -> impl Iterator<Item = &mut AstMod> {
+        self.mods.iter_mut()
     }
 }

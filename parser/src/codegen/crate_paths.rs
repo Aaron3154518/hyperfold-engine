@@ -137,10 +137,7 @@ impl Crates {
     pub fn get_path(&self, start_idx: usize, item: &CratePath) -> MsgResult<Vec<String>> {
         self.get_item_path(
             start_idx,
-            &ItemPath {
-                cr_idx: self.get_crate_index(item.cr),
-                path: item.full_path(),
-            },
+            &ItemPath::new(self.get_crate_index(item.cr), item.full_path()),
         )
     }
 

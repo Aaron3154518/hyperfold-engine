@@ -3,7 +3,10 @@ use quote::{format_ident, quote};
 use shared::{
     match_ok,
     msg_result::Zip3Msgs,
-    syn::{get_fn_name, DiagnosticResult, Quote},
+    syn::{
+        error::{MsgResult, SpannedResult},
+        get_fn_name, Quote,
+    },
     traits::{CollectVec, CollectVecInto, ThenNone},
 };
 
@@ -31,12 +34,12 @@ impl LabelItem {
         F: Fn(ComponentSymbol) -> syn::Ident,
     {
         match self {
-            LabelItem::Item { not, comp } => {
+            LabelItem::Item { not, comp, .. } => {
                 let not = if *not { quote!(!) } else { quote!() };
                 let var = f(*comp);
                 quote!(#not #var)
             }
-            LabelItem::Expression { op, items } => {
+            LabelItem::Expression { op, items, .. } => {
                 let vars = items
                     .iter()
                     .map(|i| i.quote(f))
@@ -65,7 +68,7 @@ impl ComponentSet {
         cr_idx: usize,
         component_sets: &Vec<Self>,
         crates: &Crates,
-    ) -> DiagnosticResult<Vec<TokenStream>> {
+    ) -> MsgResult<Vec<TokenStream>> {
         let filter_fn = crates.get_syn_path(cr_idx, &ENGINE_PATHS.filter);
         let entity_set = crates.get_syn_path(cr_idx, &ENGINE_PATHS.entity_set);
         let entity = crates.get_syn_path(cr_idx, &ENGINE_PATHS.entity);

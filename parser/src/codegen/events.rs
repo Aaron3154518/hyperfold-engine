@@ -39,8 +39,8 @@ pub fn events_enums(events: &Vec<ItemEvent>, states: &Vec<ItemState>) -> TokenSt
         |(i, s)| {
             (
                 state_variant(i),
-                event_variant(s.enter_event),
-                event_variant(s.exit_event),
+                event_variant(s.data.enter_event),
+                event_variant(s.data.exit_event),
             )
         },
         Unzip3::unzip3_vec,
@@ -100,7 +100,13 @@ pub fn events(
         .combine_results();
 
     let (s_vars, s_variants, s_exit_events) = states.enumer_unzipn_vec(
-        |(i, s)| (state_var(i), state_variant(i), event_variant(s.exit_event)),
+        |(i, s)| {
+            (
+                state_var(i),
+                state_variant(i),
+                event_variant(s.data.exit_event),
+            )
+        },
         Unzip3::unzip3_vec,
     );
     let s_types = states
@@ -195,13 +201,13 @@ pub fn events(
 
 impl GetTraitTypes for Vec<ItemEvent> {
     fn get_paths(&self) -> Vec<&ItemPath> {
-        self.filter_map_vec(|e| e.state.map_none(&e.path))
+        self.filter_map_vec(|e| e.data.state.map_none(&e.path))
     }
 }
 
 impl GetTraitTypes for Vec<ItemState> {
     fn get_paths(&self) -> Vec<&ItemPath> {
-        self.map_vec(|s| &s.data_path)
+        self.map_vec(|s| &s.data.data_path)
     }
 }
 

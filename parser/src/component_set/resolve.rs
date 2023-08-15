@@ -204,10 +204,7 @@ impl ComponentSet {
                     })
                 });
                 Self {
-                    path: ItemPath {
-                        cr_idx: cr.idx,
-                        path: m.path.to_vec().push_into(ident),
-                    },
+                    path: ItemPath::new(cr.idx, m.path.to_vec().push_into(ident)),
                     labels,
                     args,
                 }

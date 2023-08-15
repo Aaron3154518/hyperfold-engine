@@ -23,6 +23,13 @@ where
         self.get_iter_into().filter(f).collect()
     }
 
+    fn enumer_filter_vec_into<F>(self, f: F) -> Vec<T>
+    where
+        F: FnMut(&(usize, T)) -> bool,
+    {
+        self.enumer_iter_into().filter(f).map(|(_, t)| t).collect()
+    }
+
     fn map_vec_into<U, F>(self, f: F) -> Vec<U>
     where
         F: FnMut(T) -> U,
@@ -30,11 +37,25 @@ where
         self.get_iter_into().map(f).collect()
     }
 
+    fn enumer_map_vec_into<U, F>(self, f: F) -> Vec<U>
+    where
+        F: FnMut((usize, T)) -> U,
+    {
+        self.enumer_iter_into().map(f).collect()
+    }
+
     fn filter_map_vec_into<U, F>(self, f: F) -> Vec<U>
     where
         F: FnMut(T) -> Option<U>,
     {
         self.get_iter_into().filter_map(f).collect()
+    }
+
+    fn enumer_filter_map_vec_into<U, F>(self, f: F) -> Vec<U>
+    where
+        F: FnMut((usize, T)) -> Option<U>,
+    {
+        self.enumer_iter_into().filter_map(f).collect()
     }
 
     fn join_map_into<F>(self, f: F, sep: &str) -> String

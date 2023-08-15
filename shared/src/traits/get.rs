@@ -48,13 +48,13 @@ impl<T> End for Vec<T> {
 pub trait GetSlice<T> {
     fn get_len(&self) -> usize;
 
-    fn slice<'a>(&'a self, s: isize, e: isize) -> &'a [T];
+    fn slice(&self, s: isize, e: isize) -> &[T];
 
-    fn slice_from<'a>(&'a self, s: isize) -> &'a [T] {
+    fn slice_from(&self, s: isize) -> &[T] {
         self.slice(s, self.get_len() as isize)
     }
 
-    fn slice_to<'a>(&'a self, e: isize) -> &'a [T] {
+    fn slice_to(&self, e: isize) -> &[T] {
         self.slice(0, e)
     }
 }
