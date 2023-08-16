@@ -1,4 +1,4 @@
-use diagnostic::{CatchErr, ErrorSpan};
+use diagnostic::{CatchErr, ErrForEach, ErrorSpan};
 use proc_macro2::{token_stream::IntoIter, Span, TokenStream, TokenTree};
 use quote::{quote, ToTokens};
 use std::{collections::VecDeque, env::temp_dir, fs, path::PathBuf};
@@ -8,9 +8,9 @@ use crate::{
     codegen::{self as codegen, Crates, Traits},
     component_set::ComponentSet,
     parse::{
-        resolve_path, AstCrate, AstFunction, AstItem, AstItemData, AstItems, AstMod, AstModType,
-        AstUse, ComponentSymbol, DiscardSymbol, GlobalSymbol, HardcodedSymbol, ItemPath,
-        MatchSymbol, ModInfo, NewMod, Symbol, SymbolType,
+        resolve_path, AstCrate, AstFunction, AstItemData, AstItems, AstMod, AstModType, AstUse,
+        ComponentSymbol, DiscardSymbol, GlobalSymbol, HardcodedSymbol, ItemPath, MatchSymbol,
+        ModInfo, NewMod, Symbol, SymbolType,
     },
     system::ItemSystem,
     utils::{
@@ -36,50 +36,58 @@ use shared::{
 };
 
 #[derive(Debug)]
-pub struct ItemComponentData {
+pub struct ItemComponent {
+    pub data: ItemData,
     pub args: ComponentMacroArgs,
 }
-pub type ItemComponent = Item<ItemComponentData>;
 
 #[derive(Clone, Debug)]
-pub struct ItemGlobalData {
+pub struct ItemGlobal {
+    pub data: ItemData,
     pub args: GlobalMacroArgs,
 }
-pub type ItemGlobal = Item<ItemGlobalData>;
 
 #[derive(Clone, Debug)]
-pub struct ItemTraitData {
+pub struct ItemTrait {
+    pub data: ItemData,
     pub g_idx: usize,
 }
-pub type ItemTrait = Item<ItemTraitData>;
 
 #[derive(Debug)]
-pub struct ItemEventData {
+pub struct ItemEvent {
+    pub data: ItemData,
     pub state: Option<usize>,
 }
-pub type ItemEvent = Item<ItemEventData>;
 
 #[derive(Debug)]
-pub struct ItemStateData {
+pub struct ItemState {
+    pub data: ItemData,
     pub data_path: ItemPath,
     pub enter_event: usize,
     pub exit_event: usize,
     pub label: usize,
 }
-pub type ItemState = Item<ItemStateData>;
 
 #[derive(Debug, Clone)]
-pub struct Item<T> {
-    pub data: T,
+pub struct ItemData {
     pub path: ItemPath,
     pub mod_idx: usize,
     pub span: ErrorSpan,
 }
 
-// Struct for adding symbols
-enum NewSymbol {
-    Symbol(Symbol),
-    Mod(NewMod),
+impl ItemData {
+    pub fn from_ast(cr_idx: usize, mod_idx: usize, item: &AstItemData) -> Self {
+        Self {
+            path: ItemPath::new(cr_idx, item.path.to_vec()),
+            mod_idx,
+            span: (&item.span).into(),
+        }
+    }
+
+    pub fn add_path(mut self, segment: &str) -> Self {
+        self.path.path.push(segment.to_string());
+        self
+    }
 }
 
 #[derive(Debug)]
@@ -105,8 +113,8 @@ impl Items {
     }
 
     fn add_component(&mut self, comp: ItemComponent) -> Symbol {
-        let args = comp.data.args;
-        let path = comp.path.path.clone();
+        let args = comp.args;
+        let path = comp.data.path.path.clone();
         self.components.push(comp);
         Symbol {
             kind: SymbolType::Component(ComponentSymbol {
@@ -119,8 +127,8 @@ impl Items {
     }
 
     fn add_global(&mut self, global: ItemGlobal) -> Symbol {
-        let args = global.data.args;
-        let path = global.path.path.clone();
+        let args = global.args;
+        let path = global.data.path.path.clone();
         self.globals.push(global);
         Symbol {
             kind: SymbolType::Global(GlobalSymbol {
@@ -133,7 +141,7 @@ impl Items {
     }
 
     fn add_event(&mut self, event: ItemEvent) -> Symbol {
-        let path = event.path.path.clone();
+        let path = event.data.path.path.clone();
         self.events.push(event);
         Symbol {
             kind: SymbolType::Event(self.events.len() - 1),
@@ -147,58 +155,30 @@ impl Items {
         let symbols = vec![
             // OnEnter
             self.add_event(ItemEvent {
-                data: ItemEventData {
-                    state: Some(state_idx),
-                },
-                path: ItemPath {
-                    cr_idx,
-                    path: item.path.to_vec().push_into(STATE_ENTER_EVENT.to_string()),
-                },
-                mod_idx,
-                span: (&item.span).into(),
+                state: Some(state_idx),
+                data: ItemData::from_ast(cr_idx, mod_idx, item).add_path(STATE_ENTER_EVENT),
             }),
             // OnExit
             self.add_event(ItemEvent {
-                data: ItemEventData {
-                    state: Some(state_idx),
-                },
-                path: ItemPath {
-                    cr_idx,
-                    path: item.path.to_vec().push_into(STATE_EXIT_EVENT.to_string()),
-                },
-                mod_idx,
-                span: (&item.span).into(),
+                state: Some(state_idx),
+                data: ItemData::from_ast(cr_idx, mod_idx, item).add_path(STATE_EXIT_EVENT),
             }),
             // Label
             self.add_component(ItemComponent {
-                data: ItemComponentData {
-                    args: ComponentMacroArgs::default(),
-                },
-                path: ItemPath {
-                    cr_idx,
-                    path: item.path.to_vec().push_into(STATE_LABEL.to_string()),
-                },
-                mod_idx,
-                span: (&item.span).into(),
+                args: ComponentMacroArgs::default(),
+                data: ItemData::from_ast(cr_idx, mod_idx, item).add_path(STATE_LABEL),
             }),
             {
                 let data_path = item.path.to_vec().push_into(STATE_DATA.to_string());
                 self.states.push(ItemState {
-                    data: ItemStateData {
-                        data_path: ItemPath {
-                            cr_idx,
-                            path: data_path.to_vec(),
-                        },
-                        enter_event: self.events.len() - 2,
-                        exit_event: self.events.len() - 1,
-                        label: self.components.len() - 1,
-                    },
-                    path: ItemPath {
+                    data_path: ItemPath {
                         cr_idx,
-                        path: item.path.to_vec(),
+                        path: data_path.to_vec(),
                     },
-                    mod_idx,
-                    span: (&item.span).into(),
+                    enter_event: self.events.len() - 2,
+                    exit_event: self.events.len() - 1,
+                    label: self.components.len() - 1,
+                    data: ItemData::from_ast(cr_idx, mod_idx, item),
                 });
                 Symbol {
                     kind: SymbolType::State(state_idx),
@@ -226,9 +206,9 @@ impl Items {
         sym
     }
 
-    fn add_system(&mut self, sys: ItemSystem, fun: &AstItem<AstFunction>) -> Symbol {
+    fn add_system(&mut self, sys: ItemSystem, fun: &AstFunction) -> Symbol {
         let sym = Symbol {
-            kind: SymbolType::System(self.systems.len(), fun.data.sig.span()),
+            kind: SymbolType::System(self.systems.len(), fun.sig.span()),
             path: sys.path.path.to_vec(),
             public: true,
         };
@@ -296,15 +276,9 @@ impl Items {
         }
 
         // Resolve components, globals, events, and states
-        for cr in crates.iter_mut() {
-            for (mod_idx, m) in cr.iter_mods_mut().enumerate() {
-                for (item, attrs) in m
-                    .items
-                    .structs
-                    .iter()
-                    .map(|s| (&s.item, &s.data.attrs))
-                    .chain(m.items.enums.iter().map(|e| (&e.item, &e.data.attrs)))
-                {
+        for cr in crates.iter_except_mut([macro_cr_idx]) {
+            for m in cr.iter_mods_mut() {
+                for (item, attrs) in m.iter_structs_enums() {
                     // Search through attributes
                     for attr in attrs {
                         match resolve_path(attr.path.to_vec(), (m, cr, crates.get_crates()))
@@ -316,10 +290,8 @@ impl Items {
                                     parse_tokens(attr.args.clone()).record_errs(&mut m.errs)
                                 {
                                     m.add_symbol(items.add_component(ItemComponent {
-                                        data: ItemComponentData { args },
-                                        path: ItemPath::new(cr.idx, item.path.to_vec()),
-                                        mod_idx,
-                                        span: (&item.span).into(),
+                                        args,
+                                        data: ItemData::from_ast(cr.idx, m.idx, item),
                                     }));
                                 }
                                 break;
@@ -329,25 +301,21 @@ impl Items {
                                     parse_tokens(attr.args.clone()).record_errs(&mut m.errs)
                                 {
                                     m.add_symbol(items.add_global(ItemGlobal {
-                                        data: ItemGlobalData { args },
-                                        path: ItemPath::new(cr.idx, item.path.to_vec()),
-                                        mod_idx,
-                                        span: (&item.span).into(),
+                                        args,
+                                        data: ItemData::from_ast(cr.idx, m.idx, item),
                                     }));
                                 }
                                 break;
                             }
                             Ok(HardcodedSymbol::EventMacro) => {
                                 m.add_symbol(items.add_event(ItemEvent {
-                                    data: ItemEventData { state: None },
-                                    path: ItemPath::new(cr.idx, item.path.to_vec()),
-                                    mod_idx,
-                                    span: (&item.span).into(),
+                                    state: None,
+                                    data: ItemData::from_ast(cr.idx, m.idx, item),
                                 }));
                                 break;
                             }
                             Ok(HardcodedSymbol::StateMacro) => {
-                                cr.add_child_mod(mod_idx, items.add_state(cr.idx, mod_idx, item));
+                                cr.add_child_mod(m.idx, items.add_state(cr.idx, m.idx, item));
                                 break;
                             }
                             _ => (),
@@ -422,20 +390,17 @@ impl Items {
         // }
 
         // Resolve component sets
-        for cr in crates.iter_mut() {
+        for cr in crates.iter_except_mut([macro_cr_idx]) {
             for (mod_idx, m) in cr.iter_mods_mut().enumerate() {
                 for call in &m.items.macro_calls {
                     if let Some(symbol) =
-                        resolve_path(call.item.path.to_vec(), (m, cr, crates.get_crates()))
+                        resolve_path(call.data.path.to_vec(), (m, cr, crates.get_crates()))
                             .expect_hardcoded(HardcodedSymbol::ComponentsMacro)
                             .ok()
                             .and_then(|_| {
-                                ComponentSet::parse(
-                                    call.data.args.clone(),
-                                    (m, cr, crates.get_crates()),
-                                )
-                                .map(|cs| items.add_component_set(cs))
-                                .record_errs(&mut m.errs)
+                                ComponentSet::parse(call.args.clone(), (m, cr, crates.get_crates()))
+                                    .map(|cs| items.add_component_set(cs))
+                                    .record_errs(&mut m.errs)
                             })
                     {
                         m.add_symbol(symbol);
@@ -468,6 +433,7 @@ impl Items {
                             mods: Vec::new(),
                             uses,
                             symbols: Vec::new(),
+                            // TODO: refine span
                             span: main.span,
                         },
                     )
@@ -486,12 +452,13 @@ impl Items {
                     if cr.idx == 0 {
                         // Reference global in entry crate
                         items.globals.push(ItemGlobal {
-                            data: ItemGlobalData {
-                                args: GlobalMacroArgs::default(),
+                            args: GlobalMacroArgs::default(),
+                            data: ItemData {
+                                path: ItemPath::new(cr.idx, gl_path.to_vec()),
+                                mod_idx: ns_mod.idx,
+                                // TODO: refine the span
+                                span: ns_mod.span,
                             },
-                            path: ItemPath::new(0, gl_path.to_vec()),
-                            mod_idx: ns_mod.idx,
-                            span: ns_mod.span,
                         });
                     }
                     // Add globals to entry crates
@@ -519,10 +486,10 @@ impl Items {
         }
 
         // Resolve systems
-        for cr in crates.iter_mut() {
+        for cr in crates.iter_except_mut([macro_cr_idx]) {
             for (mod_idx, m) in cr.iter_mods_mut().enumerate() {
                 for fun in &m.items.functions {
-                    if let Some(symbol) = fun.data.attrs.iter().find_map(|attr| {
+                    if let Some(symbol) = fun.attrs.iter().find_map(|attr| {
                         resolve_path(attr.path.to_vec(), (m, cr, crates.get_crates()))
                             .expect_hardcoded(HardcodedSymbol::SystemMacro)
                             .ok()

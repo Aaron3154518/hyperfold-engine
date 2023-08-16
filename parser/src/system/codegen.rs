@@ -1,4 +1,4 @@
-use diagnostic::{ErrForEach, Error, SpannedResult};
+use diagnostic::ErrForEach;
 use proc_macro2::TokenStream;
 use quote::quote;
 
