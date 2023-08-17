@@ -9,9 +9,8 @@ use proc_macro2::Span;
 use quote::{format_ident, quote};
 use shared::{
     constants::{INDEX, INDEX_SEP, STATE_DATA, STATE_ENTER_EVENT, STATE_EXIT_EVENT, STATE_LABEL},
-    msg_result::CombineMsgs,
-    parsing::{ComponentMacroArgs, GlobalMacroArgs, SystemMacroArgs},
-    syn::{parse_tokens, vec_to_path, Parse, ParseMsg, ToCompileErr},
+    parsing::{ComponentMacroArgs, GlobalMacroArgs},
+    syn::{parse_tokens, Parse},
     traits::{Catch, CollectVecInto},
 };
 use syn::{parse_macro_input, parse_quote, spanned::Spanned};
@@ -39,13 +38,8 @@ where
     match parse_tokens(input) {
         Ok(t) => f(t, input_span),
         Err(errs) => {
-            let errs = errs.map_vec_into(|msg| {
-                let (msg, span) = match msg {
-                    ParseMsg::Diagnostic { msg, span } => (msg, span),
-                    ParseMsg::String(msg) => (msg, input_span),
-                };
-                syn::Error::new(span, msg).into_compile_error()
-            });
+            let errs =
+                errs.map_vec_into(|msg| syn::Error::new(input_span, msg.msg).into_compile_error());
             quote!(#(#errs)*)
         }
     }
@@ -95,27 +89,6 @@ pub fn system(input: TokenStream, item: TokenStream) -> TokenStream {
         #fun
     )
     .into()
-    // parse_and_quote(input, |args: SystemMacroArgs, span| {
-    //     let mut fun = parse_macro_input2!(item as syn::ItemFn);
-    //     fun.vis = parse_quote!(pub);
-
-    //     let paths = match match args {
-    //         SystemMacroArgs::Init() => Vec::new(),
-    //         SystemMacroArgs::System { states } => states.map_vec_into(|(p, _)| vec_to_path(p)),
-    //     }
-    //     .combine_results()
-    //     .to_compile_errors(span)
-    //     {
-    //         Ok(paths) => paths,
-    //         Err(errs) => return errs,
-    //     };
-
-    //     quote!(
-    //         #fun
-
-    //         #(const _: std::marker::PhantomData<#paths> = std::marker::PhantomData;)*
-    //     )
-    // })
 }
 
 #[proc_macro_attribute]

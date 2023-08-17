@@ -78,7 +78,7 @@ impl AstCrate {
             m.idx = i;
             m
         });
-        let main = mods.len();
+        let main = mods.len() - 1;
 
         Ok(Self {
             idx,

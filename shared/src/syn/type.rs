@@ -1,7 +1,7 @@
 use diagnostic::CatchErr;
 use quote::ToTokens;
 
-use super::error::{err, MsgResult};
+use super::error::MsgResult;
 
 // To type
 pub fn type_to_type(ty: &syn::Type, r: bool, m: bool) -> MsgResult<syn::Type> {

@@ -107,15 +107,15 @@ impl Diagnostic {
             level,
             byte_start,
             byte_end,
-            line_start,
-            line_end,
-            column_start,
-            column_end,
+            line_start + 1,
+            line_end + 1,
+            column_start + 1,
+            column_end + 1,
         )
     }
 
     pub fn without_span(message: String, file_name: String, level: DiagnosticLevel) -> Self {
-        Self::new(message, file_name, level, 0, 0, 0, 0, 0, 0)
+        Self::new(message, file_name, level, 0, 1, 1, 1, 1, 2)
     }
 
     pub fn to_json(&self) -> serde_json::Result<String> {

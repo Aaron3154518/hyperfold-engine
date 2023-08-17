@@ -66,9 +66,12 @@ pub fn parse(entry: PathBuf) {
 
             write_codegen(code).record_errs(&mut errs);
 
-            crates.iter_mut().for_each(|cr| {
-                cr.iter_mods_mut().for_each(|m| {
-                    m.take_errors().into_iter().for_each(|err| {
+            let mut f = std::fs::File::create("out.txt").unwrap();
+
+            for cr in crates.iter_mut() {
+                for m in cr.iter_mods_mut() {
+                    f.write(format!("{}", m.errs.len()).as_bytes()).unwrap();
+                    for err in m.take_errors() {
                         Diagnostic::from_span(
                             err.msg,
                             m.get_file(),
@@ -76,10 +79,10 @@ pub fn parse(entry: PathBuf) {
                             err.span,
                         )
                         .emit()
-                        .call(|_| ())
-                    })
-                })
-            });
+                        .unwrap();
+                    }
+                }
+            }
 
             errs
         }
@@ -87,6 +90,11 @@ pub fn parse(entry: PathBuf) {
     };
 
     for msg in errs {
-        Diagnostic::without_span(msg, String::new(), DiagnosticLevel::Error).emit();
+        Diagnostic::without_span(
+            msg,
+            "c:\\Users\\aaore\\repos\\hyperfold-games-library\\src\\main.rs".to_string(),
+            DiagnosticLevel::Error,
+        )
+        .emit();
     }
 }

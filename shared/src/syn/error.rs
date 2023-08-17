@@ -1,3 +1,4 @@
+use backtrace::Backtrace;
 use diagnostic::{CatchErr, ErrorSpan, Results, ToErr};
 use syn::spanned::Spanned;
 
@@ -188,10 +189,18 @@ pub trait GetVec<T> {
 
 impl<T> GetVec<T> for Vec<T> {
     fn try_get<'a>(&'a self, i: usize) -> MsgResult<&'a T> {
-        self.get(i).catch_err(format!("Invalid index: {i}"))
+        let len = self.len();
+        self.get(i).catch_err(format!(
+            "Invalid index: {i}/{len} at {:?}",
+            Backtrace::new()
+        ))
     }
 
     fn try_get_mut<'a>(&'a mut self, i: usize) -> MsgResult<&'a mut T> {
-        self.get_mut(i).catch_err(format!("Invalid index: {i}"))
+        let len = self.len();
+        self.get_mut(i).catch_err(format!(
+            "Invalid index: {i}/{len} as {:?}",
+            Backtrace::new()
+        ))
     }
 }
