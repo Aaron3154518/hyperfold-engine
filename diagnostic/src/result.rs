@@ -78,23 +78,43 @@ impl<E> ToErr<E> for E {
     }
 }
 
-// Convert error type F to error type E
-pub trait CatchErr<T, E> {
-    fn catch_err(self, err: E) -> Results<T, E>;
+// Replace None/Err with error type E
+pub trait CatchErr<T, E, F> {
+    fn catch_err(self, err: F) -> Results<T, E>;
 }
 
-impl<T, E, F> CatchErr<T, E> for Result<T, F> {
-    fn catch_err(self, err: E) -> Results<T, E> {
-        self.map_err(|_| err.as_vec())
+impl<T, E, F, G> CatchErr<T, E, F> for Result<T, G>
+where
+    F: Into<E>,
+{
+    fn catch_err(self, err: F) -> Results<T, E> {
+        self.map_err(|_| err.into().as_vec())
     }
 }
 
-impl<T, E> CatchErr<T, E> for Option<T> {
-    fn catch_err(self, err: E) -> Results<T, E> {
+impl<T, E, F> CatchErr<T, E, F> for Option<T>
+where
+    F: Into<E>,
+{
+    fn catch_err(self, err: F) -> Results<T, E> {
         match self {
             Some(t) => Ok(t),
-            None => err.as_err(),
+            None => err.into().as_err(),
         }
+    }
+}
+
+// Convert err type F to E
+pub trait IntoErr<T, E> {
+    fn err_into(self) -> Results<T, E>;
+}
+
+impl<T, E, F> IntoErr<T, E> for Results<T, F>
+where
+    F: Into<E>,
+{
+    fn err_into(self) -> Results<T, E> {
+        self.map_err(|f| f.into_iter().map(|f| f.into()).collect())
     }
 }
 

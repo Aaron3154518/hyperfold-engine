@@ -4,3 +4,4 @@ sdl
 *.dll
 .vscode
 build.txt
+out.txt

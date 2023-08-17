@@ -29,6 +29,7 @@ use utils::paths::Crate;
 // 5) Parse systems; Validate arguments; insert symbols
 // 6) Codegen
 pub fn parse(entry: PathBuf) {
+    return;
     let errs = match AstCrate::parse(entry) {
         Ok(mut crates) => {
             let (items, mut errs) = Items::resolve(&mut crates);
