@@ -21,28 +21,50 @@ pub use diagnostic::*;
 pub use error::*;
 pub use result::*;
 
-impl Diagnostic {
-    pub fn new(
-        message: String,
-        file_name: String,
-        level: DiagnosticLevel,
-        byte_start: usize,
-        byte_end: usize,
-        line_start: usize,
-        line_end: usize,
-        column_start: usize,
-        column_end: usize,
-    ) -> Self {
-        let mut writer = Writer::empty();
-        let mut files = SimpleFiles::new();
-        let id = files.add(
-            &file_name,
-            fs::read_to_string(&file_name)
-                .unwrap_or_else(|e| format!("Could not read '{file_name}': {e}")),
-        );
+pub struct Renderer {
+    files: SimpleFiles<String, String>,
+    file_idx: usize,
+}
 
+impl Renderer {
+    pub fn new(file: &str) -> Self {
+        let mut files = SimpleFiles::new();
+        Self {
+            file_idx: files.add(
+                file.to_string(),
+                fs::read_to_string(file)
+                    .unwrap_or_else(|e| format!("Could not read '{file}': {e}")),
+            ),
+            files,
+        }
+    }
+
+    pub fn render(
+        &self,
+        level: DiagnosticLevel,
+        message: &str,
+        span: &ErrorSpan,
+        notes: Vec<String>,
+    ) -> String {
+        let diagnostic = CodespanDiagnostic::<usize>::from(level)
+            .with_message(message)
+            .with_labels(vec![Label::primary(
+                self.file_idx,
+                span.byte_start..span.byte_end,
+            )])
+            .with_notes(notes);
+
+        let mut writer = Writer::empty();
         let config = Config::default();
-        let diagnostic = match level {
+        term::emit(&mut writer, &config, &self.files, &diagnostic)
+            .map(|_| writer.to_string())
+            .unwrap_or_else(|e| format!("Could not produce error message: {e}"))
+    }
+}
+
+impl<T> From<DiagnosticLevel> for CodespanDiagnostic<T> {
+    fn from(value: DiagnosticLevel) -> Self {
+        match value {
             DiagnosticLevel::Note | DiagnosticLevel::Warning | DiagnosticLevel::Help => {
                 CodespanDiagnostic::warning()
             }
@@ -50,15 +72,22 @@ impl Diagnostic {
                 CodespanDiagnostic::error()
             }
         }
-        .with_message(message.to_string())
-        .with_notes(vec!["Note1".to_string(), "Note2".to_string()])
-        .with_labels(vec![Label::primary(id, byte_start..byte_end)]);
-        let rendered = Some(
-            term::emit(&mut writer, &config, &files, &diagnostic)
-                .map(|_| writer.to_string())
-                .unwrap_or_else(|e| format!("Could not produce error message: {e}")),
-        );
+    }
+}
 
+impl Diagnostic {
+    pub fn new(
+        message: String,
+        file_name: String,
+        level: DiagnosticLevel,
+        rendered: Option<String>,
+        byte_start: usize,
+        byte_end: usize,
+        line_start: usize,
+        line_end: usize,
+        column_start: usize,
+        column_end: usize,
+    ) -> Self {
         Self {
             message,
             code: None,
@@ -66,8 +95,8 @@ impl Diagnostic {
             spans: vec![DiagnosticSpan {
                 // Need
                 file_name,
-                byte_start: 0,
-                byte_end: 0,
+                byte_start: byte_start as u32,
+                byte_end: byte_end as u32,
                 // Need
                 line_start,
                 line_end,
@@ -90,6 +119,7 @@ impl Diagnostic {
         message: String,
         file_name: String,
         level: DiagnosticLevel,
+        rendered: Option<String>,
         span: impl Into<ErrorSpan>,
     ) -> Self {
         let ErrorSpan {
@@ -105,6 +135,7 @@ impl Diagnostic {
             message,
             file_name,
             level,
+            rendered,
             byte_start,
             byte_end,
             line_start + 1,
@@ -112,10 +143,6 @@ impl Diagnostic {
             column_start + 1,
             column_end + 1,
         )
-    }
-
-    pub fn without_span(message: String, file_name: String, level: DiagnosticLevel) -> Self {
-        Self::new(message, file_name, level, 0, 1, 1, 1, 1, 2)
     }
 
     pub fn to_json(&self) -> serde_json::Result<String> {

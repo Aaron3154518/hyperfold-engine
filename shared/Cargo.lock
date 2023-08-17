@@ -215,6 +215,7 @@ name = "shared"
 version = "0.1.0"
 dependencies = [
  "backtrace",
+ "codespan-reporting",
  "diagnostic",
  "proc-macro2",
  "quote",

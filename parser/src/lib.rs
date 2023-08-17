@@ -13,7 +13,7 @@ mod utils;
 use std::{io::Write, path::PathBuf};
 
 use codegen::write_codegen;
-use diagnostic::{Diagnostic, DiagnosticLevel, ResultsTrait};
+use diagnostic::{Diagnostic, DiagnosticLevel, Renderer, ResultsTrait};
 use resolve::Items;
 
 use component_set::ComponentSetLabels;
@@ -64,16 +64,16 @@ pub fn parse(entry: PathBuf) {
 
             write_codegen(code).record_errs(&mut errs);
 
-            let mut f = std::fs::File::create("out.txt").unwrap();
-
             for cr in crates.iter_mut() {
                 for m in cr.iter_mods_mut() {
-                    f.write(format!("{}", m.errs.len()).as_bytes()).unwrap();
+                    let file = m.get_file();
+                    let renderer = Renderer::new(&file);
                     for err in m.take_errors() {
                         Diagnostic::from_span(
                             err.msg,
-                            m.get_file(),
-                            DiagnosticLevel::Error,
+                            file,
+                            err.level,
+                            Some(renderer.render(err.level, &err.msg, &err.span, Vec::new())),
                             err.span,
                         )
                         .emit()
@@ -87,12 +87,19 @@ pub fn parse(entry: PathBuf) {
         Err(errs) => errs,
     };
 
+    let file = "c:\\Users\\aaore\\repos\\hyperfold-games-library\\src\\main.rs".to_string();
+    let level = DiagnosticLevel::Error;
+    let span = Default::default();
+    let renderer = Renderer::new(&file);
     for msg in errs {
-        Diagnostic::without_span(
-            msg,
-            "c:\\Users\\aaore\\repos\\hyperfold-games-library\\src\\main.rs".to_string(),
-            DiagnosticLevel::Error,
+        Diagnostic::from_span(
+            msg.msg,
+            file,
+            level,
+            Some(renderer.render(level, &msg.msg, &span, vec![msg.backtrace()])),
+            span,
         )
-        .emit();
+        .emit()
+        .unwrap();
     }
 }

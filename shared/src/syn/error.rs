@@ -1,153 +1,83 @@
 use backtrace::Backtrace;
-use diagnostic::{CatchErr, ErrorSpan, Results, ToErr};
+use codespan_reporting::diagnostic::Label;
+use diagnostic::{CatchErr, CodespanDiagnostic, DiagnosticLevel, ErrorSpan, Results, ToErr};
 use syn::spanned::Spanned;
 
-use crate::traits::CollectVecInto;
-
-// Error when something went wrong in the code
 #[derive(Debug, Clone)]
-pub struct PanicError {
-    pub msg: String,
-    pub backtrace: Backtrace,
-}
-
-pub type PanicResult<T> = Results<T, PanicError>;
-
-impl PanicError {
-    pub fn new(msg: &str) -> Self {
-        Self {
-            msg: msg.to_string(),
-            backtrace: Backtrace::new(),
-        }
-    }
-}
-
-impl From<String> for PanicError {
-    fn from(value: String) -> Self {
-        Self::new(&value)
-    }
-}
-
-impl From<&str> for PanicError {
-    fn from(value: &str) -> Self {
-        Self::new(value)
-    }
-}
-
-pub fn panic(msg: &str) -> PanicError {
-    PanicError::new(msg)
-}
-
-// Error with no span
-#[derive(Debug, Clone)]
-pub struct UnspannedError {
-    pub msg: String,
-}
-
-pub type UnspannedResult<T> = Results<T, UnspannedError>;
-
-impl UnspannedError {
-    pub fn new(msg: &str) -> Self {
-        Self {
-            msg: msg.to_string(),
-        }
-    }
-}
-
-impl From<String> for UnspannedError {
-    fn from(value: String) -> Self {
-        Self::new(&value)
-    }
-}
-
-impl From<&str> for UnspannedError {
-    fn from(value: &str) -> Self {
-        Self::new(value)
-    }
-}
-
-// Error with span
-#[derive(Debug, Clone)]
-pub struct SpannedError {
-    pub msg: String,
+pub struct Error {
+    pub diagnostic: CodespanDiagnostic<usize>,
     pub span: ErrorSpan,
 }
 
-pub type SpannedResult<T> = Results<T, SpannedError>;
+pub type Result<T> = Results<T, Error>;
 
-impl SpannedError {
-    pub fn new(msg: &str, span: impl Into<ErrorSpan>) -> Self {
+impl Error {
+    pub fn new(msg: &str, span: ErrorSpan, level: DiagnosticLevel, backtrace: bool) -> Self {
         Self {
-            msg: msg.to_string(),
-            span: span.into(),
+            diagnostic: CodespanDiagnostic::<usize>::from(level)
+                .with_message(msg)
+                .with_notes(
+                    backtrace
+                        .then(|| Backtrace::new())
+                        .map_or(Vec::new(), |b| vec![format!("{b:#?}")]),
+                ),
+            span,
         }
+    }
+
+    pub fn with_file(&mut self, file_id: usize) -> &CodespanDiagnostic<usize> {
+        self.diagnostic.labels.push(Label::primary(
+            file_id,
+            self.span.byte_start..self.span.byte_end,
+        ));
+        &self.diagnostic
     }
 }
 
-pub fn err(msg: &str, span: impl Into<ErrorSpan>) -> SpannedError {
-    SpannedError::new(msg, span)
+pub fn err(msg: &str, span: impl Into<ErrorSpan>) -> Error {
+    Error::new(msg, span, DiagnosticLevel::Error, false)
+}
+
+pub fn warn(msg: &str, span: impl Into<ErrorSpan>) -> Error {
+    Error::new(msg, span, DiagnosticLevel::Warning, false)
+}
+
+pub fn panic(msg: &str) -> Error {
+    Error::new(msg, Default::default(), DiagnosticLevel::Error, true)
 }
 
 // special case for F = syn::Error
 pub trait CatchSynError<T> {
-    fn catch_syn_err(self, msg: &str) -> SpannedResult<T>;
+    fn catch_syn_err(self, msg: &str) -> Result<T>;
 }
 
-impl<T> CatchSynError<T> for Result<T, syn::Error> {
-    fn catch_syn_err(self, msg: &str) -> SpannedResult<T> {
+impl<T> CatchSynError<T> for syn::Result<T> {
+    fn catch_syn_err(self, msg: &str) -> Result<T> {
         self.map_err(|e| err(msg, &e.span()).as_vec())
     }
 }
 
-// Error that may have a span
-#[derive(Debug, Clone)]
-pub enum BuildError {
-    Panic(PanicError),
-    Spanned(SpannedError),
-}
-
-// Collect errors into a result
-pub type BuildResult<T> = Results<T, BuildError>;
-
-impl From<PanicError> for BuildError {
-    fn from(value: PanicError) -> Self {
-        Self::Panic(value)
-    }
-}
-
-impl<T> From<PanicError> for BuildResult<T> {
-    fn from(value: PanicError) -> Self {
-        Err(vec![value.into()])
-    }
-}
-
-impl From<SpannedError> for BuildError {
-    fn from(value: SpannedError) -> Self {
-        Self::Spanned(value)
-    }
-}
-
-impl<T> From<SpannedError> for BuildResult<T> {
-    fn from(value: SpannedError) -> Self {
-        Err(vec![value.into()])
-    }
-}
-
-// Convert Into<ErrorSpan> into SpannedError
+// Convert Into<ErrorSpan> into Error
 pub trait ToError {
-    fn error(&self, msg: &str) -> SpannedError;
+    fn error(&self, msg: &str) -> Error;
+
+    fn warning(&self, msg: &str) -> Error;
 }
 
 impl<T> ToError for T
 where
     T: Spanned,
 {
-    fn error(&self, msg: &str) -> SpannedError {
-        SpannedError::new(msg, self)
+    fn error(&self, msg: &str) -> Error {
+        err(msg, self)
+    }
+
+    fn warning(&self, msg: &str) -> Error {
+        warn(msg, self)
     }
 }
 
-// Convert from UnspannedResults to SpannedResult
+// Add span to Result
 pub trait AddSpan<T> {
     fn add_span(self, span: impl Into<ErrorSpan>) -> SpannedResult<T>;
 }
@@ -155,7 +85,7 @@ pub trait AddSpan<T> {
 impl<T> AddSpan<T> for UnspannedResult<T> {
     fn add_span(self, span: impl Into<ErrorSpan>) -> SpannedResult<T> {
         let span = span.into();
-        self.map_err(|errs| errs.map_vec_into(|msg| SpannedError { msg: msg.msg, span }))
+        self.map_err(|errs| errs.map_vec_into(|msg| err(&msg.msg, span)))
     }
 }
 

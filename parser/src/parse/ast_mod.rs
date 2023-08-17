@@ -29,7 +29,7 @@ use shared::{
     syn::{
         add_use_item,
         error::{
-            err, AsBuildResult, BuildResult, MsgResult, SpannedError, SpannedResult,
+            err, AsBuildResult, BuildResult, PanicResult, SpannedError, SpannedResult,
             SplitBuildResult, ToError,
         },
         use_path_from_syn, ToRange,
@@ -99,7 +99,7 @@ impl AstMod {
         }
     }
 
-    pub fn parse(file: PathBuf, path: Vec<String>, ty: AstModType) -> MsgResult<Tree<Self>> {
+    pub fn parse(file: PathBuf, path: Vec<String>, ty: AstModType) -> PanicResult<Tree<Self>> {
         let file_contents = fs::read_to_string(file.to_owned())
             .catch_err(format!("Failed to read file: {}", file.display()))?;
         let ast = syn::parse_file(&file_contents).catch_err(format!(
@@ -177,7 +177,7 @@ impl AstMod {
 
 // File/items
 impl AstMod {
-    fn visit_items(&mut self, items: Vec<syn::Item>) -> MsgResult<Vec<Tree<Self>>> {
+    fn visit_items(&mut self, items: Vec<syn::Item>) -> PanicResult<Vec<Tree<Self>>> {
         items
             .try_for_each(|i| {
                 match i {

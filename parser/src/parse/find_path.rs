@@ -6,7 +6,7 @@ use crate::parse::{
     AstCrate, ModInfo, {AstMod, Symbol},
 };
 use shared::{
-    syn::{error::MsgResult, use_path_from_syn},
+    syn::{error::UnspannedResult, use_path_from_syn},
     traits::{Catch, CollectVecInto},
 };
 
@@ -45,7 +45,7 @@ pub fn resolve_path_from_crate<'a>(
     mut path: Vec<String>,
     cr: &'a AstCrate,
     crates: &'a Vec<AstCrate>,
-) -> MsgResult<&'a Symbol> {
+) -> UnspannedResult<&'a Symbol> {
     // println!("Resolve: {}, crate: {}", path.join("::"), cr.idx);
     match path.first() {
         Some(p) => {
@@ -84,7 +84,7 @@ fn resolve_path_from_mod<'a>(
     path: Vec<String>,
     idx: usize,
     (m, cr, crates): ModInfo<'a>,
-) -> MsgResult<&'a Symbol> {
+) -> UnspannedResult<&'a Symbol> {
     // println!(
     //     "Resolve Mod: {} at {}",
     //     path.join("::"),
@@ -147,7 +147,10 @@ fn resolve_path_from_mod<'a>(
 }
 
 // Paths that start relative to some mod item
-pub fn resolve_path<'a>(path: Vec<String>, (m, cr, crates): ModInfo<'a>) -> MsgResult<&'a Symbol> {
+pub fn resolve_path<'a>(
+    path: Vec<String>,
+    (m, cr, crates): ModInfo<'a>,
+) -> UnspannedResult<&'a Symbol> {
     // println!("Local Resolve: {}", path.join("::"));
     let cr_idx = cr.idx;
 
@@ -203,12 +206,15 @@ pub fn resolve_syn_path<'a>(
     parent_path: &Vec<String>,
     path: &syn::Path,
     (m, cr, crates): ModInfo<'a>,
-) -> MsgResult<&'a Symbol> {
+) -> UnspannedResult<&'a Symbol> {
     resolve_path(use_path_from_syn(&m.path, path), (m, cr, crates))
 }
 
-impl<'a> MatchSymbol<'a> for MsgResult<&'a Symbol> {
-    fn and_then_impl<T>(self, f: impl FnOnce(&'a Symbol) -> MsgResult<T>) -> MsgResult<T> {
+impl<'a> MatchSymbol<'a> for UnspannedResult<&'a Symbol> {
+    fn and_then_impl<T>(
+        self,
+        f: impl FnOnce(&'a Symbol) -> UnspannedResult<T>,
+    ) -> UnspannedResult<T> {
         self.and_then(f)
     }
 }

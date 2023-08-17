@@ -24,7 +24,7 @@ use shared::{
     macros::ExpandEnum,
     parsing::{ComponentMacroArgs, GlobalMacroArgs, SystemMacroArgs},
     syn::{
-        error::{AddSpan, MsgResult, SpannedError, SpannedResult, SplitBuildResult},
+        error::{AddSpan, PanicError, PanicResult, SpannedError, SpannedResult, SplitBuildResult},
         parse_tokens,
     },
     traits::{
@@ -227,7 +227,7 @@ impl Items {
         &mut self,
         crates: &mut Crates,
         f: impl Fn(&Self, &mut Vec<NewItem>, ModInfo) -> SpannedResult<()>,
-    ) -> MsgResult<()> {
+    ) -> PanicResult<()> {
         let macro_cr_idx = crates.get_crate_index(Crate::Macros);
 
         // Get symbols
@@ -273,7 +273,7 @@ impl Items {
         Ok(())
     }
 
-    pub fn resolve(crates: &mut Crates) -> (Self, Vec<String>) {
+    pub fn resolve(crates: &mut Crates) -> (Self, Vec<PanicError>) {
         let mut errs = Vec::new();
         let mut items = Items::new();
 

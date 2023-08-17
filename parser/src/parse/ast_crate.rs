@@ -10,7 +10,7 @@ use std::{
 
 use diagnostic::{CatchErr, ErrForEach, ErrorTrait, ToErr};
 use shared::{
-    syn::error::{GetVec, MsgResult},
+    syn::error::{GetVec, PanicResult},
     traits::{Call, Catch, CollectVec, CollectVecInto, ExpandEnum, GetSlice, PushInto},
 };
 
@@ -33,14 +33,14 @@ use crate::{
 const ENGINE: &str = ".";
 const MACROS: &str = "macros";
 
-fn get_engine_dir() -> MsgResult<PathBuf> {
+fn get_engine_dir() -> PanicResult<PathBuf> {
     fs::canonicalize(PathBuf::from(ENGINE)).catch_err(format!(
         "Could not canonicalize engine crate path relative to: {:#?}",
         env::current_dir()
     ))
 }
 
-fn get_macros_dir() -> MsgResult<PathBuf> {
+fn get_macros_dir() -> PanicResult<PathBuf> {
     Ok(get_engine_dir()?.join("macros"))
 }
 
@@ -55,7 +55,7 @@ pub struct AstCrate {
 }
 
 impl AstCrate {
-    pub fn new(dir: PathBuf, idx: usize, is_entry: bool) -> MsgResult<Self> {
+    pub fn new(dir: PathBuf, idx: usize, is_entry: bool) -> PanicResult<Self> {
         let rel_dir = dir.to_owned();
         let dir: PathBuf = fs::canonicalize(dir).catch_err(format!(
             "Could not canonicalize path: {}",
@@ -93,7 +93,7 @@ impl AstCrate {
         })
     }
 
-    pub fn parse(mut dir: PathBuf) -> MsgResult<Crates> {
+    pub fn parse(mut dir: PathBuf) -> PanicResult<Crates> {
         let mut crates = vec![AstCrate::new(dir.to_owned(), 0, true)?];
 
         let engine_dir = get_engine_dir()?;
@@ -142,7 +142,7 @@ impl AstCrate {
     fn get_crate_dependencies(
         cr_dir: PathBuf,
         crates: &Vec<AstCrate>,
-    ) -> MsgResult<(Vec<(usize, String)>, Vec<String>)> {
+    ) -> PanicResult<(Vec<(usize, String)>, Vec<String>)> {
         let deps = AstCrate::parse_cargo_toml(cr_dir.to_owned())?;
         let mut new_deps = Vec::new();
         let mut cr_deps = Vec::new();
@@ -164,7 +164,7 @@ impl AstCrate {
         Ok((cr_deps, new_deps))
     }
 
-    fn parse_cargo_toml(dir: PathBuf) -> MsgResult<HashMap<String, String>> {
+    fn parse_cargo_toml(dir: PathBuf) -> PanicResult<HashMap<String, String>> {
         // Get the path to the `Cargo.toml` file
         let cargo_toml_path = dir.join("Cargo.toml");
 
@@ -204,12 +204,12 @@ impl AstCrate {
     }
 
     // Insert things into crates
-    pub fn add_symbol(&mut self, sym: Symbol) -> MsgResult<()> {
+    pub fn add_symbol(&mut self, sym: Symbol) -> PanicResult<()> {
         self.find_mod_mut(sym.path.slice_to(-1))?.symbols.push(sym);
         Ok(())
     }
 
-    pub fn add_hardcoded_symbol(crates: &mut Crates, sym: HardcodedSymbol) -> MsgResult<()> {
+    pub fn add_hardcoded_symbol(crates: &mut Crates, sym: HardcodedSymbol) -> PanicResult<()> {
         let path = sym.get_path();
         crates.get_crate_mut(path.cr)?.add_symbol(Symbol {
             kind: SymbolType::Hardcoded(sym),
@@ -222,34 +222,34 @@ impl AstCrate {
 
 // Mod access
 impl AstCrate {
-    pub fn get_main_mod(&self) -> MsgResult<&AstMod> {
+    pub fn get_main_mod(&self) -> PanicResult<&AstMod> {
         self.get_mod(self.main)
     }
 
-    pub fn get_main_mod_mut(&mut self) -> MsgResult<&mut AstMod> {
+    pub fn get_main_mod_mut(&mut self) -> PanicResult<&mut AstMod> {
         self.get_mod_mut(self.main)
     }
 
-    pub fn get_mod(&self, i: usize) -> MsgResult<&AstMod> {
+    pub fn get_mod(&self, i: usize) -> PanicResult<&AstMod> {
         self.mods.try_get(i)
     }
 
-    pub fn get_mod_mut(&mut self, i: usize) -> MsgResult<&mut AstMod> {
+    pub fn get_mod_mut(&mut self, i: usize) -> PanicResult<&mut AstMod> {
         self.mods.try_get_mut(i)
     }
 
-    pub fn get_mods(&self, idxs: &Vec<usize>) -> MsgResult<Vec<&AstMod>> {
+    pub fn get_mods(&self, idxs: &Vec<usize>) -> PanicResult<Vec<&AstMod>> {
         let (mods, errs) = idxs.try_for_each(|i| self.get_mod(*i));
         errs.err_or(mods)
     }
 
-    pub fn find_mod<'a>(&'a self, path: &[String]) -> MsgResult<&'a AstMod> {
+    pub fn find_mod<'a>(&'a self, path: &[String]) -> PanicResult<&'a AstMod> {
         self.iter_mods()
             .find(|m| m.path == path)
             .ok_or(format!("No mod defined at path: {path:#?}").as_vec())
     }
 
-    pub fn find_mod_mut<'a>(&'a mut self, path: &[String]) -> MsgResult<&'a mut AstMod> {
+    pub fn find_mod_mut<'a>(&'a mut self, path: &[String]) -> PanicResult<&'a mut AstMod> {
         self.iter_mods_mut()
             .find(|m| m.path == path)
             .ok_or(format!("No mod defined at path: {path:#?}").as_vec())

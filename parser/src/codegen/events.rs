@@ -3,7 +3,7 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use shared::{
     constants::{STATE_DATA, STATE_ENTER_EVENT, STATE_EXIT_EVENT},
-    syn::{error::MsgResult, vec_to_path},
+    syn::{error::PanicResult, vec_to_path},
     traits::{unzip::Unzip3, CollectVec, CollectVecInto, MapNone},
 };
 
@@ -81,7 +81,7 @@ pub fn events(
     events: &Vec<ItemEvent>,
     states: &Vec<ItemState>,
     crates: &Crates,
-) -> MsgResult<TokenStream> {
+) -> PanicResult<TokenStream> {
     let CodegenIdents {
         events: events_type,
         events_var,
@@ -209,7 +209,7 @@ pub fn event_trait_defs(
     events: &Vec<ItemEvent>,
     states: &Vec<ItemState>,
     crates: &Crates,
-) -> MsgResult<TokenStream> {
+) -> PanicResult<TokenStream> {
     trait_defs(
         cr_idx,
         crates,
@@ -226,7 +226,7 @@ pub fn event_trait_impls(
     events: &Vec<ItemEvent>,
     states: &Vec<ItemState>,
     crates: &Crates,
-) -> MsgResult<TokenStream> {
+) -> PanicResult<TokenStream> {
     let macro_cr_idx = crates.get_crate_index(Crate::Macros);
 
     // Implement trait for every event

@@ -4,7 +4,7 @@ use quote::quote;
 
 use shared::{
     syn::{
-        error::{AddSpan, GetVec, MsgResult},
+        error::{AddSpan, GetVec, PanicResult},
         Quote,
     },
     traits::{CollectVec, CollectVecInto, GetResult},
@@ -118,7 +118,7 @@ pub fn codegen_systems(
     cr_idx: usize,
     items: &Items,
     crates: &Crates,
-) -> MsgResult<SystemsCodegenResult> {
+) -> PanicResult<SystemsCodegenResult> {
     let event_trait = crates.get_syn_path(cr_idx, &ENGINE_TRAITS.add_event);
     let intersect = crates.get_syn_path(cr_idx, &ENGINE_PATHS.intersect);
     let intersect_opt = crates.get_syn_path(cr_idx, &ENGINE_PATHS.intersect_opt);

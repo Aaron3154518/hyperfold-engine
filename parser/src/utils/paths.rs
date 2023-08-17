@@ -5,7 +5,10 @@ use quote::{format_ident, quote};
 
 use shared::{
     macros::{expand_enum, ExpandEnum},
-    syn::{error::MsgResult, vec_to_path},
+    syn::{
+        error::{panic, PanicResult},
+        vec_to_path,
+    },
     traits::{Call, CollectVec, PushInto},
 };
 
@@ -160,10 +163,10 @@ macro_rules! engine_globals {
         }
 
         impl $ty {
-            pub fn get_global_vars(&self, crates: &Crates, cr_idx: usize) -> MsgResult<$ty_res> {
+            pub fn get_global_vars(&self, crates: &Crates, cr_idx: usize) -> PanicResult<$ty_res> {
                 let cr = match crates.get(cr_idx) {
                     Some(cr) => cr,
-                    None => return format!("Invalid crate index: {cr_idx}").as_err(),
+                    None => return panic(&format!("Invalid crate index: {cr_idx}")).as_err(),
                 };
                 let get_global = |cr_path| {
                     crates

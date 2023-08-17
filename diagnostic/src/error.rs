@@ -28,6 +28,19 @@ impl ErrorSpan {
     }
 }
 
+impl Default for ErrorSpan {
+    fn default() -> Self {
+        Self {
+            byte_start: 0,
+            byte_end: 1,
+            line_start: 0,
+            line_end: 0,
+            column_start: 0,
+            column_end: 1,
+        }
+    }
+}
+
 impl From<&ErrorSpan> for ErrorSpan {
     fn from(value: &ErrorSpan) -> Self {
         value.clone()

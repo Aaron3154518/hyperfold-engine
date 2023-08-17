@@ -68,9 +68,12 @@ pub trait ToErr<E> {
     fn as_err<T>(self) -> Results<T, E>;
 }
 
-impl<E> ToErr<E> for E {
+impl<E, F> ToErr<E> for F
+where
+    F: Into<E>,
+{
     fn as_vec(self) -> Vec<E> {
-        vec![self]
+        vec![self.into()]
     }
 
     fn as_err<T>(self) -> Results<T, E> {
@@ -101,20 +104,6 @@ where
             Some(t) => Ok(t),
             None => err.into().as_err(),
         }
-    }
-}
-
-// Convert err type F to E
-pub trait IntoErr<T, E> {
-    fn err_into(self) -> Results<T, E>;
-}
-
-impl<T, E, F> IntoErr<T, E> for Results<T, F>
-where
-    F: Into<E>,
-{
-    fn err_into(self) -> Results<T, E> {
-        self.map_err(|f| f.into_iter().map(|f| f.into()).collect())
     }
 }
 

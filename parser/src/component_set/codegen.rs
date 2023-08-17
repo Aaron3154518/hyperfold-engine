@@ -3,7 +3,7 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use shared::{
     syn::{
-        error::{MsgResult, SpannedResult},
+        error::{PanicResult, SpannedResult},
         get_fn_name, Quote,
     },
     traits::{CollectVec, CollectVecInto, ThenNone},
@@ -67,7 +67,7 @@ impl ComponentSet {
         cr_idx: usize,
         component_sets: &Vec<Self>,
         crates: &Crates,
-    ) -> MsgResult<Vec<TokenStream>> {
+    ) -> PanicResult<Vec<TokenStream>> {
         let filter_fn = crates.get_syn_path(cr_idx, &ENGINE_PATHS.filter);
         let entity_set = crates.get_syn_path(cr_idx, &ENGINE_PATHS.entity_set);
         let entity = crates.get_syn_path(cr_idx, &ENGINE_PATHS.entity);

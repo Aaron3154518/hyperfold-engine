@@ -5,7 +5,7 @@ use std::{env::temp_dir, fs, path::PathBuf};
 
 use shared::{
     constants::{INDEX, INDEX_SEP},
-    syn::{error::MsgResult, ToRange},
+    syn::{error::PanicResult, ToRange},
     traits::{Catch, CollectVec, CollectVecInto, ThenOk},
 };
 
@@ -21,7 +21,7 @@ use crate::{
 
 use super::Crates;
 
-pub fn codegen(crates: &Crates, items: &Items) -> MsgResult<Vec<TokenStream>> {
+pub fn codegen(crates: &Crates, items: &Items) -> PanicResult<Vec<TokenStream>> {
     let main_cr_idx = crates.get_crate_index(Crate::Main);
     let macro_cr_idx = crates.get_crate_index(Crate::Macros);
 
@@ -141,7 +141,7 @@ pub fn codegen(crates: &Crates, items: &Items) -> MsgResult<Vec<TokenStream>> {
     )
 }
 
-pub fn write_codegen(code: Vec<(&AstCrate, String)>) -> MsgResult<()> {
+pub fn write_codegen(code: Vec<(&AstCrate, String)>) -> PanicResult<()> {
     let out =
         PathBuf::from(std::env::var("OUT_DIR").catch_err("No out dir specified".to_string())?);
 

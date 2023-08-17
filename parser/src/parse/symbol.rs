@@ -10,7 +10,7 @@ use super::AstMod;
 use shared::{
     macros::{expand_enum, ExpandEnum},
     parsing::{ComponentMacroArgs, GlobalMacroArgs},
-    syn::error::MsgResult,
+    syn::error::UnspannedResult,
     traits::CollectVec,
 };
 
@@ -100,72 +100,75 @@ pub trait MatchSymbol<'a>
 where
     Self: Sized,
 {
-    fn and_then_impl<T>(self, f: impl FnOnce(&'a Symbol) -> MsgResult<T>) -> MsgResult<T>;
+    fn and_then_impl<T>(
+        self,
+        f: impl FnOnce(&'a Symbol) -> UnspannedResult<T>,
+    ) -> UnspannedResult<T>;
 
-    fn expect_component(self) -> MsgResult<(&'a Symbol, ComponentSymbol)> {
+    fn expect_component(self) -> UnspannedResult<(&'a Symbol, ComponentSymbol)> {
         self.and_then_impl(|arg| match arg.kind {
             SymbolType::Component(c_sym) => Ok((arg, c_sym)),
             _ => arg.error("Component").as_err(),
         })
     }
 
-    fn expect_global(self) -> MsgResult<(&'a Symbol, GlobalSymbol)> {
+    fn expect_global(self) -> UnspannedResult<(&'a Symbol, GlobalSymbol)> {
         self.and_then_impl(|arg| match arg.kind {
             SymbolType::Global(g_sym) => Ok((arg, g_sym)),
             _ => arg.error("Global").as_err(),
         })
     }
 
-    fn expect_trait(self) -> MsgResult<(&'a Symbol, GlobalSymbol)> {
+    fn expect_trait(self) -> UnspannedResult<(&'a Symbol, GlobalSymbol)> {
         self.and_then_impl(|arg| match arg.kind {
             SymbolType::Trait(g_sym) => Ok((arg, g_sym)),
             _ => arg.error("Trait").as_err(),
         })
     }
 
-    fn expect_global_or_trait(self) -> MsgResult<(&'a Symbol, GlobalSymbol)> {
+    fn expect_global_or_trait(self) -> UnspannedResult<(&'a Symbol, GlobalSymbol)> {
         self.and_then_impl(|arg| match arg.kind {
             SymbolType::Global(g_sym) | SymbolType::Trait(g_sym) => Ok((arg, g_sym)),
             _ => arg.error("Global or Trait").as_err(),
         })
     }
 
-    fn expect_event(self) -> MsgResult<(&'a Symbol, usize)> {
+    fn expect_event(self) -> UnspannedResult<(&'a Symbol, usize)> {
         self.and_then_impl(|arg| match arg.kind {
             SymbolType::Event(i) => Ok((arg, i)),
             _ => arg.error("Event").as_err(),
         })
     }
 
-    fn expect_state(self) -> MsgResult<(&'a Symbol, usize)> {
+    fn expect_state(self) -> UnspannedResult<(&'a Symbol, usize)> {
         self.and_then_impl(|arg| match arg.kind {
             SymbolType::State(i) => Ok((arg, i)),
             _ => arg.error("State").as_err(),
         })
     }
 
-    fn expect_system(self) -> MsgResult<(&'a Symbol, (usize, Span))> {
+    fn expect_system(self) -> UnspannedResult<(&'a Symbol, (usize, Span))> {
         self.and_then_impl(|arg| match arg.kind {
             SymbolType::System(i, span) => Ok((arg, (i, span))),
             _ => arg.error("System").as_err(),
         })
     }
 
-    fn expect_component_set(self) -> MsgResult<(&'a Symbol, usize)> {
+    fn expect_component_set(self) -> UnspannedResult<(&'a Symbol, usize)> {
         self.and_then_impl(|arg| match arg.kind {
             SymbolType::ComponentSet(i) => Ok((arg, i)),
             _ => arg.error("Component Set").as_err(),
         })
     }
 
-    fn expect_any_hardcoded(self) -> MsgResult<(&'a Symbol, HardcodedSymbol)> {
+    fn expect_any_hardcoded(self) -> UnspannedResult<(&'a Symbol, HardcodedSymbol)> {
         self.and_then_impl(|arg| match arg.kind {
             SymbolType::Hardcoded(sym) => Ok((arg, sym)),
             _ => arg.error("Hardcoded Symbol").as_err(),
         })
     }
 
-    fn expect_hardcoded(self, sym: HardcodedSymbol) -> MsgResult<&'a Symbol> {
+    fn expect_hardcoded(self, sym: HardcodedSymbol) -> UnspannedResult<&'a Symbol> {
         self.expect_any_hardcoded()
             .and_then(|(s, h_sym)| match h_sym == sym {
                 true => Ok(s),
@@ -176,11 +179,11 @@ where
 
 // Helper function to just get the data from a resolved symbol
 pub trait DiscardSymbol<T> {
-    fn discard_symbol(self) -> MsgResult<T>;
+    fn discard_symbol(self) -> UnspannedResult<T>;
 }
 
-impl<T> DiscardSymbol<T> for MsgResult<(&Symbol, T)> {
-    fn discard_symbol(self) -> MsgResult<T> {
+impl<T> DiscardSymbol<T> for UnspannedResult<(&Symbol, T)> {
+    fn discard_symbol(self) -> UnspannedResult<T> {
         self.map(|(_, t)| t)
     }
 }
