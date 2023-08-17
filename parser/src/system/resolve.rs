@@ -196,7 +196,7 @@ impl ItemSystem {
                     .as_vec(),
             )
             .and_then(|g| {
-                if g.data.args.is_const {
+                if g.args.is_const {
                     self.validate_mut(arg, false).map(|_| g)
                 } else {
                     Ok(g)

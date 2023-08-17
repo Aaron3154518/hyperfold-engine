@@ -130,7 +130,7 @@ pub fn codegen_systems(
     let mut system_events = Vec::new();
 
     let errs = match_ok!(Zip3Msgs, event_trait, intersect, intersect_opt, {
-        items.systems.do_for_each(|system| {
+        (&items.systems).do_for_each(|system| {
             let func_name = crates
                 .get_item_syn_path(cr_idx, &system.path)
                 .add_span(&system.span);
@@ -186,4 +186,6 @@ pub fn codegen_systems(
             systems,
             system_events,
         })
+        // TODO: errors
+        .map_err(|_| vec![])
 }

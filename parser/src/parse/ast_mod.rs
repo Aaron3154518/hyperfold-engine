@@ -80,18 +80,16 @@ impl AstMod {
         idx: usize,
         file: PathBuf,
         path: Vec<String>,
+        name: String,
         ty: AstModType,
         span: ErrorSpan,
-    ) -> MsgResult<Self> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             idx,
             ty,
             file,
+            name,
             path,
-            name: path
-                .last()
-                .catch_err(format!("Mod path is empty: {}", path.join("::")))?
-                .to_string(),
             span,
             errs: Vec::new(),
             warns: Vec::new(),
@@ -99,7 +97,7 @@ impl AstMod {
             uses: Vec::new(),
             symbols: Vec::new(),
             items: AstItems::new(),
-        })
+        }
     }
 
     pub fn parse(file: PathBuf, path: Vec<String>, ty: AstModType) -> MsgResult<Tree<Self>> {
@@ -109,8 +107,12 @@ impl AstMod {
             "Failed to parse file contents of: {}",
             file.display()
         ))?;
+        let name = path
+            .last()
+            .catch_err(format!("Mod path is empty: {}", path.join("::")))?
+            .to_string();
 
-        let mut s = Self::new(0, file, path, ty, (&ast).into())?;
+        let mut s = Self::new(0, file, path, name, ty, (&ast).into());
 
         let mods = s.visit_items(ast.items)?;
         // Resolve local use paths
@@ -130,30 +132,35 @@ impl AstMod {
         })
     }
 
-    pub fn add_mod(&mut self, mods: &mut Vec<AstMod>, data: NewMod) -> MsgResult<()> {
-        let mut new_mod = AstMod::new(
-            0,
-            self.file.clone(),
-            self.path.to_vec().push_into(data.name),
-            AstModType::Internal,
-            data.span,
-        )?;
-        new_mod.symbols = data.symbols;
-        new_mod.uses = data.uses;
-        for m in data.mods {
-            new_mod.add_mod(mods, m);
-        }
-        self.mods.push(mods.len());
-        mods.push(new_mod);
-        Ok(())
-    }
-
     pub fn add_symbol(&mut self, symbol: Symbol) {
         self.symbols.push(symbol)
     }
 
     pub fn get_file(&self) -> String {
         self.file.display().to_string()
+    }
+
+    // Add new mods to the given mods and return all new mods in lrn order
+    pub fn add_mod(&mut self, mut num_mods: usize, data: NewMod) -> Vec<AstMod> {
+        let mut new_mod = AstMod::new(
+            0,
+            self.file.clone(),
+            self.path.to_vec().push_into(data.name.to_string()),
+            data.name,
+            AstModType::Internal,
+            data.span,
+        );
+        new_mod.symbols = data.symbols;
+        new_mod.uses = data.uses;
+        let mut mods = Vec::new();
+        for m in data.mods {
+            let child_mods = new_mod.add_mod(num_mods, m);
+            num_mods += child_mods.len();
+            mods.extend(child_mods);
+        }
+        new_mod.idx = num_mods;
+        self.mods.push(num_mods);
+        mods.push_into(new_mod)
     }
 
     pub fn error(&mut self, msg: &str, span: impl Into<ErrorSpan>) {
@@ -166,15 +173,6 @@ impl AstMod {
 
     pub fn take_errors(&mut self) -> Vec<SpannedError> {
         std::mem::replace(&mut self.errs, Vec::new())
-    }
-
-    // Iteration
-    pub fn iter_structs_enums(&self) -> impl Iterator<Item = (&AstItemData, &Vec<AstAttribute>)> {
-        self.items
-            .structs
-            .iter()
-            .map(|s| (&s.data, &s.attrs))
-            .chain(self.items.enums.iter().map(|e| (&e.data, &e.attrs)))
     }
 }
 
@@ -210,10 +208,10 @@ impl AstMod {
                         0,
                         self.file.to_owned(),
                         [self.path.to_vec(), vec![i.ident.to_string()]].concat(),
+                        i.ident.to_string(),
                         AstModType::Internal,
                         self.span,
-                    )
-                    .upcast()?;
+                    );
                     new_mod.visit_items(items).map(|mods| Tree {
                         root: new_mod,
                         children: mods,

@@ -18,13 +18,13 @@ impl AstMod {
         if let Some(attrs) = get_attributes_if_active(&i.attrs, &self.path, &Vec::new())? {
             if !attrs.is_empty() {
                 self.items.functions.push(AstFunction {
-                    sig: i.sig,
                     attrs,
                     data: AstItemData {
                         path: self.path.to_vec().push_into(i.sig.ident.to_string()),
                         ident: i.sig.ident.to_string(),
                         span: i.span(),
                     },
+                    sig: i.sig,
                 });
             }
         }

@@ -162,7 +162,7 @@ fn parse_attr_args(mut attr_type: Attribute, attr: &syn::Attribute) -> SpannedRe
                     .to_token_stream()
                     .to_string()
                     .parse()
-                    .catch_err(attr.error("Could not parse cfg_str"))?;
+                    .catch_err(l.error("Could not parse cfg_str"))?;
             }
             _ => (),
         },

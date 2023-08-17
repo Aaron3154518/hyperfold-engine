@@ -104,7 +104,7 @@ fn resolve_path_from_mod<'a>(
 
     // println!("Finding: {name}");
     // Check sub modules
-    for m in cr.get_mods(m.mods)? {
+    for m in cr.get_mods(&m.mods)? {
         if name == m.name {
             // println!("Found Mod: {}", name);
             return if is_path_end {
@@ -172,7 +172,7 @@ pub fn resolve_path<'a>(path: Vec<String>, (m, cr, crates): ModInfo<'a>) -> MsgR
     }
 
     // Check mods
-    if let Some(m) = cr.get_mods(m.mods)?.into_iter().find(|m| name == &m.name) {
+    if let Some(m) = cr.get_mods(&m.mods)?.into_iter().find(|m| name == &m.name) {
         return resolve_path_from_crate([m.path.to_vec(), path[1..].to_vec()].concat(), cr, crates);
     }
 

@@ -24,7 +24,6 @@ impl AstMod {
             if i.ident.is_none() {
                 let path = use_path_from_syn(&self.path, &i.mac.path);
                 self.items.macro_calls.push(AstMacroCall {
-                    args: i.mac.tokens,
                     data: AstItemData {
                         ident: path
                             .last()
@@ -33,6 +32,7 @@ impl AstMod {
                         path,
                         span: i.mac.span(),
                     },
+                    args: i.mac.tokens,
                 });
             }
         }

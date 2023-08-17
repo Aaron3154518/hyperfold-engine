@@ -9,9 +9,11 @@ mod symbol;
 pub use ast_crate::AstCrate;
 pub use ast_mod::{AstMod, AstModType, NewMod};
 pub use attributes::AstAttribute;
+pub use find_path::{resolve_path, resolve_path_from_crate, resolve_syn_path, ItemPath};
 pub use items::*;
 pub use symbol::{
     ComponentSymbol, DiscardSymbol, GlobalSymbol, HardcodedSymbol, MatchSymbol, Symbol, SymbolType,
 };
+
 pub type ModInfo<'a> = (&'a AstMod, &'a AstCrate, &'a Vec<AstCrate>);
-pub use find_path::{resolve_path, resolve_path_from_crate, resolve_syn_path, ItemPath};
+pub type ModInfoMut<'a> = (&'a mut AstMod, &'a mut AstCrate, &'a Vec<AstCrate>);

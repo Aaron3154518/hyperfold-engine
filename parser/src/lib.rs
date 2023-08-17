@@ -66,8 +66,8 @@ pub fn parse(entry: PathBuf) {
 
             write_codegen(code).record_errs(&mut errs);
 
-            crates.iter().for_each(|cr| {
-                cr.iter_mods().for_each(|m| {
+            crates.iter_mut().for_each(|cr| {
+                cr.iter_mods_mut().for_each(|m| {
                     m.take_errors().into_iter().for_each(|err| {
                         Diagnostic::from_span(
                             err.msg,

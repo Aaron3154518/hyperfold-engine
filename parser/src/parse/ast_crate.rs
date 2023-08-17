@@ -18,7 +18,7 @@ use shared::{
 use super::{
     ast_file::DirType,
     ast_mod::{AstMod, AstModType},
-    HardcodedSymbol, NewMod, Symbol, SymbolType,
+    AstItems, HardcodedSymbol, NewMod, Symbol, SymbolType,
 };
 use crate::{
     codegen::Crates,
@@ -73,7 +73,7 @@ impl AstCrate {
             },
         )?
         .flatten()
-        .enumer_map_vec_into(|(i, (m, idxs))| {
+        .enumer_map_vec_into(|(i, (mut m, idxs))| {
             m.mods = idxs;
             m.idx = i;
             m
@@ -210,14 +210,6 @@ impl AstCrate {
         Ok(())
     }
 
-    pub fn add_mod(&mut self, path: Vec<String>, mut data: NewMod) -> MsgResult<()> {
-        self.find_mod_mut(&path)?.add_mod(&mut self.mods, data)
-    }
-
-    pub fn add_child_mod(&mut self, mod_idx: usize, mut data: NewMod) -> MsgResult<()> {
-        self.get_mod_mut(mod_idx)?.add_mod(&mut self.mods, data)
-    }
-
     pub fn add_hardcoded_symbol(crates: &mut Crates, sym: HardcodedSymbol) -> MsgResult<()> {
         let path = sym.get_path();
         crates.get_crate_mut(path.cr)?.add_symbol(Symbol {
@@ -247,8 +239,8 @@ impl AstCrate {
         self.mods.try_get_mut(i)
     }
 
-    pub fn get_mods(&self, idxs: Vec<usize>) -> MsgResult<Vec<&AstMod>> {
-        let (mods, errs) = idxs.try_for_each(|i| self.get_mod(i));
+    pub fn get_mods(&self, idxs: &Vec<usize>) -> MsgResult<Vec<&AstMod>> {
+        let (mods, errs) = idxs.try_for_each(|i| self.get_mod(*i));
         errs.err_or(mods)
     }
 

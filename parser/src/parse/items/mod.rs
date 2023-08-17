@@ -12,8 +12,10 @@ pub use macros::AstMacroCall;
 pub use structs::AstStruct;
 pub use uses::AstUse;
 
+use super::AstAttribute;
+
 // Data used for all Ast Items
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AstItemData {
     // Includes ident
     pub path: Vec<String>,
@@ -37,5 +39,12 @@ impl AstItems {
             functions: Vec::new(),
             macro_calls: Vec::new(),
         }
+    }
+
+    pub fn structs_and_enums(&self) -> impl Iterator<Item = (&AstItemData, &Vec<AstAttribute>)> {
+        self.structs
+            .iter()
+            .map(|s| (&s.data, &s.attrs))
+            .chain(self.enums.iter().map(|e| (&e.data, &e.attrs)))
     }
 }

@@ -48,7 +48,7 @@ fn codegen<'a>(
     let [mut tys, mut news, mut adds, mut appends, mut removes] = array::from_fn(|_| Vec::new());
     for (i, (c, ty)) in components.iter().zip(types).enumerate() {
         let var = component_var(i);
-        if c.data.args.is_singleton {
+        if c.args.is_singleton {
             tys.push(quote!(#singleton<#ty>));
             news.push(quote!(#singleton::None));
             adds.push(quote!(self.#var = #singleton::new(e, t)));
@@ -105,7 +105,7 @@ pub fn components(
 ) -> MsgResult<TokenStream> {
     let vars = (0..components.len()).map_vec_into(|i| component_var(i));
     let types = components
-        .map_vec(|c| crates.get_item_syn_path(cr_idx, &c.path))
+        .map_vec(|c| crates.get_item_syn_path(cr_idx, &c.data.path))
         .combine_results();
 
     let entity_set = crates.get_syn_path(cr_idx, &ENGINE_PATHS.entity_set);
@@ -136,7 +136,7 @@ pub fn components(
 
 impl GetTraitTypes for Vec<ItemComponent> {
     fn get_paths(&self) -> Vec<&ItemPath> {
-        self.map_vec(|c| &c.path)
+        self.map_vec(|c| &c.data.path)
     }
 }
 
@@ -161,7 +161,7 @@ pub fn component_trait_impls(
     let macro_cr_idx = crates.get_crate_index(Crate::Macros);
 
     let types = components
-        .map_vec(|c| crates.get_item_syn_path(cr_idx, &c.path))
+        .map_vec(|c| crates.get_item_syn_path(cr_idx, &c.data.path))
         .combine_results();
     let crate_paths = crates
         .get_crate_syn_paths(cr_idx, [macro_cr_idx])
@@ -188,7 +188,7 @@ pub fn component_trait_impls(
             let mut adds = Vec::new();
             for (i, c) in components.iter().enumerate() {
                 let var = component_var(i);
-                adds.push(if c.data.args.is_singleton {
+                adds.push(if c.args.is_singleton {
                     quote!(self.#var = #singleton::new(e, t))
                 } else {
                     quote!(self.#var.insert(e, t);)

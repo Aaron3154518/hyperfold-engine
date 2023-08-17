@@ -15,8 +15,8 @@ use shared::{
 
 use crate::{
     parse::{
-        resolve_path, resolve_syn_path, AstAttribute, AstFunction, AstItem, DiscardSymbol,
-        HardcodedSymbol, ItemPath, MatchSymbol, ModInfo,
+        resolve_path, resolve_syn_path, AstAttribute, AstFunction, DiscardSymbol, HardcodedSymbol,
+        ItemPath, MatchSymbol, ModInfo,
     },
     resolve::Items,
 };
@@ -167,14 +167,14 @@ pub struct ItemSystem {
 
 impl ItemSystem {
     pub fn parse(
-        fun: &AstItem<AstFunction>,
+        fun: &AstFunction,
         attr: &AstAttribute,
         items: &Items,
         (m, cr, crates): ModInfo,
     ) -> SpannedResult<Self> {
-        let path = m.path.to_vec().push_into(fun.data.sig.ident.to_string());
+        let path = m.path.to_vec().push_into(fun.sig.ident.to_string());
         parse_tokens(attr.args.clone()).and_then(|attr_args| {
-            FnArg::parse(&attr_args, items, &fun.data.sig, (m, cr, crates)).map(|args| ItemSystem {
+            FnArg::parse(&attr_args, items, &fun.sig, (m, cr, crates)).map(|args| ItemSystem {
                 path: ItemPath {
                     cr_idx: cr.idx,
                     path,
@@ -182,7 +182,7 @@ impl ItemSystem {
                 args,
                 attr_args,
                 file: m.get_file(),
-                span: fun.data.sig.ident.span(),
+                span: fun.sig.ident.span(),
                 err_span: m.span.clone(),
             })
         })

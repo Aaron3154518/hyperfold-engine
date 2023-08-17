@@ -5,25 +5,59 @@ pub trait ErrForEach<U>
 where
     Self: Sized,
 {
-    fn do_for_each<E>(self, f: impl Fn(U) -> Results<(), E>) -> Vec<E> {
+    fn do_for_each<E>(self, f: impl FnMut(U) -> Results<(), E>) -> Vec<E> {
         let (_, errs) = self.try_for_each(f);
         errs
     }
 
-    fn try_for_each<T, E>(self, f: impl Fn(U) -> Results<T, E>) -> (Vec<T>, Vec<E>);
+    fn try_for_each<T, E>(self, f: impl FnMut(U) -> Results<T, E>) -> (Vec<T>, Vec<E>);
+
+    fn do_until<T, E>(self, f: impl FnMut(U) -> Results<Option<T>, E>) -> Vec<E> {
+        let (_, errs) = self.try_until(f);
+        errs
+    }
+
+    fn try_until<T, E>(self, f: impl FnMut(U) -> Results<Option<T>, E>) -> (Option<T>, Vec<E>);
 }
 
 impl<U, V> ErrForEach<U> for V
 where
     V: IntoIterator<Item = U>,
 {
-    fn try_for_each<T, E>(self, f: impl Fn(U) -> Results<T, E>) -> (Vec<T>, Vec<E>) {
+    fn try_for_each<T, E>(self, mut f: impl FnMut(U) -> Results<T, E>) -> (Vec<T>, Vec<E>) {
         let (mut vals, mut errs) = (Vec::new(), Vec::new());
         self.into_iter().for_each(|u| match f(u) {
             Ok(t) => vals.push(t),
             Err(e) => errs.extend(e),
         });
         (vals, errs)
+    }
+
+    fn try_until<T, E>(self, mut f: impl FnMut(U) -> Results<Option<T>, E>) -> (Option<T>, Vec<E>) {
+        let mut errs = Vec::new();
+        (
+            self.into_iter().find_map(|u| match f(u) {
+                Ok(t) => t,
+                Err(e) => {
+                    errs.extend(e);
+                    None
+                }
+            }),
+            errs,
+        )
+    }
+}
+
+pub trait ErrorOr<T, E> {
+    fn err_or(self) -> Results<T, E>;
+}
+
+impl<T, E> ErrorOr<T, E> for (T, Vec<E>) {
+    fn err_or(self) -> Results<T, E> {
+        match self.1.len() {
+            0 => Ok(self.0),
+            _ => Err(self.1),
+        }
     }
 }
 

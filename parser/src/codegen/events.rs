@@ -39,8 +39,8 @@ pub fn events_enums(events: &Vec<ItemEvent>, states: &Vec<ItemState>) -> TokenSt
         |(i, s)| {
             (
                 state_variant(i),
-                event_variant(s.data.enter_event),
-                event_variant(s.data.exit_event),
+                event_variant(s.enter_event),
+                event_variant(s.exit_event),
             )
         },
         Unzip3::unzip3_vec,
@@ -96,21 +96,15 @@ pub fn events(
     let (e_vars, e_variants) =
         (0..events.len()).unzip_vec_into(|i| (event_var(i), event_variant(i)));
     let e_types = events
-        .map_vec(|e| crates.get_item_syn_path(cr_idx, &e.path))
+        .map_vec(|e| crates.get_item_syn_path(cr_idx, &e.data.path))
         .combine_results();
 
     let (s_vars, s_variants, s_exit_events) = states.enumer_unzipn_vec(
-        |(i, s)| {
-            (
-                state_var(i),
-                state_variant(i),
-                event_variant(s.data.exit_event),
-            )
-        },
+        |(i, s)| (state_var(i), state_variant(i), event_variant(s.exit_event)),
         Unzip3::unzip3_vec,
     );
     let s_types = states
-        .map_vec(|s| crates.get_item_syn_path(cr_idx, &s.path))
+        .map_vec(|s| crates.get_item_syn_path(cr_idx, &s.data.path))
         .combine_results();
     let s_data = format_ident!("{STATE_DATA}");
     let s_on_exit = format_ident!("{STATE_EXIT_EVENT}");
@@ -201,13 +195,13 @@ pub fn events(
 
 impl GetTraitTypes for Vec<ItemEvent> {
     fn get_paths(&self) -> Vec<&ItemPath> {
-        self.filter_map_vec(|e| e.data.state.map_none(&e.path))
+        self.filter_map_vec(|e| e.state.map_none(&e.data.path))
     }
 }
 
 impl GetTraitTypes for Vec<ItemState> {
     fn get_paths(&self) -> Vec<&ItemPath> {
-        self.map_vec(|s| &s.data.data_path)
+        self.map_vec(|s| &s.data_path)
     }
 }
 
@@ -240,13 +234,13 @@ pub fn event_trait_impls(
     let (e_vars, e_variants) =
         (0..events.len()).unzip_vec_into(|i| (event_var(i), event_variant(i)));
     let e_types = events
-        .map_vec(|e| crates.get_item_syn_path(cr_idx, &e.path))
+        .map_vec(|e| crates.get_item_syn_path(cr_idx, &e.data.path))
         .combine_results();
 
     // Implement trait for every state
     let s_vars = (0..states.len()).map_vec_into(|i| state_var(i));
     let s_types = states
-        .map_vec(|s| crates.get_item_syn_path(cr_idx, &s.path))
+        .map_vec(|s| crates.get_item_syn_path(cr_idx, &s.data.path))
         .combine_results();
 
     // Implement all dependency traits

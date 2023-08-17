@@ -8,7 +8,9 @@ use super::{
     labels::{ComponentSetLabels, LabelsExpression},
     parse::{AstComponentSet, AstComponentSetItem, AstLabelItem, LabelOp},
 };
-use crate::parse::{resolve_path, ComponentSymbol, DiscardSymbol, ItemPath, MatchSymbol, ModInfo};
+use crate::parse::{
+    resolve_path, ComponentSymbol, DiscardSymbol, ItemPath, MatchSymbol, ModInfo, ModInfoMut,
+};
 use shared::{
     msg_result::{CombineMsgs, MsgTrait, Zip2Msgs},
     syn::{
@@ -192,12 +194,15 @@ impl ComponentSet {
                     )
                     .call_into(|labels| {
                         match labels {
-                            ComponentSetLabels::Constant(false) => m.warn(
-                                &format!(
-                                    "In Component set '{ident}': Label expression is never true"
-                                ),
-                                item.span(),
-                            ),
+                            // TODO: warning
+                            ComponentSetLabels::Constant(false) => {
+                                // m.warn(
+                                //     &format!(
+                                //     "In Component set '{ident}': Label expression is never true"
+                                // ),
+                                //     item.span(),
+                                // );
+                            }
                             _ => (),
                         }
                         labels
