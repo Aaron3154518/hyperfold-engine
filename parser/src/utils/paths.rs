@@ -1,12 +1,10 @@
-use diagnostic::ToErr;
+use diagnostic::{zip_match, ToErr, ZipResults};
 use once_cell::sync::Lazy;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
 use shared::{
     macros::{expand_enum, ExpandEnum},
-    match_ok,
-    msg_result::Zip7Msgs,
     syn::{error::MsgResult, vec_to_path},
     traits::{Call, CollectVec, PushInto},
 };
@@ -150,7 +148,7 @@ macro_rules! engine_globals {
         $($cr: ident $(::$path: tt)* {
             $($var: ident => $ident: tt),* $(,)?
         }),* $(,)?
-    }, $ty_res: ident, $zip_tr: ident) => {
+    }, $ty_res: ident) => {
         paths!($const = $ty {
             $($cr $(::$path)* {
                 $($var => $ident),*
@@ -178,9 +176,11 @@ macro_rules! engine_globals {
                         .map(|g_sym| global_var(g_sym.idx))
                 };
                 $($(let $var = get_global(&self.$var);)*)*
-                match_ok!($zip_tr $($(,$var)*)*, {
-                    $ty_res { $($($var),*),* }
-                })
+                zip_match! {
+                    ($($($var),*),*) => {
+                        $ty_res { $($($var),*),* }
+                    }
+                }
             }
         }
     };
@@ -198,7 +198,7 @@ engine_globals!(ENGINE_GLOBALS = EngineGlobals {
         camera => Camera,
         screen => Screen,
     }
-}, EngineGlobalPaths, Zip7Msgs);
+}, EngineGlobalPaths);
 
 // Paths to engine items needed by parsing
 paths!(ENGINE_PATHS = EnginePaths {

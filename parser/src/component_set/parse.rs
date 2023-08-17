@@ -10,7 +10,6 @@ use syn::{
 use crate::parse::ItemPath;
 
 use shared::{
-    msg_result::MsgTrait,
     syn::{
         error::{err, CatchSynError, SpannedResult},
         get_type_generics, parse_tokens, use_path_from_syn, Parse, StreamParse,

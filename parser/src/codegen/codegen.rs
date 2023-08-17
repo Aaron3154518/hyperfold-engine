@@ -1,13 +1,10 @@
-use std::{env::temp_dir, fs, path::PathBuf};
-
-use diagnostic::CatchErr;
+use diagnostic::{zip_match, CatchErr, CombineResults, ZipResults};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
+use std::{env::temp_dir, fs, path::PathBuf};
 
 use shared::{
     constants::{INDEX, INDEX_SEP},
-    match_ok,
-    msg_result::{CombineMsgs, MsgTrait, Zip2Msgs, Zip9Msgs},
     syn::{error::MsgResult, ToRange},
     traits::{Catch, CollectVec, CollectVecInto, ThenOk},
 };
@@ -52,7 +49,7 @@ pub fn codegen(crates: &Crates, items: &Items) -> MsgResult<Vec<TokenStream>> {
         .map_vec_into(|cr| {
             let add_event = super::event_trait_defs(cr.idx, &items.events, &items.states, crates);
             let add_component = super::component_trait_defs(cr.idx, &items.components, crates);
-            match_ok!(Zip2Msgs, add_event, add_component, {
+            zip_match!((add_event, add_component) => {
                 Traits {
                     add_event,
                     add_component,
@@ -89,18 +86,12 @@ pub fn codegen(crates: &Crates, items: &Items) -> MsgResult<Vec<TokenStream>> {
         #[allow(unused_parens)]
         #[allow(dead_code)]
     );
-    match_ok!(
-        Zip9Msgs,
-        globals,
-        components,
-        component_traits,
-        events,
-        event_traits,
-        trait_defs,
-        manager_impl,
-        use_stmts,
-        main_use_stmts,
-        {
+    zip_match!(
+        (
+            globals, components, component_traits,
+            events, event_traits, trait_defs,
+            manager_impl, use_stmts, main_use_stmts
+        ) => {
             trait_defs
                 .into_iter()
                 .zip(use_stmts)

@@ -8,9 +8,8 @@ use std::{
     path::PathBuf,
 };
 
-use diagnostic::{CatchErr, ErrForEach, ToErr};
+use diagnostic::{CatchErr, ErrForEach, ErrorTrait, ToErr};
 use shared::{
-    msg_result::ToMsgs,
     syn::error::{GetVec, MsgResult},
     traits::{Call, Catch, CollectVec, CollectVecInto, ExpandEnum, GetSlice, PushInto},
 };

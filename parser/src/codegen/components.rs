@@ -1,10 +1,9 @@
+use diagnostic::{zip_match, CombineResults, ZipResults};
 use proc_macro2::TokenStream;
 use quote::quote;
 use std::array;
 
 use shared::{
-    match_ok,
-    msg_result::{CombineMsgs, Zip5Msgs},
     syn::{error::MsgResult, vec_to_path},
     traits::{AndThen, CollectVec, CollectVecInto, ThenOk},
 };
@@ -113,14 +112,8 @@ pub fn components(
     let entity_map = crates.get_syn_path(cr_idx, &ENGINE_PATHS.entity_map);
     let singleton = crates.get_syn_path(cr_idx, &ENGINE_PATHS.singleton);
 
-    match_ok!(
-        Zip5Msgs,
-        types,
-        entity_set,
-        entity_trash,
-        entity_map,
-        singleton,
-        {
+    zip_match!(
+        (types, entity_set, entity_trash, entity_map, singleton) => {
             codegen(CodegenArgs {
                 struct_name: &CODEGEN_IDENTS.components,
                 components,
@@ -177,14 +170,8 @@ pub fn component_trait_impls(
     let entity = crates.get_syn_path(cr_idx, &ENGINE_PATHS.entity);
     let singleton = crates.get_syn_path(cr_idx, &ENGINE_PATHS.singleton);
 
-    match_ok!(
-        Zip5Msgs,
-        types,
-        crate_paths,
-        add_comp_trait,
-        entity,
-        singleton,
-        {
+    zip_match!(
+        (types, crate_paths, add_comp_trait, entity, singleton) => {
             let mut adds = Vec::new();
             for (i, c) in components.iter().enumerate() {
                 let var = component_var(i);

@@ -1,10 +1,9 @@
-use diagnostic::ToErr;
+use diagnostic::{CombineResults, ResultsTrait, ToErr};
 use proc_macro2::Span;
 use std::collections::{HashMap, HashSet};
 
 use shared::{
     constants::TAB,
-    msg_result::{CombineMsgs, MsgTrait},
     parsing::SystemMacroArgs,
     syn::error::{SpannedResult, ToError},
     traits::{CollectVec, CollectVecInto, PushInto, ThenOk},
@@ -161,7 +160,7 @@ impl ItemSystem {
                     })
                     .combine_results()
                     // Require event
-                    .then_msgs(
+                    .take_value(
                         event.ok_or(self.span.error("System must specify an event").as_vec()),
                     )
                     // Check component reference mutability

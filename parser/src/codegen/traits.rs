@@ -1,9 +1,7 @@
-use diagnostic::ToErr;
+use diagnostic::{zip_match, CombineResults, ToErr, ZipResults};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use shared::{
-    match_ok,
-    msg_result::{CombineMsgs, Zip2Msgs, Zip3Msgs},
     syn::{error::MsgResult, vec_to_path},
     traits::{CollectVec, CollectVecInto},
 };
@@ -38,7 +36,7 @@ pub fn trait_defs<const N: usize>(
                 .get_paths()
                 .filter_map_vec_into(|p| (cr_idx == p.cr_idx).then(|| vec_to_path(p.path.to_vec())))
                 .combine_results();
-            match_ok!(Zip2Msgs, tr, paths, {
+            zip_match!((tr, paths) => {
                 paths.map_vec_into(|p| quote!(#tr<#p>))
             })
         })
@@ -58,7 +56,7 @@ pub fn trait_defs<const N: usize>(
                 })
         });
 
-    match_ok!(Zip2Msgs, dep_traits, item_traits, {
+    zip_match!((dep_traits, item_traits) => {
         let mut traits = dep_traits
             .into_iter()
             .chain(item_traits.into_iter().flatten());

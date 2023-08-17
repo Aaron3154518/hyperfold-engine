@@ -1,7 +1,7 @@
-use std::{collections::VecDeque, fmt::Display, ops::Neg};
-
+use diagnostic::{CombineResults, ZipResults};
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
+use std::{collections::VecDeque, fmt::Display, ops::Neg};
 use syn::{spanned::Spanned, Error, Token};
 
 use super::{
@@ -12,7 +12,6 @@ use crate::parse::{
     resolve_path, ComponentSymbol, DiscardSymbol, ItemPath, MatchSymbol, ModInfo, ModInfoMut,
 };
 use shared::{
-    msg_result::{CombineMsgs, MsgTrait, Zip2Msgs},
     syn::{
         error::{AddSpan, SpannedResult},
         get_fn_name, parse_tokens, ToRange,

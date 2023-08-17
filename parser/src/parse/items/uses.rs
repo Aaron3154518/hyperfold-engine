@@ -1,10 +1,7 @@
-use diagnostic::{CatchErr, ResultsTrait};
-use shared::{
-    msg_result::ToMsgs,
-    syn::{
-        add_use_item,
-        error::{SpannedResult, ToError},
-    },
+use diagnostic::{CatchErr, ErrorTrait, ResultsTrait};
+use shared::syn::{
+    add_use_item,
+    error::{SpannedResult, ToError},
 };
 
 use crate::parse::{attributes::get_attributes_if_active, AstMod};

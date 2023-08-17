@@ -1,8 +1,7 @@
+use diagnostic::CombineResults;
 use proc_macro2::TokenStream;
 use quote::quote;
 use shared::{
-    match_ok,
-    msg_result::CombineMsgs,
     syn::{error::MsgResult, vec_to_path},
     traits::{CollectVec, CollectVecInto},
 };
@@ -52,7 +51,7 @@ pub fn globals(
         .map_vec(|g| crates.get_item_syn_path(cr_idx, &g.data.path))
         .combine_results();
 
-    match_ok!(types, {
+    types.map(|types| {
         codegen(CodegenArgs {
             struct_name: &CODEGEN_IDENTS.globals,
             vars,

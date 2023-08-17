@@ -1,6 +1,5 @@
-use diagnostic::ToErr;
+use diagnostic::{CombineResults, ToErr};
 use shared::{
-    msg_result::CombineMsgs,
     syn::{
         error::{GetVec, MsgResult},
         vec_to_path,

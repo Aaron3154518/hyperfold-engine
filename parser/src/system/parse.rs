@@ -1,10 +1,9 @@
-use diagnostic::{ErrorSpan, ResultsTrait, ToErr};
+use diagnostic::{CombineResults, ErrorSpan, ResultsTrait, ToErr};
 use proc_macro2::Span;
 use quote::ToTokens;
 use syn::spanned::Spanned;
 
 use shared::{
-    msg_result::CombineMsgs,
     parsing::SystemMacroArgs,
     syn::{
         error::{err, AddSpan, SpannedResult, SplitBuildResult},

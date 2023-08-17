@@ -1,9 +1,8 @@
+use diagnostic::{zip_match, CombineResults, ZipResults};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use shared::{
     constants::{STATE_DATA, STATE_ENTER_EVENT, STATE_EXIT_EVENT},
-    match_ok,
-    msg_result::{CombineMsgs, Zip2Msgs, Zip5Msgs},
     syn::{error::MsgResult, vec_to_path},
     traits::{unzip::Unzip3, CollectVec, CollectVecInto, MapNone},
 };
@@ -109,7 +108,7 @@ pub fn events(
     let s_data = format_ident!("{STATE_DATA}");
     let s_on_exit = format_ident!("{STATE_EXIT_EVENT}");
 
-    match_ok!(Zip2Msgs, e_types, s_types, {
+    zip_match!((e_types, s_types) => {
         quote!(
             struct #events_type {
                 #(#e_vars: Vec<#e_types>,)*
@@ -261,14 +260,8 @@ pub fn event_trait_impls(
     let data = format_ident!("{STATE_DATA}");
     let on_enter = format_ident!("{STATE_ENTER_EVENT}");
 
-    match_ok!(
-        Zip5Msgs,
-        e_types,
-        s_types,
-        crate_paths,
-        add_event_trait,
-        set_state_trait,
-        {
+    zip_match!(
+        (e_types, s_types, crate_paths, add_event_trait, set_state_trait) => {
             quote!(
                 #(
                     impl #add_event_trait<#e_types> for #events_type {

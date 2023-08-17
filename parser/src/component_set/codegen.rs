@@ -1,8 +1,7 @@
+use diagnostic::{zip_match, ZipResults};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use shared::{
-    match_ok,
-    msg_result::Zip3Msgs,
     syn::{
         error::{MsgResult, SpannedResult},
         get_fn_name, Quote,
@@ -73,7 +72,7 @@ impl ComponentSet {
         let entity_set = crates.get_syn_path(cr_idx, &ENGINE_PATHS.entity_set);
         let entity = crates.get_syn_path(cr_idx, &ENGINE_PATHS.entity);
 
-        match_ok!(Zip3Msgs, filter_fn, entity, entity_set, {
+        zip_match!((filter_fn, entity, entity_set) => {
             component_sets
                 .enumer_map_vec(|(i, cs)| cs.codegen_get_keys(i, &filter_fn, &entity, &entity_set))
         })

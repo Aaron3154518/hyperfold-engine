@@ -3,7 +3,7 @@ use std::{
     path::{Display, PathBuf},
 };
 
-use diagnostic::{CatchErr, ErrForEach, ErrorSpan, ResultsTrait, ToErr};
+use diagnostic::{CatchErr, ErrForEach, ErrorSpan, ErrorTrait, ResultsTrait, ToErr};
 use proc_macro2::{Span, TokenStream};
 
 use syn::{spanned::Spanned, visit::Visit};
@@ -25,7 +25,6 @@ use super::{
 
 use shared::{
     macros::{expand_enum, ExpandEnum},
-    msg_result::ToMsgs,
     parsing::{ComponentMacroArgs, GlobalMacroArgs},
     syn::{
         add_use_item,

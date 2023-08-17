@@ -1,10 +1,8 @@
-use diagnostic::ErrForEach;
+use diagnostic::{zip_match, CombineResults, ErrForEach, ErrorTrait, ResultsTrait, ZipResults};
 use proc_macro2::TokenStream;
 use quote::quote;
 
 use shared::{
-    match_ok,
-    msg_result::{CombineMsgs, MsgTrait, ToMsgs, Zip2Msgs, Zip3Msgs, Zip5Msgs},
     syn::{
         error::{AddSpan, GetVec, MsgResult},
         Quote,
@@ -129,13 +127,13 @@ pub fn codegen_systems(
     let mut systems = Vec::new();
     let mut system_events = Vec::new();
 
-    let errs = match_ok!(Zip3Msgs, event_trait, intersect, intersect_opt, {
+    let errs = zip_match!((event_trait, intersect, intersect_opt) => {
         (&items.systems).do_for_each(|system| {
             let func_name = crates
                 .get_item_syn_path(cr_idx, &system.path)
                 .add_span(&system.span);
             let args = system.validate(items);
-            match_ok!(Zip2Msgs, func_name, args, {
+            zip_match!((func_name, args) => {
                 match args {
                     FnArgs::Init { globals } => {
                         init_systems.push(codegen_init_system(globals, func_name))

@@ -1,12 +1,8 @@
+use diagnostic::{zip_match, ZipResults};
 use proc_macro2::TokenStream;
 use quote::quote;
 
-use shared::{
-    match_ok,
-    msg_result::{Zip5Msgs, Zip6Msgs},
-    syn::error::MsgResult,
-    traits::CollectVecInto,
-};
+use shared::{syn::error::MsgResult, traits::CollectVecInto};
 
 use crate::{
     component_set::ComponentSet,
@@ -62,14 +58,8 @@ fn init_events_fn(cr_idx: usize, items: &Items, crates: &Crates) -> MsgResult<To
     let core_pre_render = crates.get_syn_path(cr_idx, &ENGINE_PATHS.core_pre_render);
     let core_render = crates.get_syn_path(cr_idx, &ENGINE_PATHS.core_render);
 
-    match_ok!(
-        Zip5Msgs,
-        add_event,
-        core_events,
-        core_update,
-        core_pre_render,
-        core_render,
-        {
+    zip_match!(
+        (add_event, core_events, core_update, core_pre_render, core_render) => {
             quote!(
                 fn init_events(&self, ts: u32) -> #events {
                     let mut #events_var = #events::new();
@@ -109,15 +99,8 @@ pub fn manager_impl(cr_idx: usize, items: &Items, crates: &Crates) -> MsgResult<
         ComponentSet::codegen_get_keys_fns(cr_idx, &items.component_sets, crates);
     let manager_trait = crates.get_syn_path(cr_idx, &ENGINE_PATHS.manager_trait);
 
-    match_ok!(
-        Zip6Msgs,
-        result,
-        init_events,
-        path_to_engine,
-        component_set_fns,
-        global_paths,
-        manager_trait,
-        {
+    zip_match!(
+        (result, init_events, path_to_engine, component_set_fns, global_paths, manager_trait) => {
             let SystemsCodegenResult {
                 init_systems,
                 mut systems,

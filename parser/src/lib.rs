@@ -13,15 +13,12 @@ mod utils;
 use std::{io::Write, path::PathBuf};
 
 use codegen::write_codegen;
-use diagnostic::{Diagnostic, DiagnosticLevel};
+use diagnostic::{Diagnostic, DiagnosticLevel, ResultsTrait};
 use resolve::Items;
 
 use component_set::ComponentSetLabels;
 use parse::{AstCrate, ComponentSymbol};
-use shared::{
-    msg_result::{MsgTrait, ToMsgs, Zip2Msgs},
-    traits::{Call, CollectVec, CollectVecInto, GetSlice},
-};
+use shared::traits::{Call, CollectVec, CollectVecInto, GetSlice};
 use utils::paths::Crate;
 
 // Process:

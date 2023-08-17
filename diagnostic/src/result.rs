@@ -138,6 +138,9 @@ pub trait ResultsTrait<T, E> {
     // Adds/sets errors if rhs is Err
     fn take_errs<U>(self, rhs: Results<U, E>) -> Results<T, E>;
 
+    // Same as take_errs, but takes rhs's values
+    fn take_value<U>(self, rhs: Results<U, E>) -> Results<U, E>;
+
     // Adds errs to vec
     fn record_errs(self, errs: &mut Vec<E>) -> Option<T>;
 }
@@ -154,6 +157,10 @@ impl<T, E> ResultsTrait<T, E> for Results<T, E> {
         }
     }
 
+    fn take_value<U>(self, rhs: Results<U, E>) -> Results<U, E> {
+        rhs.take_errs(self)
+    }
+
     fn record_errs(self, errs: &mut Vec<E>) -> Option<T> {
         match self {
             Ok(t) => Some(t),
@@ -161,6 +168,20 @@ impl<T, E> ResultsTrait<T, E> for Results<T, E> {
                 errs.extend(es);
                 None
             }
+        }
+    }
+}
+
+// Convert Vec<E> to Results<T, E>
+pub trait ErrorTrait<T, E> {
+    fn err_or(self, t: T) -> Results<T, E>;
+}
+
+impl<T, E> ErrorTrait<T, E> for Vec<E> {
+    fn err_or(self, t: T) -> Results<T, E> {
+        match self.is_empty() {
+            true => Ok(t),
+            false => Err(self),
         }
     }
 }

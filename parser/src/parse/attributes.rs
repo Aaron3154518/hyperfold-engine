@@ -1,11 +1,10 @@
-use diagnostic::CatchErr;
+use diagnostic::{CatchErr, ErrorTrait, ResultsTrait};
 use parse_cfg::Cfg;
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, ToTokens};
 use syn::spanned::Spanned;
 
 use shared::{
-    msg_result::{MsgTrait, ToMsgs},
     syn::{
         error::{SpannedResult, ToError},
         use_path_from_vec,

@@ -1,4 +1,4 @@
-use diagnostic::{CatchErr, ErrForEach, ErrorSpan};
+use diagnostic::{CatchErr, CombineResults, ErrForEach, ErrorSpan, ErrorTrait, ResultsTrait};
 use proc_macro2::{token_stream::IntoIter, Span, TokenStream, TokenTree};
 use quote::{quote, ToTokens};
 use std::{collections::VecDeque, env::temp_dir, fs, path::PathBuf};
@@ -22,8 +22,6 @@ use crate::{
 use shared::{
     constants::{INDEX, INDEX_SEP, STATE_DATA, STATE_ENTER_EVENT, STATE_EXIT_EVENT, STATE_LABEL},
     macros::ExpandEnum,
-    match_ok,
-    msg_result::{CombineMsgs, MsgTrait, ToMsgs, Zip2Msgs, Zip8Msgs},
     parsing::{ComponentMacroArgs, GlobalMacroArgs, SystemMacroArgs},
     syn::{
         error::{AddSpan, MsgResult, SpannedError, SpannedResult, SplitBuildResult},
