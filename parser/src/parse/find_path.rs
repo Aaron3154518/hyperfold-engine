@@ -6,7 +6,10 @@ use crate::parse::{
     AstCrate, ModInfo, {AstMod, Symbol},
 };
 use shared::{
-    syn::{error::UnspannedResult, use_path_from_syn},
+    syn::{
+        error::{Result, StrToError},
+        use_path_from_syn,
+    },
     traits::{Catch, CollectVecInto},
 };
 
@@ -45,7 +48,7 @@ pub fn resolve_path_from_crate<'a>(
     mut path: Vec<String>,
     cr: &'a AstCrate,
     crates: &'a Vec<AstCrate>,
-) -> UnspannedResult<&'a Symbol> {
+) -> Result<&'a Symbol> {
     // println!("Resolve: {}, crate: {}", path.join("::"), cr.idx);
     match path.first() {
         Some(p) => {
@@ -63,15 +66,15 @@ pub fn resolve_path_from_crate<'a>(
                             [vec!["crate".to_string()], path[1..].to_vec()].concat(),
                             crates
                                 .get(*idx)
-                                .catch_err("Invalid dependency index".to_string())?,
+                                .catch_err("Invalid dependency index".trace())?,
                             crates,
                         )
                     })
                 }),
             }
-            .map_or(resolve_error(path).as_err(), |r| r)
+            .map_or_else(|| resolve_error(path).trace().as_err(), |r| r)
         }
-        None => resolve_error(path).as_err(),
+        None => resolve_error(path).trace().as_err(),
     }
 }
 
@@ -84,7 +87,7 @@ fn resolve_path_from_mod<'a>(
     path: Vec<String>,
     idx: usize,
     (m, cr, crates): ModInfo<'a>,
-) -> UnspannedResult<&'a Symbol> {
+) -> Result<&'a Symbol> {
     // println!(
     //     "Resolve Mod: {} at {}",
     //     path.join("::"),
@@ -94,11 +97,14 @@ fn resolve_path_from_mod<'a>(
 
     let name = path
         .get(idx)
-        .catch_err(format!(
-            "Bad resolve path index: {} in path: \"{}\"",
-            idx,
-            path.join("::")
-        ))?
+        .catch_err(
+            format!(
+                "Bad resolve path index: {} in path: \"{}\"",
+                idx,
+                path.join("::")
+            )
+            .trace(),
+        )?
         .to_string();
     let is_path_end = idx == path.len() - 1;
 
@@ -109,7 +115,7 @@ fn resolve_path_from_mod<'a>(
             // println!("Found Mod: {}", name);
             return if is_path_end {
                 // The path points to a mod
-                resolve_error(path).as_err()
+                resolve_error(path).trace().as_err()
             } else {
                 resolve_path_from_mod(path, idx + 1, (m, cr, crates))
             };
@@ -123,7 +129,7 @@ fn resolve_path_from_mod<'a>(
             return if is_path_end {
                 Ok(sym)
             } else {
-                resolve_error(sym.path.to_vec()).as_err()
+                resolve_error(sym.path.to_vec()).trace().as_err()
             };
         }
     }
@@ -143,20 +149,17 @@ fn resolve_path_from_mod<'a>(
         }
     }
 
-    resolve_error(path).as_err()
+    resolve_error(path).trace().as_err()
 }
 
 // Paths that start relative to some mod item
-pub fn resolve_path<'a>(
-    path: Vec<String>,
-    (m, cr, crates): ModInfo<'a>,
-) -> UnspannedResult<&'a Symbol> {
+pub fn resolve_path<'a>(path: Vec<String>, (m, cr, crates): ModInfo<'a>) -> Result<&'a Symbol> {
     // println!("Local Resolve: {}", path.join("::"));
     let cr_idx = cr.idx;
 
     let name = path
         .first()
-        .catch_err(format!("Empty resolve path: {}", path.join("::")))?;
+        .catch_err(format!("Empty resolve path: {}", path.join("::")).trace())?;
 
     // Can't be local
     if name == "crate" {
@@ -206,15 +209,12 @@ pub fn resolve_syn_path<'a>(
     parent_path: &Vec<String>,
     path: &syn::Path,
     (m, cr, crates): ModInfo<'a>,
-) -> UnspannedResult<&'a Symbol> {
+) -> Result<&'a Symbol> {
     resolve_path(use_path_from_syn(&m.path, path), (m, cr, crates))
 }
 
-impl<'a> MatchSymbol<'a> for UnspannedResult<&'a Symbol> {
-    fn and_then_impl<T>(
-        self,
-        f: impl FnOnce(&'a Symbol) -> UnspannedResult<T>,
-    ) -> UnspannedResult<T> {
+impl<'a> MatchSymbol<'a> for Result<&'a Symbol> {
+    fn and_then_impl<T>(self, f: impl FnOnce(&'a Symbol) -> Result<T>) -> Result<T> {
         self.and_then(f)
     }
 }

@@ -4,15 +4,15 @@ use syn::{parse::ParseStream, spanned::Spanned};
 
 use crate::traits::Increment;
 
-use super::error::{err, SpannedResult};
+use super::error::{Result, ToError};
 
 pub trait Parse<T = Self> {
-    fn parse(input: ParseStream) -> SpannedResult<T>;
+    fn parse(input: ParseStream) -> Result<T>;
 }
 
-pub struct SpannedResultWrapper<T>(pub SpannedResult<T>);
+pub struct ResultWrapper<T>(pub Result<T>);
 
-impl<T> syn::parse::Parse for SpannedResultWrapper<T>
+impl<T> syn::parse::Parse for ResultWrapper<T>
 where
     T: Parse<T>,
 {
@@ -23,12 +23,12 @@ where
         if result.is_err() {
             input.consume();
         }
-        Ok(SpannedResultWrapper(result))
+        Ok(ResultWrapper(result))
     }
 }
 
 pub trait StreamParse {
-    fn parse_stream<T>(self) -> SpannedResult<T>
+    fn parse_stream<T>(self) -> Result<T>
     where
         T: Parse;
 
@@ -36,7 +36,7 @@ pub trait StreamParse {
 }
 
 impl StreamParse for ParseStream<'_> {
-    fn parse_stream<T>(self) -> SpannedResult<T>
+    fn parse_stream<T>(self) -> Result<T>
     where
         T: Parse,
     {
@@ -55,12 +55,12 @@ impl StreamParse for ParseStream<'_> {
     }
 }
 
-pub fn parse_tokens<T>(input: TokenStream) -> SpannedResult<T>
+pub fn parse_tokens<T>(input: TokenStream) -> Result<T>
 where
     T: Parse<T>,
 {
     let input_span = input.span();
-    match syn::parse2::<SpannedResultWrapper<T>>(input) {
+    match syn::parse2::<ResultWrapper<T>>(input) {
         Ok(mut t) => {
             // Add input span to empty message spans
             if let Err(errs) = &mut t.0 {
@@ -70,6 +70,6 @@ where
             }
             t.0
         }
-        Err(e) => err(&format!("{e}"), &e.span()).as_err(),
+        Err(e) => e.span().error(format!("{e}")).as_err(),
     }
 }

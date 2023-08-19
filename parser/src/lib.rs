@@ -29,7 +29,6 @@ use utils::paths::Crate;
 // 5) Parse systems; Validate arguments; insert symbols
 // 6) Codegen
 pub fn parse(entry: PathBuf) {
-    return;
     let errs = match AstCrate::parse(entry) {
         Ok(mut crates) => {
             let (items, mut errs) = Items::resolve(&mut crates);
@@ -69,15 +68,7 @@ pub fn parse(entry: PathBuf) {
                     let file = m.get_file();
                     let renderer = Renderer::new(&file);
                     for err in m.take_errors() {
-                        Diagnostic::from_span(
-                            err.msg,
-                            file,
-                            err.level,
-                            Some(renderer.render(err.level, &err.msg, &err.span, Vec::new())),
-                            err.span,
-                        )
-                        .emit()
-                        .unwrap();
+                        err.render(&renderer).emit().unwrap();
                     }
                 }
             }
@@ -87,19 +78,8 @@ pub fn parse(entry: PathBuf) {
         Err(errs) => errs,
     };
 
-    let file = "c:\\Users\\aaore\\repos\\hyperfold-games-library\\src\\main.rs".to_string();
-    let level = DiagnosticLevel::Error;
-    let span = Default::default();
-    let renderer = Renderer::new(&file);
-    for msg in errs {
-        Diagnostic::from_span(
-            msg.msg,
-            file,
-            level,
-            Some(renderer.render(level, &msg.msg, &span, vec![msg.backtrace()])),
-            span,
-        )
-        .emit()
-        .unwrap();
+    let renderer = Renderer::new("c:\\Users\\aaore\\repos\\hyperfold-games-library\\src\\main.rs");
+    for err in errs {
+        err.render(&renderer).emit().unwrap();
     }
 }

@@ -1,7 +1,7 @@
 use std::{fs, path::PathBuf};
 
 use diagnostic::ToErr;
-use shared::syn::error::PanicResult;
+use shared::syn::error::{Result, StrToError};
 use syn::visit::Visit;
 
 use super::{ast_mod::AstModType, AstMod};
@@ -36,7 +36,7 @@ impl From<DirType> for AstModType {
 
 // Pass 1: parsing
 impl AstMod {
-    pub fn parse_mod(path: PathBuf, mod_path: &Vec<String>) -> PanicResult<Tree<Self>> {
+    pub fn parse_mod(path: PathBuf, mod_path: &Vec<String>) -> Result<Tree<Self>> {
         if path.is_dir() {
             Self::parse_dir(path, mod_path, DirType::Mod)
         } else {
@@ -45,24 +45,18 @@ impl AstMod {
             if f_path.is_file() {
                 Self::parse_file(f_path, mod_path, AstModType::File)
             } else {
-                format!("File does not exist: {}", f_path.display()).as_err()
+                format!("File does not exist: {}", f_path.display())
+                    .trace()
+                    .as_err()
             }
         }
     }
 
-    pub fn parse_file(
-        path: PathBuf,
-        mod_path: &Vec<String>,
-        ty: AstModType,
-    ) -> PanicResult<Tree<Self>> {
+    pub fn parse_file(path: PathBuf, mod_path: &Vec<String>, ty: AstModType) -> Result<Tree<Self>> {
         Self::parse(path, mod_path.to_vec(), ty)
     }
 
-    pub fn parse_dir(
-        path: PathBuf,
-        mod_path: &Vec<String>,
-        ty: DirType,
-    ) -> PanicResult<Tree<Self>> {
+    pub fn parse_dir(path: PathBuf, mod_path: &Vec<String>, ty: DirType) -> Result<Tree<Self>> {
         Self::parse_file(path.join(ty.to_file()), mod_path, AstModType::from(ty))
     }
 }

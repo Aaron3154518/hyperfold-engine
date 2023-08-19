@@ -11,7 +11,7 @@ use crate::parse::ItemPath;
 
 use shared::{
     syn::{
-        error::{err, CatchSynError, SpannedResult},
+        error::{CatchSynError, Result, ToError},
         get_type_generics, parse_tokens, use_path_from_syn, Parse, StreamParse,
     },
     traits::{CollectVec, PushInto},
@@ -40,13 +40,13 @@ impl LabelOp {
 }
 
 impl Parse for LabelOp {
-    fn parse(input: syn::parse::ParseStream) -> SpannedResult<Self> {
+    fn parse(input: syn::parse::ParseStream) -> Result<Self> {
         let span = input.span();
         input
             .parse::<Token!(&&)>()
             .map(|_| Self::And)
             .or_else(|_| input.parse::<Token!(||)>().map(|_| Self::Or))
-            .catch_err(err("Expected Op: '||' or '&&'", &span))
+            .catch_err(span.error("Expected Op: '||' or '&&'"))
     }
 }
 
@@ -71,7 +71,7 @@ enum Expression {
 }
 
 impl Expression {
-    pub fn to_item(self, neg: bool) -> SpannedResult<AstLabelItem> {
+    pub fn to_item(self, neg: bool) -> Result<AstLabelItem> {
         let mut item = match self {
             Expression::Item(i) => i,
             Expression::Expr {
@@ -81,12 +81,12 @@ impl Expression {
                 span,
             } => {
                 let mut get_item =
-                    |items: Vec<AstLabelItem>, op: LabelOp| -> SpannedResult<AstLabelItem> {
+                    |items: Vec<AstLabelItem>, op: LabelOp| -> Result<AstLabelItem> {
                         Ok(if items.len() <= 1 {
                             items
                                 .into_iter()
                                 .next()
-                                .ok_or(err("Empty label expression", &span).as_vec())?
+                                .ok_or(span.error("Empty label expression").as_vec())?
                         } else {
                             // Combine expressions with the same operation
                             let items = items.into_iter().fold(Vec::new(), |mut items, item| {
@@ -138,7 +138,7 @@ impl Expression {
 }
 
 impl Parse for Expression {
-    fn parse(input: syn::parse::ParseStream) -> SpannedResult<Self> {
+    fn parse(input: syn::parse::ParseStream) -> Result<Self> {
         let span = input.span();
 
         let first = input.parse_stream()?;
@@ -191,7 +191,7 @@ impl AstLabelItem {
 }
 
 impl Parse for AstLabelItem {
-    fn parse(input: syn::parse::ParseStream) -> SpannedResult<Self> {
+    fn parse(input: syn::parse::ParseStream) -> Result<Self> {
         let mut not = false;
         while input.parse::<Token!(!)>().is_ok() {
             not = !not;
@@ -203,7 +203,7 @@ impl Parse for AstLabelItem {
             |_| {
                 input
                     .parse::<syn::TypePath>()
-                    .catch_err(err("Expected label type", &span))
+                    .catch_err(span.error("Expected label type"))
                     .map(|p| Self::Item {
                         not,
                         span: p.span(),
@@ -249,7 +249,7 @@ pub struct AstComponentSetItem {
 }
 
 impl AstComponentSetItem {
-    pub fn from(var: String, ty: &syn::Type) -> SpannedResult<Self> {
+    pub fn from(var: String, ty: &syn::Type) -> Result<Self> {
         let span = ty.span();
         match ty {
             syn::Type::Path(ty) => {
@@ -257,20 +257,20 @@ impl AstComponentSetItem {
                 match path.join("::").as_str() {
                     "Option" => {
                         match get_type_generics(&ty)
-                            .ok_or(err("Missing generics after Option<>", &ty).as_vec())?[..]
+                            .ok_or(ty.error("Missing generics after Option<>").as_vec())?[..]
                         {
                             [arg] => match arg {
                                 syn::GenericArgument::Type(ty) => {
                                     let mut i = Self::from(var, ty)?;
                                     if i.is_opt {
-                                        return err("Cannot nest Option<>", &ty).as_err();
+                                        return ty.error("Cannot nest Option<>").as_err();
                                     }
                                     i.is_opt = true;
                                     Ok(i)
                                 }
-                                _ => err("Expected type generic", &arg).as_err(),
+                                _ => arg.error("Expected type generic").as_err(),
                             },
-                            _ => err("Multiple generics after Option<>", &ty).as_err(),
+                            _ => ty.error("Multiple generics after Option<>").as_err(),
                         }
                     }
                     _ => Ok(Self {
@@ -284,20 +284,22 @@ impl AstComponentSetItem {
                 }
             }
             syn::Type::Reference(ty) => Self::from(var, &ty.elem).and_then(|mut i| {
-                if i.is_mut {
-                    return err("Option args may not be taken by reference", &ty).as_err();
+                if i.is_opt {
+                    return ty
+                        .error("Optional arguments may not be taken by reference")
+                        .as_err();
                 }
                 i.ref_cnt += 1;
                 i.is_mut |= ty.mutability.is_some();
                 Ok(i)
             }),
-            _ => err("Invalid variable type", &span).as_err(),
+            _ => ty.error("Invalid argument type").as_err(),
         }
     }
 }
 
 impl Parse for AstComponentSetItem {
-    fn parse(input: syn::parse::ParseStream) -> SpannedResult<Self> {
+    fn parse(input: syn::parse::ParseStream) -> Result<Self> {
         let span = input.span();
         // var : type
         let var = input
@@ -317,7 +319,7 @@ pub struct AstComponentSet {
 }
 
 impl Parse for AstComponentSet {
-    fn parse(input: syn::parse::ParseStream) -> SpannedResult<Self> {
+    fn parse(input: syn::parse::ParseStream) -> Result<Self> {
         let mut labels = None;
 
         // First ident

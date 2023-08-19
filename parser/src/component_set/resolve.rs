@@ -13,7 +13,7 @@ use crate::parse::{
 };
 use shared::{
     syn::{
-        error::{AddSpan, SpannedResult},
+        error::{MutateResults, Result},
         get_fn_name, parse_tokens, ToRange,
     },
     traits::{Call, CollectVec, CollectVecInto, PushInto, ThenNone},
@@ -35,12 +35,12 @@ pub enum LabelItem {
 }
 
 impl LabelItem {
-    fn resolve(item: AstLabelItem, (m, cr, crates): ModInfo) -> SpannedResult<Self> {
+    fn resolve(item: AstLabelItem, (m, cr, crates): ModInfo) -> Result<Self> {
         match item {
             AstLabelItem::Item { not, ty, span } => resolve_path(ty, (m, cr, crates))
                 .expect_component()
                 .discard_symbol()
-                .add_span(&m.span)
+                .with_span(&m.span)
                 .map(|comp| Self::Item { not, comp, span }),
             AstLabelItem::Expression { op, items, span } => items
                 .into_iter()
@@ -93,11 +93,11 @@ impl ComponentSetItem {
             span,
         }: AstComponentSetItem,
         (m, cr, crates): ModInfo,
-    ) -> SpannedResult<Self> {
+    ) -> Result<Self> {
         resolve_path(ty.path.to_vec(), (m, cr, crates))
             .expect_component()
             .discard_symbol()
-            .add_span(&m.span)
+            .with_span(&m.span)
             .map(|comp| Self {
                 var,
                 comp,
@@ -165,7 +165,7 @@ impl ComponentSet {
             .is_some_and(|comp| comp.args.is_singleton)
     }
 
-    pub fn parse(tokens: TokenStream, (m, cr, crates): ModInfo) -> SpannedResult<Self> {
+    pub fn parse(tokens: TokenStream, (m, cr, crates): ModInfo) -> Result<Self> {
         let span = tokens.span();
         parse_tokens(tokens).and_then(|cs| Self::resolve(cs, (m, cr, crates)))
     }
@@ -177,7 +177,7 @@ impl ComponentSet {
             labels,
         }: AstComponentSet,
         (m, cr, crates): ModInfo,
-    ) -> SpannedResult<Self> {
+    ) -> Result<Self> {
         args.into_iter()
             .map_vec_into(|arg| ComponentSetItem::resolve(arg, (m, cr, crates)))
             .combine_results()
@@ -196,7 +196,7 @@ impl ComponentSet {
                             // TODO: warning
                             ComponentSetLabels::Constant(false) => {
                                 // m.warn(
-                                //     &format!(
+                                //     format!(
                                 //     "In Component set '{ident}': Label expression is never true"
                                 // ),
                                 //     item.span(),

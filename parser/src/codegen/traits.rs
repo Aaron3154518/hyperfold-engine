@@ -2,7 +2,10 @@ use diagnostic::{zip_match, CombineResults, ToErr, ZipResults};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use shared::{
-    syn::{error::PanicResult, vec_to_path},
+    syn::{
+        error::{GetVec, Result},
+        vec_to_path,
+    },
     traits::{CollectVec, CollectVecInto},
 };
 
@@ -25,7 +28,7 @@ pub fn trait_defs<const N: usize>(
     crates: &Crates,
     trait_ident: &syn::Ident,
     item_traits: [(&CratePath, &dyn GetTraitTypes); N],
-) -> PanicResult<TokenStream> {
+) -> Result<TokenStream> {
     let macro_cr_idx = crates.get_crate_index(Crate::Macros);
 
     let CodegenIdents { namespace, .. } = &*CODEGEN_IDENTS;
@@ -43,18 +46,15 @@ pub fn trait_defs<const N: usize>(
         .combine_results();
     // Event traits for dependency crates
     let macro_cr_idx = crates.get_crate_index(Crate::Macros);
-    let mut dep_traits = crates
-        .get(cr_idx)
-        .ok_or(format!("Invalid crate index: {cr_idx}").as_vec())
-        .map(|cr| {
-            cr.deps
-                .iter()
-                .filter(|(idx, _)| idx != &&macro_cr_idx)
-                .map_vec_into(|(idx, alias)| {
-                    let alias = format_ident!("{alias}");
-                    quote!(#alias::#namespace::#trait_ident)
-                })
-        });
+    let mut dep_traits = crates.try_get(cr_idx).map(|cr| {
+        cr.deps
+            .iter()
+            .filter(|(idx, _)| idx != &&macro_cr_idx)
+            .map_vec_into(|(idx, alias)| {
+                let alias = format_ident!("{alias}");
+                quote!(#alias::#namespace::#trait_ident)
+            })
+    });
 
     zip_match!((dep_traits, item_traits) => {
         let mut traits = dep_traits

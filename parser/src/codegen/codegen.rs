@@ -5,7 +5,10 @@ use std::{env::temp_dir, fs, path::PathBuf};
 
 use shared::{
     constants::{INDEX, INDEX_SEP},
-    syn::{error::PanicResult, ToRange},
+    syn::{
+        error::{Result, StrToError},
+        ToRange,
+    },
     traits::{Catch, CollectVec, CollectVecInto, ThenOk},
 };
 
@@ -21,7 +24,7 @@ use crate::{
 
 use super::Crates;
 
-pub fn codegen(crates: &Crates, items: &Items) -> PanicResult<Vec<TokenStream>> {
+pub fn codegen(crates: &Crates, items: &Items) -> Result<Vec<TokenStream>> {
     let main_cr_idx = crates.get_crate_index(Crate::Main);
     let macro_cr_idx = crates.get_crate_index(Crate::Macros);
 
@@ -141,16 +144,15 @@ pub fn codegen(crates: &Crates, items: &Items) -> PanicResult<Vec<TokenStream>> 
     )
 }
 
-pub fn write_codegen(code: Vec<(&AstCrate, String)>) -> PanicResult<()> {
-    let out =
-        PathBuf::from(std::env::var("OUT_DIR").catch_err("No out dir specified".to_string())?);
+pub fn write_codegen(code: Vec<(&AstCrate, String)>) -> Result<()> {
+    let out = PathBuf::from(std::env::var("OUT_DIR").catch_err("No out dir specified".trace())?);
 
     let mut index_lines = Vec::new();
     for (i, (cr, code)) in code.into_iter().enumerate() {
         // Write to file
         let file = out.join(format!("{}.rs", i));
         fs::write(file.to_owned(), code)
-            .catch_err(format!("Could not write to: {}", file.display()))?;
+            .catch_err(format!("Could not write to: {}", file.display()).trace())?;
         index_lines.push(format!(
             "{}{}{}",
             cr.dir.to_string_lossy().to_string(),
@@ -161,5 +163,5 @@ pub fn write_codegen(code: Vec<(&AstCrate, String)>) -> PanicResult<()> {
 
     // Create index file
     fs::write(temp_dir().join(INDEX), index_lines.join("\n"))
-        .catch_err(format!("Could not write to index file: {INDEX}"))
+        .catch_err(format!("Could not write to index file: {INDEX}").trace())
 }

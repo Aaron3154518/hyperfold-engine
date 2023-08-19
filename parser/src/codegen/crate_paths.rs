@@ -1,7 +1,7 @@
 use diagnostic::{CombineResults, ToErr};
 use shared::{
     syn::{
-        error::{GetVec, PanicResult},
+        error::{GetVec, Result, StrToError},
         vec_to_path,
     },
     traits::{AndThen, CollectVec, CollectVecInto, ExpandEnum, Get2D, NoneOr},
@@ -23,7 +23,7 @@ pub struct Crates {
 }
 
 impl Crates {
-    pub fn new(crates: Vec<AstCrate>, crate_idxs: [usize; Crate::LEN]) -> PanicResult<Self> {
+    pub fn new(crates: Vec<AstCrate>, crate_idxs: [usize; Crate::LEN]) -> Result<Self> {
         let mut paths = crates.map_vec(|_| Vec::new());
         // Start with main crate
         *paths.try_get_mut(crate_idxs[Crate::Main as usize])? = (0..crates.len())
@@ -41,7 +41,7 @@ impl Crates {
         start_idx: usize,
         end_idx: usize,
         crates: &Vec<AstCrate>,
-    ) -> PanicResult<Option<Vec<String>>> {
+    ) -> Result<Option<Vec<String>>> {
         // Base case
         if start_idx == end_idx {
             return Ok(Some(vec!["crate".to_string()]));
@@ -78,7 +78,7 @@ impl Crates {
         &self,
         cr_idx: usize,
         block_crates: [usize; N],
-    ) -> PanicResult<Vec<(usize, Vec<String>)>> {
+    ) -> Result<Vec<(usize, Vec<String>)>> {
         self.paths.try_get(cr_idx).map(|v| {
             v.enumer_filter_map_vec(|(i, path)| {
                 (!block_crates.contains(&i))
@@ -91,7 +91,7 @@ impl Crates {
         &self,
         cr_idx: usize,
         block_crates: [usize; N],
-    ) -> PanicResult<Vec<(usize, syn::Path)>> {
+    ) -> Result<Vec<(usize, syn::Path)>> {
         self.get_crate_paths(cr_idx, block_crates)
             .and_then(|paths| {
                 paths
@@ -105,9 +105,13 @@ impl Crates {
         self.paths.get2d(start_idx, end_idx).and_then(|v| v.clone())
     }
 
-    pub fn get_crate_syn_path(&self, start_idx: usize, end_idx: usize) -> PanicResult<syn::Path> {
+    pub fn get_crate_syn_path(&self, start_idx: usize, end_idx: usize) -> Result<syn::Path> {
         self.get_crate_path(start_idx, end_idx)
-            .ok_or(format!("No path from {start_idx} to {end_idx}").as_vec())
+            .ok_or(
+                format!("No path from {start_idx} to {end_idx}")
+                    .trace()
+                    .as_vec(),
+            )
             .and_then(|v| vec_to_path(v))
     }
 
@@ -115,37 +119,43 @@ impl Crates {
         self.get_crate_path(start_idx, self.get_crate_index(cr))
     }
 
-    pub fn get_named_crate_syn_path(&self, start_idx: usize, cr: Crate) -> PanicResult<syn::Path> {
+    pub fn get_named_crate_syn_path(&self, start_idx: usize, cr: Crate) -> Result<syn::Path> {
         self.get_named_crate_path(start_idx, cr)
-            .ok_or(format!("No path from {start_idx} to {cr:#?} crate").as_vec())
+            .ok_or(
+                format!("No path from {start_idx} to {cr:#?} crate")
+                    .trace()
+                    .as_vec(),
+            )
             .and_then(|v| vec_to_path(v))
     }
 
-    pub fn get_item_path(&self, start_idx: usize, path: &ItemPath) -> PanicResult<Vec<String>> {
+    pub fn get_item_path(&self, start_idx: usize, path: &ItemPath) -> Result<Vec<String>> {
         let i = if path.path.starts_with(&["crate".to_string()]) {
             1
         } else {
             0
         };
         self.get_crate_path(start_idx, path.cr_idx).map_or(
-            format!("No path from crate {start_idx} to crate {}", path.cr_idx).as_err(),
+            format!("No path from crate {start_idx} to crate {}", path.cr_idx)
+                .trace()
+                .as_err(),
             |pre| Ok([pre, path.path[i..].to_vec()].concat()),
         )
     }
 
-    pub fn get_path(&self, start_idx: usize, item: &CratePath) -> PanicResult<Vec<String>> {
+    pub fn get_path(&self, start_idx: usize, item: &CratePath) -> Result<Vec<String>> {
         self.get_item_path(
             start_idx,
             &ItemPath::new(self.get_crate_index(item.cr), item.full_path()),
         )
     }
 
-    pub fn get_item_syn_path(&self, start_idx: usize, path: &ItemPath) -> PanicResult<syn::Path> {
+    pub fn get_item_syn_path(&self, start_idx: usize, path: &ItemPath) -> Result<syn::Path> {
         self.get_item_path(start_idx, path)
             .and_then(|v| vec_to_path(v))
     }
 
-    pub fn get_syn_path(&self, start_idx: usize, item: &CratePath) -> PanicResult<syn::Path> {
+    pub fn get_syn_path(&self, start_idx: usize, item: &CratePath) -> Result<syn::Path> {
         self.get_path(start_idx, item).and_then(|v| vec_to_path(v))
     }
 
@@ -154,11 +164,11 @@ impl Crates {
         &self.crates
     }
 
-    pub fn get_crate<'a>(&'a self, cr: Crate) -> PanicResult<&'a AstCrate> {
+    pub fn get_crate<'a>(&'a self, cr: Crate) -> Result<&'a AstCrate> {
         self.crates.try_get(self.get_crate_index(cr))
     }
 
-    pub fn get_crate_mut<'a>(&'a mut self, cr: Crate) -> PanicResult<&'a mut AstCrate> {
+    pub fn get_crate_mut<'a>(&'a mut self, cr: Crate) -> Result<&'a mut AstCrate> {
         self.crates.try_get_mut(self.get_crate_index(cr))
     }
 
@@ -166,7 +176,6 @@ impl Crates {
         self.crate_idxs[cr as usize]
     }
 
-    // Iterate crates except macros crate
     pub fn get<'a>(&'a self, cr_idx: usize) -> Option<&'a AstCrate> {
         self.crates.get(cr_idx)
     }
@@ -175,6 +184,7 @@ impl Crates {
         self.crates.get_mut(cr_idx)
     }
 
+    // Iterate crates except macros crate
     pub fn iter<'a>(&'a self) -> impl Iterator<Item = &'a AstCrate> {
         self.crates.iter()
     }
@@ -203,5 +213,15 @@ impl Crates {
             .enumerate()
             .filter(move |(i, _)| !block_crates.contains(i))
             .map(|(_, v)| v)
+    }
+}
+
+impl GetVec<AstCrate> for Crates {
+    fn try_get<'a>(&'a self, i: usize) -> Result<&'a AstCrate> {
+        self.crates.try_get(i)
+    }
+
+    fn try_get_mut<'a>(&'a mut self, i: usize) -> Result<&'a mut AstCrate> {
+        self.crates.try_get_mut(i)
     }
 }

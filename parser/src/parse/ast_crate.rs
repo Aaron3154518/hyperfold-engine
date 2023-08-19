@@ -10,7 +10,7 @@ use std::{
 
 use diagnostic::{CatchErr, ErrForEach, ErrorTrait, ToErr};
 use shared::{
-    syn::error::{GetVec, PanicResult},
+    syn::error::{GetVec, Result, StrToError},
     traits::{Call, Catch, CollectVec, CollectVecInto, ExpandEnum, GetSlice, PushInto},
 };
 
@@ -33,14 +33,17 @@ use crate::{
 const ENGINE: &str = ".";
 const MACROS: &str = "macros";
 
-fn get_engine_dir() -> PanicResult<PathBuf> {
-    fs::canonicalize(PathBuf::from(ENGINE)).catch_err(format!(
-        "Could not canonicalize engine crate path relative to: {:#?}",
-        env::current_dir()
-    ))
+fn get_engine_dir() -> Result<PathBuf> {
+    fs::canonicalize(PathBuf::from(ENGINE)).catch_err(
+        format!(
+            "Could not canonicalize engine crate path relative to: {:#?}",
+            env::current_dir()
+        )
+        .trace(),
+    )
 }
 
-fn get_macros_dir() -> PanicResult<PathBuf> {
+fn get_macros_dir() -> Result<PathBuf> {
     Ok(get_engine_dir()?.join("macros"))
 }
 
@@ -55,12 +58,10 @@ pub struct AstCrate {
 }
 
 impl AstCrate {
-    pub fn new(dir: PathBuf, idx: usize, is_entry: bool) -> PanicResult<Self> {
+    pub fn new(dir: PathBuf, idx: usize, is_entry: bool) -> Result<Self> {
         let rel_dir = dir.to_owned();
-        let dir: PathBuf = fs::canonicalize(dir).catch_err(format!(
-            "Could not canonicalize path: {}",
-            rel_dir.display()
-        ))?;
+        let dir: PathBuf = fs::canonicalize(dir)
+            .catch_err(format!("Could not canonicalize path: {}", rel_dir.display()).trace())?;
 
         let mods = AstMod::parse_dir(
             dir.join("src"),
@@ -83,7 +84,7 @@ impl AstCrate {
             idx,
             name: dir
                 .file_name()
-                .catch_err(format!("Could not parse file name: {}", rel_dir.display()))?
+                .catch_err(format!("Could not parse file name: {}", rel_dir.display()).trace())?
                 .to_string_lossy()
                 .to_string(),
             dir: dir.to_owned(),
@@ -93,7 +94,7 @@ impl AstCrate {
         })
     }
 
-    pub fn parse(mut dir: PathBuf) -> PanicResult<Crates> {
+    pub fn parse(mut dir: PathBuf) -> Result<Crates> {
         let mut crates = vec![AstCrate::new(dir.to_owned(), 0, true)?];
 
         let engine_dir = get_engine_dir()?;
@@ -114,17 +115,15 @@ impl AstCrate {
         let engine_cr_idx = crates
             .iter()
             .find_map(|cr| (cr.dir == engine_dir).then_some(cr.idx))
-            .catch_err(format!(
-                "Could not find engine crate: '{}'",
-                engine_dir.display()
-            ))?;
+            .catch_err(
+                format!("Could not find engine crate: '{}'", engine_dir.display()).trace(),
+            )?;
         let macros_cr_idx = crates
             .iter()
             .find_map(|cr| (cr.dir == macros_dir).then_some(cr.idx))
-            .catch_err(format!(
-                "Could not find macros crate: '{}'",
-                macros_dir.display()
-            ))?;
+            .catch_err(
+                format!("Could not find macros crate: '{}'", macros_dir.display()).trace(),
+            )?;
 
         // Insert correct dependencies
         for (cr, deps) in crates.iter_mut().zip(crate_deps.into_iter()) {
@@ -142,17 +141,20 @@ impl AstCrate {
     fn get_crate_dependencies(
         cr_dir: PathBuf,
         crates: &Vec<AstCrate>,
-    ) -> PanicResult<(Vec<(usize, String)>, Vec<String>)> {
+    ) -> Result<(Vec<(usize, String)>, Vec<String>)> {
         let deps = AstCrate::parse_cargo_toml(cr_dir.to_owned())?;
         let mut new_deps = Vec::new();
         let mut cr_deps = Vec::new();
         for (name, path) in deps {
-            let dep_dir = fs::canonicalize(cr_dir.join(path.to_string())).catch_err(format!(
-                "Could not canonicalize dependency path: {}: {}/{}",
-                name,
-                cr_dir.display(),
-                path
-            ))?;
+            let dep_dir = fs::canonicalize(cr_dir.join(path.to_string())).catch_err(
+                format!(
+                    "Could not canonicalize dependency path: {}: {}/{}",
+                    name,
+                    cr_dir.display(),
+                    path
+                )
+                .trace(),
+            )?;
             cr_deps.push(match crates.iter().position(|cr| cr.dir == dep_dir) {
                 Some(i) => (i, name),
                 None => {
@@ -164,33 +166,30 @@ impl AstCrate {
         Ok((cr_deps, new_deps))
     }
 
-    fn parse_cargo_toml(dir: PathBuf) -> PanicResult<HashMap<String, String>> {
+    fn parse_cargo_toml(dir: PathBuf) -> Result<HashMap<String, String>> {
         // Get the path to the `Cargo.toml` file
         let cargo_toml_path = dir.join("Cargo.toml");
 
         // Read the `Cargo.toml` file into a string
         let mut cargo_toml = String::new();
-        let mut file = File::open(&cargo_toml_path).catch_err(format!(
-            "Could not open Cargo.toml: {}",
-            cargo_toml_path.display()
-        ))?;
-        file.read_to_string(&mut cargo_toml).catch_err(format!(
-            "Could not read Cargo.toml: {}",
-            cargo_toml_path.display()
-        ))?;
+        let mut file = File::open(&cargo_toml_path).catch_err(
+            format!("Could not open Cargo.toml: {}", cargo_toml_path.display()).trace(),
+        )?;
+        file.read_to_string(&mut cargo_toml).catch_err(
+            format!("Could not read Cargo.toml: {}", cargo_toml_path.display()).trace(),
+        )?;
 
         // Parse the `Cargo.toml` file as TOML
-        let cargo_toml = cargo_toml.parse::<toml::Value>().catch_err(format!(
-            "Could not parse Cargo.toml: {}",
-            cargo_toml_path.display()
-        ))?;
+        let cargo_toml = cargo_toml.parse::<toml::Value>().catch_err(
+            format!("Could not parse Cargo.toml: {}", cargo_toml_path.display()).trace(),
+        )?;
 
         // Extract the list of dependencies from the `Cargo.toml` file
         let deps = cargo_toml
             .get("dependencies")
-            .catch_err("Could not find 'dependencies' section in Cargo.toml".to_string())?
+            .catch_err("Could not find 'dependencies' section in Cargo.toml".trace())?
             .as_table()
-            .catch_err("Could not convert 'dependencies' section to a table".to_string())?;
+            .catch_err("Could not convert 'dependencies' section to a table".trace())?;
         Ok(deps
             .into_iter()
             .filter_map(|(k, v)| match v {
@@ -204,12 +203,12 @@ impl AstCrate {
     }
 
     // Insert things into crates
-    pub fn add_symbol(&mut self, sym: Symbol) -> PanicResult<()> {
+    pub fn add_symbol(&mut self, sym: Symbol) -> Result<()> {
         self.find_mod_mut(sym.path.slice_to(-1))?.symbols.push(sym);
         Ok(())
     }
 
-    pub fn add_hardcoded_symbol(crates: &mut Crates, sym: HardcodedSymbol) -> PanicResult<()> {
+    pub fn add_hardcoded_symbol(crates: &mut Crates, sym: HardcodedSymbol) -> Result<()> {
         let path = sym.get_path();
         crates.get_crate_mut(path.cr)?.add_symbol(Symbol {
             kind: SymbolType::Hardcoded(sym),
@@ -222,37 +221,41 @@ impl AstCrate {
 
 // Mod access
 impl AstCrate {
-    pub fn get_main_mod(&self) -> PanicResult<&AstMod> {
+    pub fn get_main_mod(&self) -> Result<&AstMod> {
         self.get_mod(self.main)
     }
 
-    pub fn get_main_mod_mut(&mut self) -> PanicResult<&mut AstMod> {
+    pub fn get_main_mod_mut(&mut self) -> Result<&mut AstMod> {
         self.get_mod_mut(self.main)
     }
 
-    pub fn get_mod(&self, i: usize) -> PanicResult<&AstMod> {
+    pub fn get_mod(&self, i: usize) -> Result<&AstMod> {
         self.mods.try_get(i)
     }
 
-    pub fn get_mod_mut(&mut self, i: usize) -> PanicResult<&mut AstMod> {
+    pub fn get_mod_mut(&mut self, i: usize) -> Result<&mut AstMod> {
         self.mods.try_get_mut(i)
     }
 
-    pub fn get_mods(&self, idxs: &Vec<usize>) -> PanicResult<Vec<&AstMod>> {
+    pub fn get_mods(&self, idxs: &Vec<usize>) -> Result<Vec<&AstMod>> {
         let (mods, errs) = idxs.try_for_each(|i| self.get_mod(*i));
         errs.err_or(mods)
     }
 
-    pub fn find_mod<'a>(&'a self, path: &[String]) -> PanicResult<&'a AstMod> {
-        self.iter_mods()
-            .find(|m| m.path == path)
-            .ok_or(format!("No mod defined at path: {path:#?}").as_vec())
+    pub fn find_mod<'a>(&'a self, path: &[String]) -> Result<&'a AstMod> {
+        self.iter_mods().find(|m| m.path == path).ok_or(
+            format!("No mod defined at path: {path:#?}")
+                .trace()
+                .as_vec(),
+        )
     }
 
-    pub fn find_mod_mut<'a>(&'a mut self, path: &[String]) -> PanicResult<&'a mut AstMod> {
-        self.iter_mods_mut()
-            .find(|m| m.path == path)
-            .ok_or(format!("No mod defined at path: {path:#?}").as_vec())
+    pub fn find_mod_mut<'a>(&'a mut self, path: &[String]) -> Result<&'a mut AstMod> {
+        self.iter_mods_mut().find(|m| m.path == path).ok_or(
+            format!("No mod defined at path: {path:#?}")
+                .trace()
+                .as_vec(),
+        )
     }
 
     pub fn iter_mods(&self) -> impl Iterator<Item = &AstMod> {

@@ -6,7 +6,7 @@ use syn::spanned::Spanned;
 use shared::{
     parsing::SystemMacroArgs,
     syn::{
-        error::{err, AddSpan, SpannedResult, SplitBuildResult},
+        error::{MutateResults, Result, ToError},
         get_type_generics, parse_tokens, use_path_from_syn, ToRange,
     },
     traits::{Call, CollectVecInto, CombineOptions, PushInto, ToNone},
@@ -57,11 +57,11 @@ impl FnArg {
         items: &Items,
         sig: &syn::Signature,
         (m, cr, crates): ModInfo,
-    ) -> SpannedResult<Vec<Self>> {
+    ) -> Result<Vec<Self>> {
         sig.inputs
             .iter()
             .map_vec_into(|arg| match arg {
-                syn::FnArg::Receiver(r) => err("Cannot use self in function", r).as_err(),
+                syn::FnArg::Receiver(r) => r.error("Cannot use self in function").as_err(),
                 syn::FnArg::Typed(syn::PatType { ty, .. }) => {
                     FnArg::parse_type(ty, (m, cr, crates))
                 }
@@ -69,7 +69,7 @@ impl FnArg {
             .combine_results()
     }
 
-    fn parse_type(ty: &syn::Type, (m, cr, crates): ModInfo) -> SpannedResult<Self> {
+    fn parse_type(ty: &syn::Type, (m, cr, crates): ModInfo) -> Result<Self> {
         let ty_str = ty.to_token_stream().to_string();
         match ty {
             syn::Type::Path(p) => {
@@ -81,23 +81,25 @@ impl FnArg {
                             resolve_syn_path(&m.path, &ty.path, (m, cr, crates))
                                 .expect_component_set()
                                 .discard_symbol()
-                                .add_span(ty)
+                                .with_span(ty)
                                 .map(|idx| FnArgType::Entities { idx, is_vec: true })
                         }
-                        _ => err("Invalid argument type", ty).as_err(),
+                        _ => ty.error("Invalid argument type").as_err(),
                     },
-                    _ => resolve_path(path, (m, cr, crates))
-                        .add_span(ty)
-                        .and_then(|sym| match sym.kind {
-                            crate::parse::SymbolType::Global(g_sym) => {
-                                Ok(FnArgType::Global(g_sym.idx))
-                            }
-                            crate::parse::SymbolType::Event(i) => Ok(FnArgType::Event(i)),
-                            crate::parse::SymbolType::ComponentSet(idx) => {
-                                Ok(FnArgType::Entities { idx, is_vec: false })
-                            }
-                            _ => err("Invalid argument type", ty).as_err(),
-                        }),
+                    _ => {
+                        resolve_path(path, (m, cr, crates))
+                            .with_span(ty)
+                            .and_then(|sym| match sym.kind {
+                                crate::parse::SymbolType::Global(g_sym) => {
+                                    Ok(FnArgType::Global(g_sym.idx))
+                                }
+                                crate::parse::SymbolType::Event(i) => Ok(FnArgType::Event(i)),
+                                crate::parse::SymbolType::ComponentSet(idx) => {
+                                    Ok(FnArgType::Entities { idx, is_vec: false })
+                                }
+                                _ => ty.error("Invalid argument type").as_err(),
+                            })
+                    }
                 }
                 .map(|data| Self {
                     ty: data,
@@ -127,7 +129,7 @@ impl FnArg {
                         resolve_syn_path(&m.path, &tr.path, (m, cr, crates))
                             .expect_trait()
                             .discard_symbol()
-                            .add_span(ty)
+                            .with_span(ty)
                             .map(|g_sym| Self {
                                 ty: FnArgType::Global(g_sym.idx),
                                 is_mut: false,
@@ -135,10 +137,12 @@ impl FnArg {
                                 span: ty.span(),
                             })
                     }
-                    _ => err("Trait arguments must have only one trait type", ty).as_err(),
+                    _ => ty
+                        .error("Trait arguments may have only one trait type")
+                        .as_err(),
                 }
             }
-            _ => err("Invalid argument type", ty).as_err(),
+            _ => ty.error("Invalid argument type").as_err(),
         }
     }
 }
@@ -170,7 +174,7 @@ impl ItemSystem {
         attr: &AstAttribute,
         items: &Items,
         (m, cr, crates): ModInfo,
-    ) -> SpannedResult<Self> {
+    ) -> Result<Self> {
         let path = m.path.to_vec().push_into(fun.sig.ident.to_string());
         parse_tokens(attr.args.clone()).and_then(|attr_args| {
             FnArg::parse(&attr_args, items, &fun.sig, (m, cr, crates)).map(|args| ItemSystem {

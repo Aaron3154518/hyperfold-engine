@@ -2,7 +2,7 @@ use diagnostic::CombineResults;
 use proc_macro2::TokenStream;
 use quote::quote;
 use shared::{
-    syn::{error::PanicResult, vec_to_path},
+    syn::{error::Result, vec_to_path},
     traits::{CollectVec, CollectVecInto},
 };
 
@@ -41,11 +41,7 @@ fn codegen(
     )
 }
 
-pub fn globals(
-    cr_idx: usize,
-    globals: &Vec<ItemGlobal>,
-    crates: &Crates,
-) -> PanicResult<TokenStream> {
+pub fn globals(cr_idx: usize, globals: &Vec<ItemGlobal>, crates: &Crates) -> Result<TokenStream> {
     let vars = (0..globals.len()).map_vec_into(|i| global_var(i));
     let types = globals
         .map_vec(|g| crates.get_item_syn_path(cr_idx, &g.data.path))

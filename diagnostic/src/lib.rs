@@ -9,7 +9,6 @@ mod writer;
 use std::fs;
 
 use codespan_reporting::{
-    diagnostic::Label,
     files::SimpleFiles,
     term::{self, Config},
 };
@@ -23,6 +22,7 @@ pub use result::*;
 
 pub struct Renderer {
     files: SimpleFiles<String, String>,
+    file_name: String,
     file_idx: usize,
 }
 
@@ -30,6 +30,7 @@ impl Renderer {
     pub fn new(file: &str) -> Self {
         let mut files = SimpleFiles::new();
         Self {
+            file_name: file.to_string(),
             file_idx: files.add(
                 file.to_string(),
                 fs::read_to_string(file)
@@ -39,24 +40,18 @@ impl Renderer {
         }
     }
 
-    pub fn render(
-        &self,
-        level: DiagnosticLevel,
-        message: &str,
-        span: &ErrorSpan,
-        notes: Vec<String>,
-    ) -> String {
-        let diagnostic = CodespanDiagnostic::<usize>::from(level)
-            .with_message(message)
-            .with_labels(vec![Label::primary(
-                self.file_idx,
-                span.byte_start..span.byte_end,
-            )])
-            .with_notes(notes);
+    pub fn file_idx(&self) -> usize {
+        self.file_idx
+    }
 
+    pub fn file_name(&self) -> String {
+        self.file_name.to_string()
+    }
+
+    pub fn render(&self, diagnostic: &CodespanDiagnostic<usize>) -> String {
         let mut writer = Writer::empty();
         let config = Config::default();
-        term::emit(&mut writer, &config, &self.files, &diagnostic)
+        term::emit(&mut writer, &config, &self.files, diagnostic)
             .map(|_| writer.to_string())
             .unwrap_or_else(|e| format!("Could not produce error message: {e}"))
     }

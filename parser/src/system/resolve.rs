@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 use shared::{
     constants::TAB,
     parsing::SystemMacroArgs,
-    syn::error::{SpannedResult, ToError},
+    syn::error::{Result, ToError},
     traits::{CollectVec, CollectVecInto, PushInto, ThenOk},
 };
 
@@ -74,7 +74,7 @@ impl ComponentRefTracker {
         }
     }
 
-    pub fn validate(&self, sys: &ItemSystem) -> SpannedResult<()> {
+    pub fn validate(&self, sys: &ItemSystem) -> Result<()> {
         let (mut_cnt, immut_cnt) = (self.mut_refs.len(), self.immut_refs.len());
 
         (mut_cnt > 1)
@@ -104,7 +104,7 @@ impl ComponentRefTracker {
 }
 
 impl ItemSystem {
-    pub fn validate(&self, items: &Items) -> SpannedResult<FnArgs> {
+    pub fn validate(&self, items: &Items) -> Result<FnArgs> {
         let mut global_idxs = HashSet::new();
 
         match self.attr_args {
@@ -120,7 +120,7 @@ impl ItemSystem {
                         }),
                     FnArgType::Event(_) | FnArgType::Entities { .. } => self
                         .span
-                        .error(&format!("Init systems may not contain {}", arg.ty))
+                        .error(format!("Init systems may not contain {}", arg.ty))
                         .as_err(),
                 })
                 .combine_results()
@@ -185,13 +185,13 @@ impl ItemSystem {
         i: usize,
         globals: &mut HashSet<usize>,
         items: &'a Items,
-    ) -> SpannedResult<&'a ItemGlobal> {
+    ) -> Result<&'a ItemGlobal> {
         items
             .globals
             .get(i)
             .ok_or(
                 self.span
-                    .error(&format!("Invalid Global index: {i}"))
+                    .error(format!("Invalid Global index: {i}"))
                     .as_vec(),
             )
             .and_then(|g| {
@@ -209,18 +209,13 @@ impl ItemSystem {
             )
     }
 
-    fn validate_event<'a>(
-        &self,
-        arg: &FnArg,
-        i: usize,
-        items: &'a Items,
-    ) -> SpannedResult<&'a ItemEvent> {
+    fn validate_event<'a>(&self, arg: &FnArg, i: usize, items: &'a Items) -> Result<&'a ItemEvent> {
         items
             .events
             .get(i)
             .ok_or(
                 self.span
-                    .error(&format!("Invalid Event index: {i}"))
+                    .error(format!("Invalid Event index: {i}"))
                     .as_vec(),
             )
             .take_errs(self.validate_ref(arg, 1))
@@ -234,13 +229,13 @@ impl ItemSystem {
         is_vec: bool,
         component_refs: &mut HashMap<usize, ComponentRefTracker>,
         items: &'a Items,
-    ) -> SpannedResult<&'a ComponentSet> {
+    ) -> Result<&'a ComponentSet> {
         items
             .component_sets
             .get(i)
             .ok_or(
                 self.span
-                    .error(&format!("Invalid component set index: {i}"))
+                    .error(format!("Invalid component set index: {i}"))
                     .as_vec(),
             )
             .and_then(|cs| {
@@ -287,11 +282,11 @@ impl ItemSystem {
     }
 
     // Validate conditions
-    fn validate_ref(&self, arg: &FnArg, should_be_cnt: usize) -> SpannedResult<()> {
+    fn validate_ref(&self, arg: &FnArg, should_be_cnt: usize) -> Result<()> {
         (arg.ref_cnt == should_be_cnt).ok(
             (),
             arg.span
-                .error(&format!(
+                .error(format!(
                     "Type should be taken by {}: \"{}\"",
                     if should_be_cnt == 0 {
                         "borrow".to_string()
@@ -306,11 +301,11 @@ impl ItemSystem {
         )
     }
 
-    fn validate_mut(&self, arg: &FnArg, should_be_mut: bool) -> SpannedResult<()> {
+    fn validate_mut(&self, arg: &FnArg, should_be_mut: bool) -> Result<()> {
         (arg.is_mut == should_be_mut).ok(
             (),
             arg.span
-                .error(&format!(
+                .error(format!(
                     "Type should be taken {}: \"{}\"",
                     if should_be_mut {
                         "mutably"

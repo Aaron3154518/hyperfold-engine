@@ -6,7 +6,7 @@ use quote::{format_ident, quote};
 use shared::{
     macros::{expand_enum, ExpandEnum},
     syn::{
-        error::{panic, PanicResult},
+        error::{GetVec, Result},
         vec_to_path,
     },
     traits::{Call, CollectVec, PushInto},
@@ -163,11 +163,8 @@ macro_rules! engine_globals {
         }
 
         impl $ty {
-            pub fn get_global_vars(&self, crates: &Crates, cr_idx: usize) -> PanicResult<$ty_res> {
-                let cr = match crates.get(cr_idx) {
-                    Some(cr) => cr,
-                    None => return panic(&format!("Invalid crate index: {cr_idx}")).as_err(),
-                };
+            pub fn get_global_vars(&self, crates: &Crates, cr_idx: usize) -> Result<$ty_res> {
+                let cr = crates.try_get(cr_idx)?;
                 let get_global = |cr_path| {
                     crates
                         .get_path(cr_idx, cr_path)

@@ -1,4 +1,4 @@
-use shared::{syn::error::SpannedResult, traits::PushInto};
+use shared::{syn::error::Result, traits::PushInto};
 use syn::spanned::Spanned;
 
 use crate::parse::{attributes::get_attributes_if_active, AstAttribute, AstMod};
@@ -14,7 +14,7 @@ pub struct AstFunction {
 
 impl AstMod {
     // Systems
-    pub fn visit_item_fn(&mut self, i: syn::ItemFn) -> SpannedResult<()> {
+    pub fn visit_item_fn(&mut self, i: syn::ItemFn) -> Result<()> {
         if let Some(attrs) = get_attributes_if_active(&i.attrs, &self.path, &Vec::new())? {
             if !attrs.is_empty() {
                 self.items.functions.push(AstFunction {

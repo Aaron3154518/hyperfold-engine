@@ -4,7 +4,7 @@ use quote::quote;
 
 use shared::{
     syn::{
-        error::{AddSpan, GetVec, PanicResult},
+        error::{GetVec, MutateResults, Result},
         Quote,
     },
     traits::{CollectVec, CollectVecInto, GetResult},
@@ -118,7 +118,7 @@ pub fn codegen_systems(
     cr_idx: usize,
     items: &Items,
     crates: &Crates,
-) -> PanicResult<SystemsCodegenResult> {
+) -> Result<SystemsCodegenResult> {
     let event_trait = crates.get_syn_path(cr_idx, &ENGINE_TRAITS.add_event);
     let intersect = crates.get_syn_path(cr_idx, &ENGINE_PATHS.intersect);
     let intersect_opt = crates.get_syn_path(cr_idx, &ENGINE_PATHS.intersect_opt);
@@ -131,7 +131,7 @@ pub fn codegen_systems(
         (&items.systems).do_for_each(|system| {
             let func_name = crates
                 .get_item_syn_path(cr_idx, &system.path)
-                .add_span(&system.span);
+                .with_span(&system.span);
             let args = system.validate(items);
             zip_match!((func_name, args) => {
                 match args {
@@ -153,7 +153,7 @@ pub fn codegen_systems(
                                             .get_item_syn_path(cr_idx, &cs.path)
                                             .map(|ty| BuildSetsArg { cs, fn_arg, ty })
                                     })
-                                    .add_span(&system.span)
+                                    .with_span(&system.span)
                             })
                             .combine_results();
 

@@ -1,5 +1,6 @@
 use diagnostic::{Results, ToErr};
 use proc_macro2::Span;
+use std::fmt::Display;
 
 use syn::spanned::Spanned;
 
@@ -10,7 +11,7 @@ use super::AstMod;
 use shared::{
     macros::{expand_enum, ExpandEnum},
     parsing::{ComponentMacroArgs, GlobalMacroArgs},
-    syn::error::UnspannedResult,
+    syn::error::{Error, Result, StrToError},
     traits::CollectVec,
 };
 
@@ -91,8 +92,8 @@ pub struct Symbol {
 type Location<'a> = (&'a AstMod, &'a dyn Spanned);
 
 impl Symbol {
-    fn error(&self, expected: &str) -> String {
-        format!("Expected {} but found {}", expected, self.kind)
+    fn error(&self, expected: impl Display) -> Error {
+        format!("Expected {} but found {}", expected, self.kind).error()
     }
 }
 
@@ -100,90 +101,87 @@ pub trait MatchSymbol<'a>
 where
     Self: Sized,
 {
-    fn and_then_impl<T>(
-        self,
-        f: impl FnOnce(&'a Symbol) -> UnspannedResult<T>,
-    ) -> UnspannedResult<T>;
+    fn and_then_impl<T>(self, f: impl FnOnce(&'a Symbol) -> Result<T>) -> Result<T>;
 
-    fn expect_component(self) -> UnspannedResult<(&'a Symbol, ComponentSymbol)> {
+    fn expect_component(self) -> Result<(&'a Symbol, ComponentSymbol)> {
         self.and_then_impl(|arg| match arg.kind {
             SymbolType::Component(c_sym) => Ok((arg, c_sym)),
             _ => arg.error("Component").as_err(),
         })
     }
 
-    fn expect_global(self) -> UnspannedResult<(&'a Symbol, GlobalSymbol)> {
+    fn expect_global(self) -> Result<(&'a Symbol, GlobalSymbol)> {
         self.and_then_impl(|arg| match arg.kind {
             SymbolType::Global(g_sym) => Ok((arg, g_sym)),
             _ => arg.error("Global").as_err(),
         })
     }
 
-    fn expect_trait(self) -> UnspannedResult<(&'a Symbol, GlobalSymbol)> {
+    fn expect_trait(self) -> Result<(&'a Symbol, GlobalSymbol)> {
         self.and_then_impl(|arg| match arg.kind {
             SymbolType::Trait(g_sym) => Ok((arg, g_sym)),
             _ => arg.error("Trait").as_err(),
         })
     }
 
-    fn expect_global_or_trait(self) -> UnspannedResult<(&'a Symbol, GlobalSymbol)> {
+    fn expect_global_or_trait(self) -> Result<(&'a Symbol, GlobalSymbol)> {
         self.and_then_impl(|arg| match arg.kind {
             SymbolType::Global(g_sym) | SymbolType::Trait(g_sym) => Ok((arg, g_sym)),
             _ => arg.error("Global or Trait").as_err(),
         })
     }
 
-    fn expect_event(self) -> UnspannedResult<(&'a Symbol, usize)> {
+    fn expect_event(self) -> Result<(&'a Symbol, usize)> {
         self.and_then_impl(|arg| match arg.kind {
             SymbolType::Event(i) => Ok((arg, i)),
             _ => arg.error("Event").as_err(),
         })
     }
 
-    fn expect_state(self) -> UnspannedResult<(&'a Symbol, usize)> {
+    fn expect_state(self) -> Result<(&'a Symbol, usize)> {
         self.and_then_impl(|arg| match arg.kind {
             SymbolType::State(i) => Ok((arg, i)),
             _ => arg.error("State").as_err(),
         })
     }
 
-    fn expect_system(self) -> UnspannedResult<(&'a Symbol, (usize, Span))> {
+    fn expect_system(self) -> Result<(&'a Symbol, (usize, Span))> {
         self.and_then_impl(|arg| match arg.kind {
             SymbolType::System(i, span) => Ok((arg, (i, span))),
             _ => arg.error("System").as_err(),
         })
     }
 
-    fn expect_component_set(self) -> UnspannedResult<(&'a Symbol, usize)> {
+    fn expect_component_set(self) -> Result<(&'a Symbol, usize)> {
         self.and_then_impl(|arg| match arg.kind {
             SymbolType::ComponentSet(i) => Ok((arg, i)),
             _ => arg.error("Component Set").as_err(),
         })
     }
 
-    fn expect_any_hardcoded(self) -> UnspannedResult<(&'a Symbol, HardcodedSymbol)> {
+    fn expect_any_hardcoded(self) -> Result<(&'a Symbol, HardcodedSymbol)> {
         self.and_then_impl(|arg| match arg.kind {
             SymbolType::Hardcoded(sym) => Ok((arg, sym)),
             _ => arg.error("Hardcoded Symbol").as_err(),
         })
     }
 
-    fn expect_hardcoded(self, sym: HardcodedSymbol) -> UnspannedResult<&'a Symbol> {
+    fn expect_hardcoded(self, sym: HardcodedSymbol) -> Result<&'a Symbol> {
         self.expect_any_hardcoded()
             .and_then(|(s, h_sym)| match h_sym == sym {
                 true => Ok(s),
-                false => s.error(&format!("Hardcoded Symbol: '{h_sym:#?}'")).as_err(),
+                false => s.error(format!("Hardcoded Symbol: '{h_sym:#?}'")).as_err(),
             })
     }
 }
 
 // Helper function to just get the data from a resolved symbol
 pub trait DiscardSymbol<T> {
-    fn discard_symbol(self) -> UnspannedResult<T>;
+    fn discard_symbol(self) -> Result<T>;
 }
 
-impl<T> DiscardSymbol<T> for UnspannedResult<(&Symbol, T)> {
-    fn discard_symbol(self) -> UnspannedResult<T> {
+impl<T> DiscardSymbol<T> for Result<(&Symbol, T)> {
+    fn discard_symbol(self) -> Result<T> {
         self.map(|(_, t)| t)
     }
 }
