@@ -24,19 +24,25 @@ pub struct Renderer {
     files: SimpleFiles<String, String>,
     file_name: String,
     file_idx: usize,
+    success: Result<(), std::io::Error>,
 }
 
 impl Renderer {
     pub fn new(file: &str) -> Self {
         let mut files = SimpleFiles::new();
+        let mut success = Ok(());
+        let file_idx = files.add(
+            file.to_string(),
+            fs::read_to_string(file).unwrap_or_else(|e| {
+                success = Err(e);
+                String::new()
+            }),
+        );
         Self {
             file_name: file.to_string(),
-            file_idx: files.add(
-                file.to_string(),
-                fs::read_to_string(file)
-                    .unwrap_or_else(|e| format!("Could not read '{file}': {e}")),
-            ),
+            file_idx,
             files,
+            success,
         }
     }
 
@@ -51,9 +57,16 @@ impl Renderer {
     pub fn render(&self, diagnostic: &CodespanDiagnostic<usize>) -> String {
         let mut writer = Writer::empty();
         let config = Config::default();
-        term::emit(&mut writer, &config, &self.files, diagnostic)
-            .map(|_| writer.to_string())
-            .unwrap_or_else(|e| format!("Could not produce error message: {e}"))
+        format!(
+            "{}{}",
+            match &self.success {
+                Ok(_) => String::new(),
+                Err(e) => format!("Couldn't open file: {e}"),
+            },
+            term::emit(&mut writer, &config, &self.files, diagnostic)
+                .map(|_| writer.to_string())
+                .unwrap_or_else(|e| format!("Could not produce error message: {e}"))
+        )
     }
 }
 
@@ -133,10 +146,10 @@ impl Diagnostic {
             rendered,
             byte_start,
             byte_end,
-            line_start + 1,
-            line_end + 1,
-            column_start + 1,
-            column_end + 1,
+            line_start,
+            line_end,
+            column_start,
+            column_end,
         )
     }
 

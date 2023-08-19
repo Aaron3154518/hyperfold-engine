@@ -11,13 +11,13 @@ pub struct ErrorSpan {
     pub byte_start: usize,
     /// The byte offset in the file where this span ends.
     pub byte_end: usize,
-    /// 0-based. The line in the file.
+    /// 1-based. The line in the file.
     pub line_start: usize,
-    /// 0-based. The line in the file.
+    /// 1-based. The line in the file.
     pub line_end: usize,
-    /// 0-based, character offset.
+    /// 1-based, character offset.
     pub column_start: usize,
-    /// 0-based, character offset.
+    /// 1-based, character offset.
     pub column_end: usize,
 }
 
@@ -33,10 +33,10 @@ impl Default for ErrorSpan {
         Self {
             byte_start: 0,
             byte_end: 1,
-            line_start: 0,
-            line_end: 0,
-            column_start: 0,
-            column_end: 1,
+            line_start: 1,
+            line_end: 1,
+            column_start: 1,
+            column_end: 2,
         }
     }
 }

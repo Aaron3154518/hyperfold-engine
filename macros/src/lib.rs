@@ -38,8 +38,9 @@ where
     match parse_tokens(input) {
         Ok(t) => f(t, input_span),
         Err(errs) => {
-            let errs =
-                errs.map_vec_into(|msg| syn::Error::new(input_span, msg.msg).into_compile_error());
+            let errs = errs.map_vec_into(|err| {
+                syn::Error::new(input_span, err.message()).into_compile_error()
+            });
             quote!(#(#errs)*)
         }
     }

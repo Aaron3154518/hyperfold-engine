@@ -33,15 +33,20 @@ impl Error {
         Self::from(DiagnosticLevel::Warning)
     }
 
+    pub fn message(&self) -> String {
+        self.diagnostic.message.to_string()
+    }
+
     pub fn with_message(mut self, msg: impl Into<String>) -> Self {
         self.diagnostic.message = msg.into();
         self
     }
 
     pub fn with_backtrace(mut self) -> Self {
-        self.diagnostic
-            .notes
-            .push(format!("{:#?}", Backtrace::new()));
+        // TODO: optimize
+        // self.diagnostic
+        //     .notes
+        //     .push(format!("{:#?}", Backtrace::new()));
         self
     }
 
@@ -60,6 +65,12 @@ impl Error {
             file_id,
             self.span.byte_start..self.span.byte_end,
         ));
+        self
+    }
+
+    pub fn subtract_span(mut self, span: &ErrorSpan) -> Self {
+        self.span.byte_start -= span.byte_start;
+        self.span.byte_end -= span.byte_start;
         self
     }
 
