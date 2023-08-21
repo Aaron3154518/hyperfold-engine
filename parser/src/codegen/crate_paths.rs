@@ -100,6 +100,17 @@ impl Crates {
             })
     }
 
+    pub fn has_errors(&self) -> bool {
+        for cr in &self.crates {
+            for m in cr.iter_mods() {
+                if !m.errs.is_empty() {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
     // Create crate paths
     pub fn get_crate_path(&self, start_idx: usize, end_idx: usize) -> Option<Vec<String>> {
         self.paths.get2d(start_idx, end_idx).and_then(|v| v.clone())
