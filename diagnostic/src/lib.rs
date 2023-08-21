@@ -148,8 +148,8 @@ impl Diagnostic {
             byte_end,
             line_start,
             line_end,
-            column_start,
-            column_end,
+            column_start + 1,
+            column_end + 1,
         )
     }
 

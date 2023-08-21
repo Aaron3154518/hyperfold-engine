@@ -15,9 +15,9 @@ pub struct ErrorSpan {
     pub line_start: usize,
     /// 1-based. The line in the file.
     pub line_end: usize,
-    /// 1-based, character offset.
+    /// 0-based, character offset.
     pub column_start: usize,
-    /// 1-based, character offset.
+    /// 0-based, character offset.
     pub column_end: usize,
 }
 
