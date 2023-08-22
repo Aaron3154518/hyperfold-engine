@@ -63,7 +63,7 @@ pub fn parse(entry: PathBuf) {
 
             let macro_cr_idx = crates.get_crate_index(Crate::Macros);
 
-            let code = match codegen::codegen(&crates, &items).record_errs(&mut errs) {
+            let code = match codegen::codegen(&mut crates, &items).record_errs(&mut errs) {
                 Some(code) if errs.is_empty() && !crates.has_errors() => crates
                     .iter_except([macro_cr_idx])
                     .zip(code)

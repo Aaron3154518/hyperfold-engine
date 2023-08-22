@@ -74,7 +74,7 @@ fn init_events_fn(cr_idx: usize, items: &Items, crates: &Crates) -> Result<Token
     )
 }
 
-pub fn manager_impl(cr_idx: usize, items: &Items, crates: &Crates) -> Result<TokenStream> {
+pub fn manager_impl(cr_idx: usize, items: &Items, crates: &mut Crates) -> Result<TokenStream> {
     let CodegenIdents {
         manager,
         globals,

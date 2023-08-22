@@ -8,7 +8,7 @@ use shared::{
 };
 
 use crate::{
-    parse::{AstCrate, ItemPath},
+    parse::{AstCrate, AstMod, ItemPath, ItemSpan},
     utils::{
         constants::NAMESPACE,
         paths::{Crate, CratePath},
@@ -187,12 +187,16 @@ impl Crates {
         self.crate_idxs[cr as usize]
     }
 
-    pub fn get<'a>(&'a self, cr_idx: usize) -> Option<&'a AstCrate> {
-        self.crates.get(cr_idx)
+    pub fn get_mod<'a>(&'a self, cr_idx: usize, mod_idx: usize) -> Result<&'a AstMod> {
+        self.crates
+            .try_get(cr_idx)
+            .and_then(|cr| cr.mods.try_get(mod_idx))
     }
 
-    pub fn get_mut<'a>(&'a mut self, cr_idx: usize) -> Option<&'a mut AstCrate> {
-        self.crates.get_mut(cr_idx)
+    pub fn get_mod_mut<'a>(&'a mut self, cr_idx: usize, mod_idx: usize) -> Result<&'a mut AstMod> {
+        self.crates
+            .try_get_mut(cr_idx)
+            .and_then(|cr| cr.mods.try_get_mut(mod_idx))
     }
 
     // Iterate crates except macros crate

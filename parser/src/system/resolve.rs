@@ -11,6 +11,7 @@ use shared::{
 
 use crate::{
     component_set::{ComponentSet, ComponentSetLabels},
+    parse::ItemSpan,
     resolve::{ItemEvent, ItemGlobal, Items},
     utils::paths::ENGINE_PATHS,
 };
@@ -20,17 +21,20 @@ use super::{
     ItemSystem,
 };
 
+#[derive(Clone, Copy)]
 pub struct EventFnArg {
     pub arg_idx: usize,
     pub idx: usize,
 }
 
+#[derive(Clone, Copy)]
 pub struct GlobalFnArg {
     pub arg_idx: usize,
     pub idx: usize,
     pub is_mut: bool,
 }
 
+#[derive(Clone, Copy)]
 pub struct ComponentSetFnArg {
     pub arg_idx: usize,
     pub idx: usize,

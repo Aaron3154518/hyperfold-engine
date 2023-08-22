@@ -24,7 +24,7 @@ use crate::{
 
 use super::Crates;
 
-pub fn codegen(crates: &Crates, items: &Items) -> Result<Vec<TokenStream>> {
+pub fn codegen(crates: &mut Crates, items: &Items) -> Result<Vec<TokenStream>> {
     let main_cr_idx = crates.get_crate_index(Crate::Main);
     let macro_cr_idx = crates.get_crate_index(Crate::Macros);
 

@@ -215,7 +215,7 @@ impl Items {
 
     fn add_system(&mut self, sys: ItemSystem) -> Symbol {
         let sym = Symbol {
-            kind: SymbolType::System(self.systems.len(), sys.span),
+            kind: SymbolType::System(self.systems.len(), sys.span.span),
             path: sys.path.path.to_vec(),
             public: true,
         };
@@ -337,7 +337,7 @@ impl Items {
                         new_items.push(NewItem::ComponentSet(ComponentSet::parse(
                             call.args.clone(),
                             (m, cr, crates),
-                        )?))
+                        )?));
                     }
                     Ok(())
                 })

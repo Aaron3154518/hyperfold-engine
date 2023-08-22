@@ -1,4 +1,6 @@
-use diagnostic::{zip_match, CombineResults, ErrForEach, ErrorTrait, ResultsTrait, ZipResults};
+use diagnostic::{
+    zip_match, CombineResults, ErrForEach, ErrorTrait, FlattenResults, ResultsTrait, ZipResults,
+};
 use proc_macro2::TokenStream;
 use quote::quote;
 
@@ -20,7 +22,10 @@ use crate::{
     },
 };
 
-use super::resolve::{EventFnArg, FnArgs, GlobalFnArg};
+use super::{
+    resolve::{EventFnArg, FnArgs, GlobalFnArg},
+    ItemSystem,
+};
 
 fn codegen_init_system(mut global_args: Vec<GlobalFnArg>, func_name: syn::Path) -> TokenStream {
     let CodegenIdents {
@@ -36,26 +41,39 @@ fn codegen_init_system(mut global_args: Vec<GlobalFnArg>, func_name: syn::Path) 
     quote!(#func_name(#(#func_args),*))
 }
 
-pub struct CodegenArgs<'a> {
+pub struct CodegenData<'a> {
     func_name: syn::Path,
-    event_trait: &'a syn::Path,
-    intersect: &'a syn::Path,
-    intersect_opt: &'a syn::Path,
     event: EventFnArg,
     globals: Vec<GlobalFnArg>,
     component_sets: Vec<BuildSetsArg<'a>>,
 }
 
-fn codegen_system(
-    CodegenArgs {
+pub struct CodegenFuncs<'a> {
+    event_trait: &'a syn::Path,
+    intersect: &'a syn::Path,
+    intersect_opt: &'a syn::Path,
+}
+
+pub struct CodegenItems<'a> {
+    cr_idx: usize,
+    crates: &'a mut Crates,
+    items: &'a Items,
+    system: &'a ItemSystem,
+}
+
+// Codegens event systems
+fn codegen_event_system(
+    CodegenData {
         func_name,
-        event_trait,
-        intersect,
-        intersect_opt,
         event: event_arg,
         globals: global_args,
         component_sets,
-    }: CodegenArgs,
+    }: CodegenData,
+    CodegenFuncs {
+        event_trait,
+        intersect,
+        intersect_opt,
+    }: CodegenFuncs,
 ) -> TokenStream {
     let CodegenIdents {
         globals,
@@ -108,6 +126,89 @@ fn codegen_system(
     )
 }
 
+// Splits into init/event systems, calls codegen_event_system for event systems
+fn codegen_system(
+    func_name: syn::Path,
+    args: FnArgs,
+    cargs: CodegenItems,
+    funcs: CodegenFuncs,
+) -> Result<(TokenStream, Option<syn::Ident>)> {
+    let CodegenItems {
+        cr_idx,
+        crates,
+        items,
+        ..
+    } = cargs;
+
+    match args {
+        FnArgs::Init { globals } => Ok((codegen_init_system(globals, func_name), None)),
+        FnArgs::System {
+            event,
+            globals,
+            component_sets,
+        } => component_sets
+            .map_vec_into(|fn_arg| {
+                items.component_sets.try_get(fn_arg.idx).and_then(|cs| {
+                    crates
+                        .get_item_syn_path(cr_idx, &cs.path)
+                        .map(|ty| BuildSetsArg { cs, fn_arg, ty })
+                })
+            })
+            .combine_results()
+            .map(|component_sets| {
+                (
+                    codegen_event_system(
+                        CodegenData {
+                            func_name,
+                            event,
+                            globals,
+                            component_sets,
+                        },
+                        funcs,
+                    ),
+                    Some(event_variant(event.idx)),
+                )
+            }),
+    }
+}
+
+// Validates the system and calls codegen_system
+fn validate_system(
+    CodegenItems {
+        cr_idx,
+        crates,
+        items,
+        system,
+    }: CodegenItems,
+    funcs: CodegenFuncs,
+) -> Result<(TokenStream, Option<syn::Ident>)> {
+    let func_name = crates.get_item_syn_path(cr_idx, &system.path);
+    let args = system.validate(items);
+    zip_match!((func_name, args) => {
+        codegen_system(
+            func_name,
+            args,
+            CodegenItems {
+                cr_idx,
+                crates,
+                items,
+                system
+            },
+            funcs)
+    })
+    .flatten_results()
+    .with_span(&system.span.span)
+    .map_err(
+        |errs| match crates.get_mod_mut(system.span.cr_idx, system.span.mod_idx) {
+            Ok(m) => {
+                m.errs.extend(errs);
+                Vec::new()
+            }
+            Err(e) => e,
+        },
+    )
+}
+
 pub struct SystemsCodegenResult {
     pub init_systems: Vec<TokenStream>,
     pub systems: Vec<TokenStream>,
@@ -117,7 +218,7 @@ pub struct SystemsCodegenResult {
 pub fn codegen_systems(
     cr_idx: usize,
     items: &Items,
-    crates: &Crates,
+    crates: &mut Crates,
 ) -> Result<SystemsCodegenResult> {
     let event_trait = crates.get_syn_path(cr_idx, &ENGINE_TRAITS.add_event);
     let intersect = crates.get_syn_path(cr_idx, &ENGINE_PATHS.intersect);
@@ -127,63 +228,35 @@ pub fn codegen_systems(
     let mut systems = Vec::new();
     let mut system_events = Vec::new();
 
-    let errs = zip_match!((event_trait, intersect, intersect_opt) => {
-        (&items.systems).do_for_each(|system| {
-            let func_name = crates
-                .get_item_syn_path(cr_idx, &system.path)
-                .with_span(&system.span);
-            let args = system.validate(items);
-            zip_match!((func_name, args) => {
-                match args {
-                    FnArgs::Init { globals } => {
-                        init_systems.push(codegen_init_system(globals, func_name))
+    zip_match!((event_trait, intersect, intersect_opt) => {
+        (&items.systems)
+            .do_for_each(|system| {
+                validate_system(
+                    CodegenItems {
+                        cr_idx,
+                        crates,
+                        items,
+                        system
+                    },
+                    CodegenFuncs {
+                        event_trait: &event_trait,
+                        intersect: &intersect,
+                        intersect_opt: &intersect_opt,
                     }
-                    FnArgs::System {
-                        event,
-                        globals,
-                        component_sets,
-                    } => {
-                        let component_sets = component_sets
-                            .map_vec_into(|fn_arg| {
-                                items
-                                    .component_sets
-                                    .try_get(fn_arg.idx)
-                                    .and_then(|cs| {
-                                        crates
-                                            .get_item_syn_path(cr_idx, &cs.path)
-                                            .map(|ty| BuildSetsArg { cs, fn_arg, ty })
-                                    })
-                                    .with_span(&system.span)
-                            })
-                            .combine_results();
-
-                        system_events.push(event_variant(event.idx));
-
-                        systems.push(component_sets.map(|component_sets| {
-                            codegen_system(CodegenArgs {
-                                func_name,
-                                event_trait: &event_trait,
-                                intersect: &intersect,
-                                intersect_opt: &intersect_opt,
-                                event,
-                                globals,
-                                component_sets,
-                            })
-                        }));
+                )
+                .map(|(sys, event)| match event {
+                    Some(e) => {
+                        system_events.push(e);
+                        systems.push(sys);
                     }
-                }
+                    None => init_systems.push(sys),
+                })
             })
-        })
-    })?;
-
-    systems
-        .combine_results()
-        .take_errs(errs.err_or(()))
-        .map(|systems| SystemsCodegenResult {
-            init_systems,
-            systems,
-            system_events,
-        })
-        // TODO: errors
-        .map_err(|_| vec![])
+            .err_or(SystemsCodegenResult {
+                init_systems,
+                systems,
+                system_events,
+            })
+    })
+    .flatten_results()
 }

@@ -15,7 +15,7 @@ use shared::{
 use crate::{
     parse::{
         resolve_path, resolve_syn_path, AstAttribute, AstFunction, DiscardSymbol, HardcodedSymbol,
-        ItemPath, MatchSymbol, ModInfo,
+        ItemPath, ItemSpan, MatchSymbol, ModInfo,
     },
     resolve::Items,
 };
@@ -29,17 +29,17 @@ pub enum FnArgType {
 
 impl std::fmt::Display for FnArgType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(
-            match self {
-                FnArgType::Event(i) => format!("Event {i}"),
-                FnArgType::Global(i) => format!("Global {i}"),
-                FnArgType::Entities { idx, is_vec } => format!(
-                    "{} {idx}",
-                    if *is_vec { "Vec<Entities>" } else { "Entities" }
-                ),
+        f.write_str(match self {
+            FnArgType::Event(_) => "Event",
+            FnArgType::Global(_) => "Global",
+            FnArgType::Entities { is_vec, .. } => {
+                if *is_vec {
+                    "Vec<Entities>"
+                } else {
+                    "Entities"
+                }
             }
-            .as_str(),
-        )
+        })
     }
 }
 
@@ -61,7 +61,7 @@ impl FnArg {
         sig.inputs
             .iter()
             .map_vec_into(|arg| match arg {
-                syn::FnArg::Receiver(r) => r.error("Cannot use self in function").as_err(),
+                syn::FnArg::Receiver(r) => r.error("Cannot use self in system").as_err(),
                 syn::FnArg::Typed(syn::PatType { ty, .. }) => {
                     FnArg::parse_type(ty, (m, cr, crates))
                 }
@@ -163,9 +163,7 @@ pub struct ItemSystem {
     pub path: ItemPath,
     pub args: Vec<FnArg>,
     pub attr_args: SystemMacroArgs,
-    pub file: String,
-    pub span: Span,
-    pub err_span: ErrorSpan,
+    pub span: ItemSpan,
 }
 
 impl ItemSystem {
@@ -178,15 +176,10 @@ impl ItemSystem {
         let path = m.path.to_vec().push_into(fun.sig.ident.to_string());
         parse_tokens(attr.args.clone()).and_then(|attr_args| {
             FnArg::parse(&attr_args, items, &fun.sig, (m, cr, crates)).map(|args| ItemSystem {
-                path: ItemPath {
-                    cr_idx: cr.idx,
-                    path,
-                },
+                path: ItemPath::new(cr.idx, path),
                 args,
                 attr_args,
-                file: m.get_file(),
-                span: fun.sig.ident.span(),
-                err_span: m.span.clone(),
+                span: ItemSpan::new(cr, m, fun.sig.ident.span()),
             })
         })
     }
