@@ -22,9 +22,10 @@ pub struct ErrorSpan {
 }
 
 impl ErrorSpan {
-    pub fn offset_bytes(&mut self, off: usize) {
-        self.byte_start += off;
-        self.byte_end += off;
+    pub fn subtract_bytes(&mut self, off: usize) {
+        let off = off.min(self.byte_start).min(self.byte_end);
+        self.byte_start -= off;
+        self.byte_end -= off;
     }
 }
 
@@ -76,4 +77,11 @@ where
             column_end,
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct ErrorNote {
+    pub span: ErrorSpan,
+    pub msg: String,
+    pub file: String,
 }

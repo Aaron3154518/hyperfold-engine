@@ -1,6 +1,6 @@
 use diagnostic::{Results, ToErr};
 use proc_macro2::Span;
-use std::fmt::Display;
+use std::{cmp::Eq, fmt::Display, hash::Hash};
 
 use syn::spanned::Spanned;
 
@@ -42,16 +42,33 @@ impl HardcodedSymbol {
     }
 }
 
-#[derive(PartialEq, Eq, Copy, Clone, Hash, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct ComponentSymbol {
     pub idx: usize,
     pub args: ComponentMacroArgs,
+    pub span: Span,
 }
+
+// Used to index with labels
+impl Hash for ComponentSymbol {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.idx.hash(state);
+    }
+}
+
+impl PartialEq for ComponentSymbol {
+    fn eq(&self, other: &Self) -> bool {
+        self.idx == other.idx
+    }
+}
+
+impl Eq for ComponentSymbol {}
 
 #[derive(Copy, Clone, Debug)]
 pub struct GlobalSymbol {
     pub idx: usize,
     pub args: GlobalMacroArgs,
+    pub span: Span,
 }
 
 #[derive(Copy, Clone, Debug)]

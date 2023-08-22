@@ -50,7 +50,7 @@ pub struct NewMod {
     pub mods: Vec<NewMod>,
     pub uses: Vec<AstUse>,
     pub symbols: Vec<Symbol>,
-    pub span: ErrorSpan,
+    pub span: Span,
 }
 
 #[derive(Debug)]
@@ -60,7 +60,7 @@ pub struct AstMod {
     pub file: PathBuf,
     pub path: Vec<String>,
     pub name: String,
-    pub span: ErrorSpan,
+    pub span: Span,
     pub errs: Vec<Error>,
     pub mods: Vec<usize>,
     pub uses: Vec<AstUse>,
@@ -77,7 +77,7 @@ impl AstMod {
         path: Vec<String>,
         name: String,
         ty: AstModType,
-        span: ErrorSpan,
+        span: Span,
     ) -> Self {
         Self {
             idx,
@@ -104,7 +104,7 @@ impl AstMod {
             .catch_err(format!("Mod path is empty: {}", path.join("::")).trace())?
             .to_string();
 
-        let mut s = Self::new(0, file, path, name, ty, (&ast).into());
+        let mut s = Self::new(0, file, path, name, ty, ast.span());
 
         let mods = s.visit_items(ast.items);
         // Resolve local use paths

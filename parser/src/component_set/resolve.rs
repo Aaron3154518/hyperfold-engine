@@ -40,7 +40,7 @@ impl LabelItem {
             AstLabelItem::Item { not, ty, span } => resolve_path(ty, (m, cr, crates))
                 .expect_component()
                 .discard_symbol()
-                .with_span(&m.span)
+                .with_span(&span)
                 .map(|comp| Self::Item { not, comp, span }),
             AstLabelItem::Expression { op, items, span } => items
                 .into_iter()
@@ -76,10 +76,12 @@ impl std::fmt::Display for LabelItem {
 #[derive(Debug, Clone)]
 pub struct ComponentSetItem {
     pub var: String,
+    pub ty: String,
     pub comp: ComponentSymbol,
     pub ref_cnt: usize,
     pub is_mut: bool,
     pub is_opt: bool,
+    pub span: Span,
 }
 
 impl ComponentSetItem {
@@ -97,13 +99,15 @@ impl ComponentSetItem {
         resolve_path(ty.path.to_vec(), (m, cr, crates))
             .expect_component()
             .discard_symbol()
-            .with_span(&m.span)
+            .with_span(&span)
             .map(|comp| Self {
                 var,
+                ty: ty.path.join("::"),
                 comp,
                 ref_cnt,
                 is_mut,
                 is_opt,
+                span,
             })
     }
 
@@ -124,6 +128,7 @@ pub struct ComponentSet {
     pub path: ItemPath,
     pub args: Vec<ComponentSetItem>,
     pub labels: Option<ComponentSetLabels>,
+    pub span: Span,
 }
 
 impl ComponentSet {
@@ -208,9 +213,10 @@ impl ComponentSet {
                     })
                 });
                 Self {
-                    path: ItemPath::new(cr.idx, m.path.to_vec().push_into(ident)),
+                    path: ItemPath::new(cr.idx, m.path.to_vec().push_into(ident.to_string())),
                     labels,
                     args,
+                    span: ident.span(),
                 }
             })
     }

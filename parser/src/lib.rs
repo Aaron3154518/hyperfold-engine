@@ -96,10 +96,12 @@ pub fn parse(entry: PathBuf) {
             let mut i = 0;
             for cr in crates.iter_mut() {
                 for m in cr.iter_mods_mut() {
+                    // TODO: Only load if there are files and load all before
+                    let span = (&m.span).into();
                     let file = m.get_file();
                     let renderer = Renderer::new(&file);
                     for err in m.take_errors() {
-                        err.subtract_span(&m.span).render(&renderer).emit().unwrap();
+                        err.subtract_span(&span).render(&renderer).emit().unwrap();
                         i += 1;
                     }
                 }

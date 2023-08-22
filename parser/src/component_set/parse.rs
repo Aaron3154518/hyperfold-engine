@@ -313,7 +313,7 @@ impl Parse for AstComponentSetItem {
 
 #[derive(Debug)]
 pub struct AstComponentSet {
-    pub ident: String,
+    pub ident: syn::Ident,
     pub args: Vec<AstComponentSetItem>,
     pub labels: Option<AstLabelItem>,
 }
@@ -328,7 +328,7 @@ impl Parse for AstComponentSet {
             // Labels
             labels = input
                 .parse::<proc_macro2::Group>()
-                .catch_syn_err("Expected parentheses after labels")
+                .catch_err(first_ident.error("Expected parentheses after labels"))
                 .and_then(|g| {
                     let stream = g.stream();
                     Ok(match stream.is_empty() {
@@ -338,20 +338,24 @@ impl Parse for AstComponentSet {
                         ),
                     })
                 })?;
-            input.parse::<Comma>().catch_syn_err("Expected ','")?;
-            first_ident = input.parse().catch_syn_err("Expected ident")?;
+            input
+                .parse::<Comma>()
+                .catch_syn_err("Expected ',' after label expression")?;
+            first_ident = input
+                .parse()
+                .catch_syn_err("Expected ident after label expression")?;
         }
 
         let mut args = Vec::new();
         while input.parse::<Comma>().is_ok() {
-            match input.parse_stream() {
-                Ok(i) => args.push(i),
-                Err(_) => break,
+            if input.is_empty() {
+                break;
             }
+            args.push(input.parse_stream()?);
         }
 
         Ok(Self {
-            ident: first_ident.to_string(),
+            ident: first_ident,
             args,
             labels,
         })

@@ -70,7 +70,7 @@ pub struct ItemState {
 pub struct ItemData {
     pub path: ItemPath,
     pub mod_idx: usize,
-    pub span: ErrorSpan,
+    pub span: Span,
 }
 
 impl ItemData {
@@ -78,7 +78,7 @@ impl ItemData {
         Self {
             path: ItemPath::new(cr_idx, item.path.to_vec()),
             mod_idx,
-            span: (&item.span).into(),
+            span: item.span,
         }
     }
 
@@ -121,12 +121,14 @@ impl Items {
 
     fn add_component(&mut self, comp: ItemComponent) -> Symbol {
         let args = comp.args;
+        let span = comp.data.span;
         let path = comp.data.path.path.clone();
         self.components.push(comp);
         Symbol {
             kind: SymbolType::Component(ComponentSymbol {
                 idx: self.components.len() - 1,
                 args,
+                span,
             }),
             path,
             public: true,
@@ -135,12 +137,14 @@ impl Items {
 
     fn add_global(&mut self, global: ItemGlobal) -> Symbol {
         let args = global.args;
+        let span = global.data.span;
         let path = global.data.path.path.clone();
         self.globals.push(global);
         Symbol {
             kind: SymbolType::Global(GlobalSymbol {
                 idx: self.globals.len() - 1,
                 args,
+                span,
             }),
             path,
             public: true,
@@ -199,7 +203,7 @@ impl Items {
             mods: Vec::new(),
             uses: Vec::new(),
             symbols,
-            span: (&item.span).into(),
+            span: item.span,
         }
     }
 
@@ -400,6 +404,7 @@ impl Items {
                     let g_sym = GlobalSymbol {
                         idx,
                         args: GlobalMacroArgs::default(),
+                        span: ns_mod.span,
                     };
                     if cr.idx == 0 {
                         cr.add_symbol(Symbol {

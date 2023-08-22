@@ -52,41 +52,98 @@ pub enum FnArgs {
     },
 }
 
+struct ComponentRef {
+    set_span: Span,
+    item_span: Span,
+}
+
 pub struct ComponentRefTracker {
-    mut_refs: Vec<String>,
-    immut_refs: Vec<String>,
+    comp_name: String,
+    mut_refs: Vec<ComponentRef>,
+    immut_refs: Vec<ComponentRef>,
 }
 
 impl ComponentRefTracker {
-    pub fn new() -> Self {
+    pub fn new(comp_name: String) -> Self {
         Self {
+            comp_name,
             mut_refs: Vec::new(),
             immut_refs: Vec::new(),
         }
     }
 
-    pub fn with_ref(mut self, set_name: String, is_mut: bool) -> Self {
-        self.add_ref(set_name, is_mut);
+    pub fn with_ref(mut self, set_span: Span, item_span: Span, is_mut: bool) -> Self {
+        self.add_ref(set_span, item_span, is_mut);
         self
     }
 
-    pub fn add_ref(&mut self, set_name: String, is_mut: bool) {
+    pub fn add_ref(&mut self, set_span: Span, item_span: Span, is_mut: bool) {
         if is_mut {
-            self.mut_refs.push(set_name);
+            &mut self.mut_refs
         } else {
-            self.immut_refs.push(set_name);
+            &mut self.immut_refs
         }
+        .push(ComponentRef {
+            set_span,
+            item_span,
+        });
+    }
+
+    fn iter_refs(&self) -> impl Iterator<Item = (&ComponentRef, bool)> {
+        self.mut_refs
+            .iter()
+            .map(|r| (r, true))
+            .chain(self.immut_refs.iter().map(|r| (r, false)))
     }
 
     pub fn validate(&self, sys: &ItemSystem) -> Result<()> {
         let (mut_cnt, immut_cnt) = (self.mut_refs.len(), self.immut_refs.len());
 
-        (mut_cnt > 1)
-            .err(sys.span.error("Multiple mutable references").as_vec(), ())
-            .take_errs((mut_cnt > 0 && immut_cnt > 0).err(
-                sys.span.error("Mutable and immutable references").as_vec(),
-                (),
-            ))
+        // TODO: one error per argument
+        // TODO: remove duplicate items (e.g. same argument twice)
+        (mut_cnt > 0 && immut_cnt > 0)
+            .then_err(
+                || {
+                    let notes = || {
+                        self.iter_refs().map(|(r, is_mut)| {
+                            (
+                                (&r.item_span).into(),
+                                format!(
+                                    "{} reference here",
+                                    if is_mut { "Mutable" } else { "Immutable" }
+                                ),
+                            )
+                        })
+                    };
+                    self.iter_refs().map_vec_into(|(r, is_mut)| {
+                        r.set_span
+                            .error(format!(
+                                "Cannot have both mutable and immutable references to {}",
+                                self.comp_name
+                            ))
+                            .with_notes(notes())
+                    })
+                },
+                || (),
+            )
+            .and_then(|_| {
+                let notes = || {
+                    self.mut_refs
+                        .iter()
+                        .map(|r| ((&r.item_span).into(), "Mutable reference here".to_string()))
+                };
+                (mut_cnt > 1).err(
+                    self.mut_refs.map_vec(|r| {
+                        r.set_span
+                            .error(format!(
+                                "Cannot have multiple mutable references to {}",
+                                self.comp_name
+                            ))
+                            .with_notes(notes())
+                    }),
+                    (),
+                )
+            })
         // TODO: add hint
         // .map_err(|mut errs| {
         //     if !self.mut_refs.is_empty() {
@@ -122,7 +179,7 @@ impl ItemSystem {
                             idx: *idx,
                             is_mut: arg.is_mut,
                         }),
-                    FnArgType::Event(_) | FnArgType::Entities { .. } => self
+                    FnArgType::Event(_) | FnArgType::Entities { .. } => arg
                         .span
                         .error(format!("Init systems may not contain {}", arg.ty))
                         .as_err(),
@@ -194,7 +251,7 @@ impl ItemSystem {
             .globals
             .get(i)
             .ok_or(
-                self.span
+                arg.span
                     .error(format!("Invalid Global index: {i}"))
                     .as_vec(),
             )
@@ -217,11 +274,7 @@ impl ItemSystem {
         items
             .events
             .get(i)
-            .ok_or(
-                self.span
-                    .error(format!("Invalid Event index: {i}"))
-                    .as_vec(),
-            )
+            .ok_or(arg.span.error(format!("Invalid Event index: {i}")).as_vec())
             .take_errs(self.validate_ref(arg, 1))
             .take_errs(self.validate_mut(arg, false))
     }
@@ -238,7 +291,7 @@ impl ItemSystem {
             .component_sets
             .get(i)
             .ok_or(
-                self.span
+                arg.span
                     .error(format!("Invalid component set index: {i}"))
                     .as_vec(),
             )
@@ -248,11 +301,12 @@ impl ItemSystem {
                 // Add component refs
                 for item in cs.args.iter() {
                     if !component_refs.contains_key(&item.comp.idx) {
-                        component_refs.insert(item.comp.idx, ComponentRefTracker::new());
+                        component_refs
+                            .insert(item.comp.idx, ComponentRefTracker::new(item.ty.to_string()));
                     }
 
                     if let Some(refs) = component_refs.get_mut(&item.comp.idx) {
-                        refs.add_ref(path.to_string(), item.is_mut);
+                        refs.add_ref(arg.span, item.span, item.is_mut);
                     }
                 }
 

@@ -1,16 +1,18 @@
 use backtrace::Backtrace;
 use codespan_reporting::diagnostic::{Label, Severity};
 use diagnostic::{
-    CatchErr, CodespanDiagnostic, Diagnostic, DiagnosticLevel, ErrorSpan, Renderer, Results, ToErr,
+    CatchErr, CodespanDiagnostic, Diagnostic, DiagnosticLevel, ErrorNote, ErrorSpan, Renderer,
+    Results, ToErr,
 };
 use syn::spanned::Spanned;
 
-use crate::traits::CollectVecInto;
+use crate::traits::{CollectVec, CollectVecInto};
 
 #[derive(Debug, Clone)]
 pub struct Error {
     pub diagnostic: CodespanDiagnostic<usize>,
-    pub span: ErrorSpan,
+    pub span: Option<ErrorSpan>,
+    pub notes: Vec<(ErrorSpan, String)>,
 }
 
 pub type Result<T> = Results<T, Error>;
@@ -19,7 +21,8 @@ impl From<DiagnosticLevel> for Error {
     fn from(value: DiagnosticLevel) -> Self {
         Self {
             diagnostic: CodespanDiagnostic::<usize>::from(value),
-            span: Default::default(),
+            span: None,
+            notes: Vec::new(),
         }
     }
 }
@@ -42,6 +45,16 @@ impl Error {
         self
     }
 
+    pub fn with_note(mut self, span: impl Into<ErrorSpan>, msg: impl Into<String>) -> Self {
+        self.notes.push((span.into(), msg.into()));
+        self
+    }
+
+    pub fn with_notes(mut self, notes: impl IntoIterator<Item = (ErrorSpan, String)>) -> Self {
+        self.notes.extend(notes);
+        self
+    }
+
     pub fn with_backtrace(mut self) -> Self {
         // TODO: optimize
         // self.diagnostic
@@ -56,29 +69,56 @@ impl Error {
     }
 
     pub fn with_span(mut self, span: impl Into<ErrorSpan>) -> Self {
-        self.span = span.into();
+        if self.span.is_none() {
+            self.span = Some(span.into());
+        }
         self
     }
 
     pub fn with_file(mut self, file_id: usize) -> Self {
-        self.diagnostic.labels.push(Label::primary(
-            file_id,
-            self.span.byte_start..self.span.byte_end,
-        ));
+        let span = self.span.unwrap_or_default();
+        self.diagnostic
+            .labels
+            .push(Label::primary(file_id, span.byte_start..span.byte_end));
+        // TODO: notes in different files
+        // self.diagnostic.notes.extend(
+        //     self.labels
+        //         .map_vec(|(s, _)| Label::secondary(file_id, s.byte_start..s.byte_end)),
+        // );
         self
     }
 
     pub fn subtract_span(mut self, span: &ErrorSpan) -> Self {
-        self.span.byte_start -= span.byte_start;
-        self.span.byte_end -= span.byte_start;
+        if let Some(curr_span) = &mut self.span {
+            curr_span.subtract_bytes(span.byte_start);
+        }
+        for (s, _) in &mut self.notes {
+            s.subtract_bytes(span.byte_start);
+        }
         self
     }
 
     pub fn render(self, renderer: &Renderer) -> Diagnostic {
-        let Self { diagnostic, span } = self.with_file(renderer.file_idx());
+        let file_idx = renderer.file_idx();
+        let Self {
+            mut diagnostic,
+            span,
+            notes: labels,
+        } = self.with_file(file_idx);
+        diagnostic.notes.extend(labels.iter().map(|(span, msg)| {
+            renderer.render(
+                &CodespanDiagnostic::note()
+                    .with_message(msg)
+                    .with_labels(vec![Label::primary(
+                        file_idx,
+                        span.byte_start..span.byte_end,
+                    )]),
+            )
+        }));
+        let file = renderer.file_name();
         Diagnostic::from_span(
             diagnostic.message.to_string(),
-            renderer.file_name(),
+            file.to_string(),
             match diagnostic.severity {
                 Severity::Error => DiagnosticLevel::Error,
                 Severity::Warning | Severity::Bug => DiagnosticLevel::Warning,
@@ -86,8 +126,13 @@ impl Error {
                 Severity::Help => DiagnosticLevel::Help,
             },
             Some(renderer.render(&diagnostic)),
-            span,
+            span.unwrap_or_default(),
         )
+        .with_notes(labels.into_iter().map(|(span, msg)| ErrorNote {
+            span,
+            msg,
+            file: file.to_string(),
+        }))
     }
 }
 

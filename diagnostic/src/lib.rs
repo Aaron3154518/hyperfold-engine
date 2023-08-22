@@ -153,6 +153,29 @@ impl Diagnostic {
         )
     }
 
+    pub fn with_notes(mut self, notes: impl IntoIterator<Item = ErrorNote>) -> Self {
+        self.spans.extend(
+            notes
+                .into_iter()
+                .map(|ErrorNote { span, msg, file }| DiagnosticSpan {
+                    file_name: file,
+                    byte_start: span.byte_start as u32,
+                    byte_end: span.byte_end as u32,
+                    line_start: span.line_start,
+                    line_end: span.line_end,
+                    column_start: span.column_start + 1,
+                    column_end: span.column_end + 1,
+                    is_primary: false,
+                    text: Vec::new(),
+                    label: Some(msg),
+                    suggested_replacement: None,
+                    suggestion_applicability: None,
+                    expansion: None,
+                }),
+        );
+        self
+    }
+
     pub fn to_json(&self) -> serde_json::Result<String> {
         serde_json::to_string(self)
     }
