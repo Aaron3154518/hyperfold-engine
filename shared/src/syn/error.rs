@@ -13,6 +13,7 @@ use syn::spanned::Spanned;
 
 use crate::traits::{CollectVec, CollectVecInto};
 
+// Represents a file that has been loaded into the Renderer
 struct File {
     id: usize,
     name: String,
@@ -20,12 +21,14 @@ struct File {
     success: io::Result<()>,
 }
 
+// Contains data from the result of rendering a diagnostic
 pub struct RenderResult {
     text: String,
     file: String,
     span: ErrorSpan,
 }
 
+// Renderer handles loading files, adjusting spans, and generating diagnostic text
 pub struct Renderer {
     file_list: SimpleFiles<String, String>,
     files: HashMap<(usize, usize), File>,
@@ -121,6 +124,7 @@ impl Renderer {
     }
 }
 
+// Trait for get diagnostic
 pub trait DiagnosticTrait {
     fn diagnostic(&self) -> CodespanDiagnostic<usize>;
 }
