@@ -13,7 +13,7 @@ use crate::parse::{
 };
 use shared::{
     syn::{
-        error::{MutateResults, Result},
+        error::{CriticalResult, MutateResults},
         get_fn_name, parse_tokens, ToRange,
     },
     traits::{Call, CollectVec, CollectVecInto, PushInto, ThenNone},
@@ -35,7 +35,7 @@ pub enum LabelItem {
 }
 
 impl LabelItem {
-    fn resolve(item: AstLabelItem, (m, cr, crates): ModInfo) -> Result<Self> {
+    fn resolve(item: AstLabelItem, (m, cr, crates): ModInfo) -> CriticalResult<Self> {
         match item {
             AstLabelItem::Item { not, ty, span } => resolve_path(ty, (m, cr, crates))
                 .expect_component()
@@ -58,7 +58,7 @@ impl LabelItem {
 }
 
 impl std::fmt::Display for LabelItem {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::CriticalResult {
         match self {
             LabelItem::Item { not, comp, .. } => {
                 f.write_fmt(format_args!("{}{}", if *not { "!" } else { "" }, comp.idx))
@@ -95,7 +95,7 @@ impl ComponentSetItem {
             span,
         }: AstComponentSetItem,
         (m, cr, crates): ModInfo,
-    ) -> Result<Self> {
+    ) -> CriticalResult<Self> {
         resolve_path(ty.path.to_vec(), (m, cr, crates))
             .expect_component()
             .discard_symbol()
@@ -170,7 +170,7 @@ impl ComponentSet {
             .is_some_and(|comp| comp.args.is_singleton)
     }
 
-    pub fn parse(tokens: TokenStream, (m, cr, crates): ModInfo) -> Result<Self> {
+    pub fn parse(tokens: TokenStream, (m, cr, crates): ModInfo) -> CriticalResult<Self> {
         let span = tokens.span();
         parse_tokens(tokens).and_then(|cs| Self::resolve(cs, (m, cr, crates)))
     }
@@ -182,7 +182,7 @@ impl ComponentSet {
             labels,
         }: AstComponentSet,
         (m, cr, crates): ModInfo,
-    ) -> Result<Self> {
+    ) -> CriticalResult<Self> {
         args.into_iter()
             .map_vec_into(|arg| ComponentSetItem::resolve(arg, (m, cr, crates)))
             .combine_results()
@@ -223,7 +223,7 @@ impl ComponentSet {
 }
 
 impl std::fmt::Display for ComponentSet {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::CriticalResult {
         f.write_fmt(format_args!(
             "{{\n{}\n{:#?}\nLabels: {}\n}}",
             self.path.path.join("::"),

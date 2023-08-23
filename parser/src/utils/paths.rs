@@ -6,7 +6,7 @@ use quote::{format_ident, quote};
 use shared::{
     macros::{expand_enum, ExpandEnum},
     syn::{
-        error::{GetVec, Result},
+        error::{CriticalResult, GetVec},
         vec_to_path,
     },
     traits::{Call, CollectVec, PushInto},
@@ -49,7 +49,7 @@ impl CratePath {
 }
 
 impl std::fmt::Display for CratePath {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::CriticalResult {
         write!(
             f,
             "{:#?}{}::{}",
@@ -163,7 +163,7 @@ macro_rules! engine_globals {
         }
 
         impl $ty {
-            pub fn get_global_vars(&self, crates: &Crates, cr_idx: usize) -> Result<$ty_res> {
+            pub fn get_global_vars(&self, crates: &Crates, cr_idx: usize) -> CriticalResult<$ty_res> {
                 let cr = crates.try_get(cr_idx)?;
                 let get_global = |cr_path| {
                     crates

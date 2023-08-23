@@ -3,7 +3,7 @@ use std::{
     path::{Display, PathBuf},
 };
 
-use diagnostic::{CatchErr, ErrForEach, ErrorSpan, ErrorTrait, ResultsTrait, ToErr};
+use diagnostic::{ok, CatchErr, ErrForEach, ErrorSpan, ErrorTrait, ResultsTrait, ToErr};
 use proc_macro2::{Span, TokenStream};
 
 use syn::{spanned::Spanned, visit::Visit};
@@ -28,7 +28,7 @@ use shared::{
     parsing::{ComponentMacroArgs, GlobalMacroArgs},
     syn::{
         add_use_item,
-        error::{Error, MutateResults, Result, StrToError, ToError},
+        error::{CriticalResult, Error, MutateResults, Result, StrToError, ToError, WarningResult},
         use_path_from_syn, ToRange,
     },
     traits::{Call, Catch, CollectVecInto, HandleErr, PushInto},
@@ -61,12 +61,13 @@ pub struct AstMod {
     pub path: Vec<String>,
     pub name: String,
     pub span: Span,
-    pub errs: Vec<Error>,
     pub mods: Vec<usize>,
     pub uses: Vec<AstUse>,
     pub symbols: Vec<Symbol>,
     pub items: AstItems,
 }
+
+pub type AstModTree = Tree<WarningResult<AstMod>>;
 
 // TODO: ignore private mods to avoid name collisions
 // Pass 1: parsing
@@ -86,7 +87,6 @@ impl AstMod {
             name,
             path,
             span,
-            errs: Vec::new(),
             mods: Vec::new(),
             uses: Vec::new(),
             symbols: Vec::new(),
@@ -94,7 +94,7 @@ impl AstMod {
         }
     }
 
-    pub fn parse(file: PathBuf, path: Vec<String>, ty: AstModType) -> Result<Tree<Self>> {
+    pub fn parse(file: PathBuf, path: Vec<String>, ty: AstModType) -> CriticalResult<AstModTree> {
         let file_contents = fs::read_to_string(file.to_owned())
             .catch_err(format!("Failed to read file: {}", file.display()).trace())?;
         let ast = syn::parse_file(&file_contents)
@@ -104,13 +104,14 @@ impl AstMod {
             .catch_err(format!("Mod path is empty: {}", path.join("::")).trace())?
             .to_string();
 
-        let mut s = Self::new(0, file, path, name, ty, ast.span());
+        let mut root = Self::new(0, file, path, name, ty, ast.span());
 
-        let mods = s.visit_items(ast.items);
+        let mods = root.visit_items(ast.items);
         // Resolve local use paths
         // E.g. mod Foo; use Foo::Bar;
-        for use_path in s.uses.iter_mut() {
+        for use_path in root.uses.iter_mut() {
             if let Some(m) = mods
+                .value
                 .iter()
                 .find(|m| m.root.path.last().is_some_and(|p| p == &use_path.first))
             {
@@ -118,10 +119,10 @@ impl AstMod {
             }
         }
 
-        Ok(Tree {
-            root: s,
-            children: mods,
-        })
+        Ok(mods.map(|children| Tree {
+            root: ok(root),
+            children,
+        }))
     }
 
     pub fn add_symbol(&mut self, symbol: Symbol) {
@@ -154,18 +155,14 @@ impl AstMod {
         self.mods.push(num_mods);
         mods.push_into(new_mod)
     }
-
-    pub fn take_errors(&mut self) -> Vec<Error> {
-        std::mem::replace(&mut self.errs, Vec::new())
-    }
 }
 
 // File/items
 impl AstMod {
-    fn visit_items(&mut self, items: Vec<syn::Item>) -> Vec<Tree<Self>> {
+    fn visit_items(&mut self, items: Vec<syn::Item>) -> Vec<AstModTree> {
         let mut mods = Vec::new();
-        for i in items {
-            match i {
+        items
+            .try_for_each(|i| match i {
                 syn::Item::Use(i) => self.visit_item_use(i),
                 syn::Item::Fn(i) => self.visit_item_fn(i),
                 syn::Item::Enum(i) => self.visit_item_enum(i),
@@ -173,14 +170,12 @@ impl AstMod {
                 syn::Item::Macro(i) => self.visit_item_macro(i),
                 syn::Item::Mod(i) => self.visit_item_mod(i).map(|tree| mods.push(tree)),
                 _ => Ok(()),
-            }
-            .record_errs(&mut self.errs);
-        }
-        mods
+            })
+            .map(|_| mods)
     }
 
     // Mod
-    fn visit_item_mod(&mut self, i: syn::ItemMod) -> Result<Tree<Self>> {
+    fn visit_item_mod(&mut self, i: syn::ItemMod) -> CriticalResult<AstModTree> {
         if let Some(attrs) = get_attributes_if_active(&i.attrs, &self.path, &Vec::new())? {
             match i.content {
                 // Parse inner mod
@@ -195,7 +190,7 @@ impl AstMod {
                     );
                     Ok(Tree {
                         children: new_mod.visit_items(items),
-                        root: new_mod,
+                        root: ok(new_mod),
                     })
                 }
                 // Parse file mod

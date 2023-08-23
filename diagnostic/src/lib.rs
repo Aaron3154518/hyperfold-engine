@@ -1,9 +1,11 @@
 #![feature(lazy_cell)]
 
+mod critical_result;
 mod diagnostic;
 mod error;
 mod result;
 mod span;
+mod warning_result;
 mod writer;
 
 use codespan_reporting::{
@@ -14,14 +16,16 @@ use codespan_reporting::{
 use crate::writer::{Writer, WriterTrait};
 
 pub use codespan_reporting::diagnostic::Diagnostic as CodespanDiagnostic;
+pub use critical_result::*;
 pub use diagnostic::*;
 pub use error::*;
 pub use result::*;
+pub use warning_result::*;
 
 pub fn render(
     files: &SimpleFiles<String, String>,
     diagnostic: &CodespanDiagnostic<usize>,
-) -> Result<String, codespan_reporting::files::Error> {
+) -> std::result::Result<String, codespan_reporting::files::Error> {
     let mut writer = Writer::empty();
     let config = Config::default();
     term::emit(&mut writer, &config, files, diagnostic).map(|_| writer.to_string())

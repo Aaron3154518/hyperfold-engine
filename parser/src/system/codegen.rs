@@ -6,7 +6,7 @@ use quote::quote;
 
 use shared::{
     syn::{
-        error::{GetVec, MutateResults, Result},
+        error::{CriticalResult, GetVec, MutateResults},
         Quote,
     },
     traits::{CollectVec, CollectVecInto, GetResult},
@@ -132,7 +132,7 @@ fn codegen_system(
     args: FnArgs,
     cargs: CodegenItems,
     funcs: CodegenFuncs,
-) -> Result<(TokenStream, Option<syn::Ident>)> {
+) -> CriticalResult<(TokenStream, Option<syn::Ident>)> {
     let CodegenItems {
         cr_idx,
         crates,
@@ -182,7 +182,7 @@ fn validate_system(
         system,
     }: CodegenItems,
     funcs: CodegenFuncs,
-) -> Result<(TokenStream, Option<syn::Ident>)> {
+) -> CriticalResult<(TokenStream, Option<syn::Ident>)> {
     let func_name = crates
         .get_item_syn_path(cr_idx, &system.path)
         .with_span(&system.span.span);
@@ -221,7 +221,7 @@ pub fn codegen_systems(
     cr_idx: usize,
     items: &Items,
     crates: &mut Crates,
-) -> Result<SystemsCodegenResult> {
+) -> CriticalResult<SystemsCodegenResult> {
     let event_trait = crates.get_syn_path(cr_idx, &ENGINE_TRAITS.add_event);
     let intersect = crates.get_syn_path(cr_idx, &ENGINE_PATHS.intersect);
     let intersect_opt = crates.get_syn_path(cr_idx, &ENGINE_PATHS.intersect_opt);
@@ -232,7 +232,7 @@ pub fn codegen_systems(
 
     zip_match!((event_trait, intersect, intersect_opt) => {
         (&items.systems)
-            .do_for_each(|system| {
+            .try_for_each(|system| {
                 validate_system(
                     CodegenItems {
                         cr_idx,

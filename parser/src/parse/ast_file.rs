@@ -1,10 +1,13 @@
 use std::{fs, path::PathBuf};
 
 use diagnostic::ToErr;
-use shared::syn::error::{Result, StrToError};
+use shared::syn::error::{CriticalResult, StrToError};
 use syn::visit::Visit;
 
-use super::{ast_mod::AstModType, AstMod};
+use super::{
+    ast_mod::{AstModTree, AstModType},
+    AstMod,
+};
 use crate::utils::{constants::NAMESPACE, tree::Tree};
 
 #[derive(Debug)]
@@ -36,7 +39,7 @@ impl From<DirType> for AstModType {
 
 // Pass 1: parsing
 impl AstMod {
-    pub fn parse_mod(path: PathBuf, mod_path: &Vec<String>) -> Result<Tree<Self>> {
+    pub fn parse_mod(path: PathBuf, mod_path: &Vec<String>) -> CriticalResult<AstModTree> {
         if path.is_dir() {
             Self::parse_dir(path, mod_path, DirType::Mod)
         } else {
@@ -52,11 +55,19 @@ impl AstMod {
         }
     }
 
-    pub fn parse_file(path: PathBuf, mod_path: &Vec<String>, ty: AstModType) -> Result<Tree<Self>> {
+    pub fn parse_file(
+        path: PathBuf,
+        mod_path: &Vec<String>,
+        ty: AstModType,
+    ) -> CriticalResult<AstModTree> {
         Self::parse(path, mod_path.to_vec(), ty)
     }
 
-    pub fn parse_dir(path: PathBuf, mod_path: &Vec<String>, ty: DirType) -> Result<Tree<Self>> {
+    pub fn parse_dir(
+        path: PathBuf,
+        mod_path: &Vec<String>,
+        ty: DirType,
+    ) -> CriticalResult<AstModTree> {
         Self::parse_file(path.join(ty.to_file()), mod_path, AstModType::from(ty))
     }
 }

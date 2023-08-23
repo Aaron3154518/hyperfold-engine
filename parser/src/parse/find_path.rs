@@ -1,4 +1,4 @@
-use diagnostic::{CatchErr, Results, ToErr};
+use diagnostic::{CatchErr, CriticalResult, ToErr};
 use quote::ToTokens;
 use syn::{spanned::Spanned, Pat};
 
@@ -7,7 +7,7 @@ use crate::parse::{
 };
 use shared::{
     syn::{
-        error::{Result, StrToError},
+        error::{CriticalResult, StrToError},
         use_path_from_syn,
     },
     traits::{Catch, CollectVecInto},
@@ -48,7 +48,7 @@ pub fn resolve_path_from_crate<'a>(
     mut path: Vec<String>,
     cr: &'a AstCrate,
     crates: &'a Vec<AstCrate>,
-) -> Result<&'a Symbol> {
+) -> CriticalResult<&'a Symbol> {
     // println!("Resolve: {}, crate: {}", path.join("::"), cr.idx);
     match path.first() {
         Some(p) => {
@@ -87,7 +87,7 @@ fn resolve_path_from_mod<'a>(
     path: Vec<String>,
     idx: usize,
     (m, cr, crates): ModInfo<'a>,
-) -> Result<&'a Symbol> {
+) -> CriticalResult<&'a Symbol> {
     // println!(
     //     "Resolve Mod: {} at {}",
     //     path.join("::"),
@@ -153,7 +153,10 @@ fn resolve_path_from_mod<'a>(
 }
 
 // Paths that start relative to some mod item
-pub fn resolve_path<'a>(path: Vec<String>, (m, cr, crates): ModInfo<'a>) -> Result<&'a Symbol> {
+pub fn resolve_path<'a>(
+    path: Vec<String>,
+    (m, cr, crates): ModInfo<'a>,
+) -> CriticalResult<&'a Symbol> {
     // println!("Local Resolve: {}", path.join("::"));
     let cr_idx = cr.idx;
 
@@ -209,12 +212,15 @@ pub fn resolve_syn_path<'a>(
     parent_path: &Vec<String>,
     path: &syn::Path,
     (m, cr, crates): ModInfo<'a>,
-) -> Result<&'a Symbol> {
+) -> CriticalResult<&'a Symbol> {
     resolve_path(use_path_from_syn(&m.path, path), (m, cr, crates))
 }
 
-impl<'a> MatchSymbol<'a> for Result<&'a Symbol> {
-    fn and_then_impl<T>(self, f: impl FnOnce(&'a Symbol) -> Result<T>) -> Result<T> {
+impl<'a> MatchSymbol<'a> for CriticalResult<&'a Symbol> {
+    fn and_then_impl<T>(
+        self,
+        f: impl FnOnce(&'a Symbol) -> CriticalResult<T>,
+    ) -> CriticalResult<T> {
         self.and_then(f)
     }
 }

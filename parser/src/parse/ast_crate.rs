@@ -8,9 +8,9 @@ use std::{
     path::PathBuf,
 };
 
-use diagnostic::{CatchErr, ErrForEach, ErrorTrait, ToErr};
+use diagnostic::{err, CatchErr, CombineWarnings, ErrForEach, ErrorTrait, ToErr};
 use shared::{
-    syn::error::{GetVec, Result, StrToError},
+    syn::error::{CriticalResult, GetVec, Result, SpanTrait, StrToError, WarningResult},
     traits::{Call, Catch, CollectVec, CollectVecInto, ExpandEnum, GetSlice, PushInto},
 };
 
@@ -33,7 +33,7 @@ use crate::{
 const ENGINE: &str = ".";
 const MACROS: &str = "macros";
 
-fn get_engine_dir() -> Result<PathBuf> {
+fn get_engine_dir() -> CriticalResult<PathBuf> {
     fs::canonicalize(PathBuf::from(ENGINE)).catch_err(
         format!(
             "Could not canonicalize engine crate path relative to: {:#?}",
@@ -43,7 +43,7 @@ fn get_engine_dir() -> Result<PathBuf> {
     )
 }
 
-fn get_macros_dir() -> Result<PathBuf> {
+fn get_macros_dir() -> CriticalResult<PathBuf> {
     Ok(get_engine_dir()?.join("macros"))
 }
 
@@ -63,6 +63,7 @@ impl AstCrate {
         let dir: PathBuf = fs::canonicalize(dir)
             .catch_err(format!("Could not canonicalize path: {}", rel_dir.display()).trace())?;
 
+        let mut errs = Vec::new();
         let mods = AstMod::parse_dir(
             dir.join("src"),
             &vec!["crate".to_string()],
@@ -73,75 +74,74 @@ impl AstCrate {
             },
         )?
         .flatten()
-        .enumer_map_vec_into(|(i, (mut m, idxs))| {
-            m.mods = idxs;
-            m.idx = i;
-            m
+        .enumer_map_vec_into(|(i, (WarningResult { value, errors }, idxs))| {
+            errs.extend(errors.into_iter().map(|e| e.with_mod(idx, i)));
+            value.mods = idxs;
+            value.idx = i;
+            value
         });
         let main = mods.len() - 1;
 
-        Ok(Self {
-            idx,
-            name: dir
-                .file_name()
-                .catch_err(format!("Could not parse file name: {}", rel_dir.display()).trace())?
-                .to_string_lossy()
-                .to_string(),
-            dir: dir.to_owned(),
-            main,
-            mods,
-            deps: HashMap::new(),
-        })
+        Ok(err(
+            Self {
+                idx,
+                name: dir
+                    .file_name()
+                    .catch_err(format!("Could not parse file name: {}", rel_dir.display()).trace())?
+                    .to_string_lossy()
+                    .to_string(),
+                dir: dir.to_owned(),
+                main,
+                mods,
+                deps: HashMap::new(),
+            },
+            errs,
+        ))
     }
 
     pub fn parse(mut dir: PathBuf) -> Result<Crates> {
-        let mut crates = vec![AstCrate::new(dir.to_owned(), 0, true)?];
-
         let engine_dir = get_engine_dir()?;
         let macros_dir = get_macros_dir()?;
 
-        let mut crate_deps = Vec::new();
+        let mut crates = vec![AstCrate::new(dir.to_owned(), 0, true)?];
         let mut i = 0;
         while i < crates.len() {
-            let cr_dir = crates.try_get(i)?.dir.to_owned();
+            let cr_dir = crates.try_get(i)?.value.dir.to_owned();
             let (deps, new_deps) = Self::get_crate_dependencies(cr_dir.to_owned(), &crates)?;
-            crate_deps.push(deps);
+            {
+                crates.try_get_mut(i)?.value.deps = deps;
+            }
             for path in new_deps {
                 crates.push(AstCrate::new(cr_dir.join(path), crates.len(), false)?);
             }
             i += 1;
         }
+        let crates = crates.combine_results();
 
-        let engine_cr_idx = crates
+        let mut crate_idxs = [0; Crate::LEN];
+        crate_idxs[Crate::Main as usize] = 0;
+        crate_idxs[Crate::Engine as usize] = crates
+            .value
             .iter()
             .find_map(|cr| (cr.dir == engine_dir).then_some(cr.idx))
             .catch_err(
                 format!("Could not find engine crate: '{}'", engine_dir.display()).trace(),
             )?;
-        let macros_cr_idx = crates
+        crate_idxs[Crate::Macros as usize] = crates
+            .value
             .iter()
             .find_map(|cr| (cr.dir == macros_dir).then_some(cr.idx))
             .catch_err(
                 format!("Could not find macros crate: '{}'", macros_dir.display()).trace(),
             )?;
 
-        // Insert correct dependencies
-        for (cr, deps) in crates.iter_mut().zip(crate_deps.into_iter()) {
-            cr.deps = deps.into_iter().collect();
-        }
-
-        let mut crate_idxs = [0; Crate::LEN];
-        crate_idxs[Crate::Main as usize] = 0;
-        crate_idxs[Crate::Engine as usize] = engine_cr_idx;
-        crate_idxs[Crate::Macros as usize] = macros_cr_idx;
-
-        Crates::new(crates, crate_idxs)
+        crates.try_map(|crates| Crates::new(crates, crate_idxs))
     }
 
     fn get_crate_dependencies(
         cr_dir: PathBuf,
         crates: &Vec<AstCrate>,
-    ) -> Result<(Vec<(usize, String)>, Vec<String>)> {
+    ) -> CriticalResult<(Vec<(usize, String)>, Vec<String>)> {
         let deps = AstCrate::parse_cargo_toml(cr_dir.to_owned())?;
         let mut new_deps = Vec::new();
         let mut cr_deps = Vec::new();
@@ -166,7 +166,7 @@ impl AstCrate {
         Ok((cr_deps, new_deps))
     }
 
-    fn parse_cargo_toml(dir: PathBuf) -> Result<HashMap<String, String>> {
+    fn parse_cargo_toml(dir: PathBuf) -> CriticalResult<HashMap<String, String>> {
         // Get the path to the `Cargo.toml` file
         let cargo_toml_path = dir.join("Cargo.toml");
 
@@ -203,12 +203,12 @@ impl AstCrate {
     }
 
     // Insert things into crates
-    pub fn add_symbol(&mut self, sym: Symbol) -> Result<()> {
+    pub fn add_symbol(&mut self, sym: Symbol) -> CriticalResult<()> {
         self.find_mod_mut(sym.path.slice_to(-1))?.symbols.push(sym);
         Ok(())
     }
 
-    pub fn add_hardcoded_symbol(crates: &mut Crates, sym: HardcodedSymbol) -> Result<()> {
+    pub fn add_hardcoded_symbol(crates: &mut Crates, sym: HardcodedSymbol) -> CriticalResult<()> {
         let path = sym.get_path();
         crates.get_crate_mut(path.cr)?.add_symbol(Symbol {
             kind: SymbolType::Hardcoded(sym),
@@ -221,28 +221,28 @@ impl AstCrate {
 
 // Mod access
 impl AstCrate {
-    pub fn get_main_mod(&self) -> Result<&AstMod> {
+    pub fn get_main_mod(&self) -> CriticalResult<&AstMod> {
         self.get_mod(self.main)
     }
 
-    pub fn get_main_mod_mut(&mut self) -> Result<&mut AstMod> {
+    pub fn get_main_mod_mut(&mut self) -> CriticalResult<&mut AstMod> {
         self.get_mod_mut(self.main)
     }
 
-    pub fn get_mod(&self, i: usize) -> Result<&AstMod> {
+    pub fn get_mod(&self, i: usize) -> CriticalResult<&AstMod> {
         self.mods.try_get(i)
     }
 
-    pub fn get_mod_mut(&mut self, i: usize) -> Result<&mut AstMod> {
+    pub fn get_mod_mut(&mut self, i: usize) -> CriticalResult<&mut AstMod> {
         self.mods.try_get_mut(i)
     }
 
-    pub fn get_mods(&self, idxs: &Vec<usize>) -> Result<Vec<&AstMod>> {
+    pub fn get_mods(&self, idxs: &Vec<usize>) -> CriticalResult<Vec<&AstMod>> {
         let (mods, errs) = idxs.try_for_each(|i| self.get_mod(*i));
         errs.err_or(mods)
     }
 
-    pub fn find_mod<'a>(&'a self, path: &[String]) -> Result<&'a AstMod> {
+    pub fn find_mod<'a>(&'a self, path: &[String]) -> CriticalResult<&'a AstMod> {
         self.iter_mods().find(|m| m.path == path).ok_or(
             format!("No mod defined at path: {path:#?}")
                 .trace()
@@ -250,7 +250,7 @@ impl AstCrate {
         )
     }
 
-    pub fn find_mod_mut<'a>(&'a mut self, path: &[String]) -> Result<&'a mut AstMod> {
+    pub fn find_mod_mut<'a>(&'a mut self, path: &[String]) -> CriticalResult<&'a mut AstMod> {
         self.iter_mods_mut().find(|m| m.path == path).ok_or(
             format!("No mod defined at path: {path:#?}")
                 .trace()

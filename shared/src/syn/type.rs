@@ -1,18 +1,18 @@
 use diagnostic::CatchErr;
 use quote::ToTokens;
 
-use super::error::{Result, StrToError};
+use super::error::{CriticalResult, StrToError};
 
 // To type
-pub fn type_to_type(ty: &syn::Type, r: bool, m: bool) -> Result<syn::Type> {
+pub fn type_to_type(ty: &syn::Type, r: bool, m: bool) -> CriticalResult<syn::Type> {
     string_to_type(ty.to_token_stream().to_string(), r, m)
 }
 
-pub fn arr_to_type<const N: usize>(path: [&str; N], r: bool, m: bool) -> Result<syn::Type> {
+pub fn arr_to_type<const N: usize>(path: [&str; N], r: bool, m: bool) -> CriticalResult<syn::Type> {
     string_to_type(path.join("::"), r, m)
 }
 
-pub fn string_to_type(ty: String, r: bool, m: bool) -> Result<syn::Type> {
+pub fn string_to_type(ty: String, r: bool, m: bool) -> CriticalResult<syn::Type> {
     syn::parse_str::<syn::Type>(
         format!(
             "{}{}{}",

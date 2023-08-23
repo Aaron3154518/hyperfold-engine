@@ -24,7 +24,7 @@ use shared::{
     macros::ExpandEnum,
     parsing::{ComponentMacroArgs, GlobalMacroArgs, SystemMacroArgs},
     syn::{
-        error::{Error, Result},
+        error::{Error, CriticalResult},
         parse_tokens,
     },
     traits::{
@@ -230,8 +230,8 @@ impl Items {
     fn add_symbols(
         &mut self,
         crates: &mut Crates,
-        f: impl Fn(&Self, &mut Vec<NewItem>, ModInfo) -> Result<()>,
-    ) -> Result<()> {
+        f: impl Fn(&Self, &mut Vec<NewItem>, ModInfo) -> CriticalResult<()>,
+    ) -> CriticalResult<()> {
         let macro_cr_idx = crates.get_crate_index(Crate::Macros);
 
         // Get symbols
@@ -292,7 +292,7 @@ impl Items {
         items.add_symbols(crates, |_, new_items, (m, cr, crates)| {
             m.items
                 .structs_and_enums()
-                .do_for_each(|(item, attrs)| {
+                .try_for_each(|(item, attrs)| {
                     attrs
                         .do_until(|attr| {
                             Ok(
@@ -333,7 +333,7 @@ impl Items {
         // Resolve component sets
         items.add_symbols(crates, |_, new_items, (m, cr, crates)| {
             (&m.items.macro_calls)
-                .do_for_each(|call| {
+                .try_for_each(|call| {
                     if resolve_path(call.data.path.to_vec(), (m, cr, crates))
                         .expect_hardcoded(HardcodedSymbol::ComponentsMacro)
                         .is_ok()
@@ -428,7 +428,7 @@ impl Items {
         // Resolve systems
         items.add_symbols(crates, |items, new_items, (m, cr, crates)| {
             (&m.items.functions)
-                .do_for_each(|fun| {
+                .try_for_each(|fun| {
                     if let Some(attr) = fun.attrs.iter().find(|attr| {
                         resolve_path(attr.path.to_vec(), (m, cr, crates))
                             .expect_hardcoded(HardcodedSymbol::SystemMacro)

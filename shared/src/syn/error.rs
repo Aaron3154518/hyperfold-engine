@@ -7,12 +7,13 @@ use std::{
 use backtrace::Backtrace;
 use codespan_reporting::{diagnostic::Label, files::SimpleFiles};
 use diagnostic::{
-    CatchErr, CodespanDiagnostic, Diagnostic, DiagnosticLevel, ErrorNote, ErrorSpan, Results, ToErr,
+    CatchErr, CodespanDiagnostic, Diagnostic, DiagnosticLevel, ErrorNote, ErrorSpan, ToErr,
 };
 use syn::spanned::Spanned;
 
 use crate::traits::{CollectVec, CollectVecInto};
 
+// ------- STRUCTS -------
 // Represents a file that has been loaded into the Renderer
 struct File {
     id: usize,
@@ -138,15 +139,23 @@ where
 
     fn span_mut(&mut self) -> &mut Span;
 
-    fn with_span(mut self, span: impl Into<ErrorSpan>) -> Self {
+    fn set_span(&mut self, span: impl Into<ErrorSpan>) {
         self.span_mut().span = Some(span.into());
+    }
+
+    fn with_span(mut self, span: impl Into<ErrorSpan>) -> Self {
+        self.set_span(span);
         self
     }
 
-    fn with_mod(mut self, cr_idx: usize, m_idx: usize) -> Self {
+    fn set_mod(&mut self, cr_idx: usize, m_idx: usize) {
         let span = self.span_mut();
         span.cr_idx = Some(cr_idx);
         span.m_idx = Some(m_idx);
+    }
+
+    fn with_mod(mut self, cr_idx: usize, m_idx: usize) -> Self {
+        self.set_mod(cr_idx, m_idx);
         self
     }
 }
@@ -318,15 +327,18 @@ impl DiagnosticTrait for Error {
     }
 }
 
-pub type Result<T> = Results<T, Error>;
+pub type CriticalResult<T> = diagnostic::CriticalResult<T, Error>;
+pub type WarningResult<T> = diagnostic::WarningResult<T, Error>;
+pub type Result<T> = diagnostic::Result<T, Error>;
 
+// ------- TRAITS -------
 // special case for F = syn::Error
 pub trait CatchSynError<T> {
-    fn catch_syn_err(self, msg: impl Into<String>) -> Result<T>;
+    fn catch_syn_err(self, msg: impl Into<String>) -> CriticalResult<T>;
 }
 
 impl<T> CatchSynError<T> for syn::Result<T> {
-    fn catch_syn_err(self, msg: impl Into<String>) -> Result<T> {
+    fn catch_syn_err(self, msg: impl Into<String>) -> CriticalResult<T> {
         self.map_err(|e| e.span().error(msg).as_vec())
     }
 }
@@ -394,8 +406,8 @@ pub trait MutateResults {
     fn with_span(self, span: impl Into<ErrorSpan>) -> Self;
 }
 
-impl<T> MutateResults for Result<T> {
-    fn with_span(self, span: impl Into<ErrorSpan>) -> Result<T> {
+impl<T> MutateResults for CriticalResult<T> {
+    fn with_span(self, span: impl Into<ErrorSpan>) -> CriticalResult<T> {
         let span = span.into();
         self.map_err(|errs| errs.map_vec_into(|err| err.with_span(span)))
     }
@@ -403,19 +415,19 @@ impl<T> MutateResults for Result<T> {
 
 // Get element from vec or produce MsgResult
 pub trait GetVec<T> {
-    fn try_get<'a>(&'a self, i: usize) -> Result<&'a T>;
+    fn try_get<'a>(&'a self, i: usize) -> CriticalResult<&'a T>;
 
-    fn try_get_mut<'a>(&'a mut self, i: usize) -> Result<&'a mut T>;
+    fn try_get_mut<'a>(&'a mut self, i: usize) -> CriticalResult<&'a mut T>;
 }
 
 impl<T> GetVec<T> for Vec<T> {
-    fn try_get<'a>(&'a self, i: usize) -> Result<&'a T> {
+    fn try_get<'a>(&'a self, i: usize) -> CriticalResult<&'a T> {
         let len = self.len();
         self.get(i)
             .catch_err(format!("Invalid index: {i}/{len}").trace())
     }
 
-    fn try_get_mut<'a>(&'a mut self, i: usize) -> Result<&'a mut T> {
+    fn try_get_mut<'a>(&'a mut self, i: usize) -> CriticalResult<&'a mut T> {
         let len = self.len();
         self.get_mut(i)
             .catch_err(format!("Invalid index: {i}/{len}").trace())

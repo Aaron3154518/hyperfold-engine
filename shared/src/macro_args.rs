@@ -4,7 +4,7 @@ use syn::spanned::Spanned;
 
 use crate::{
     syn::{
-        error::{Result, ToError},
+        error::{CriticalResult, ToError},
         path_to_vec, Parse,
     },
     traits::CollectVec,
@@ -15,10 +15,10 @@ pub trait ParseFrom<T>
 where
     Self: Sized,
 {
-    fn parse_from(vals: &T) -> Result<Self>;
+    fn parse_from(vals: &T) -> CriticalResult<Self>;
 }
 
-fn parse<T, U>(input: syn::parse::ParseStream) -> Result<T>
+fn parse<T, U>(input: syn::parse::ParseStream) -> CriticalResult<T>
 where
     T: ParseFrom<Vec<U>>,
     U: syn::parse::Parse,
@@ -49,7 +49,7 @@ impl Default for ComponentMacroArgs {
 }
 
 impl ParseFrom<Vec<syn::Ident>> for ComponentMacroArgs {
-    fn parse_from(vals: &Vec<syn::Ident>) -> Result<Self> {
+    fn parse_from(vals: &Vec<syn::Ident>) -> CriticalResult<Self> {
         let mut c = Self::default();
         vals.map_vec(|i| match i.to_string().as_str() {
             "Dummy" => Ok(c.is_dummy = true),
@@ -67,7 +67,7 @@ impl ParseFrom<Vec<syn::Ident>> for ComponentMacroArgs {
 }
 
 impl Parse for ComponentMacroArgs {
-    fn parse(input: syn::parse::ParseStream) -> Result<Self> {
+    fn parse(input: syn::parse::ParseStream) -> CriticalResult<Self> {
         parse(input)
     }
 }
@@ -89,7 +89,7 @@ impl Default for GlobalMacroArgs {
 }
 
 impl ParseFrom<Vec<syn::Ident>> for GlobalMacroArgs {
-    fn parse_from(vals: &Vec<syn::Ident>) -> Result<Self> {
+    fn parse_from(vals: &Vec<syn::Ident>) -> CriticalResult<Self> {
         let mut g = Self::default();
         vals.map_vec(|i| {
             match i.to_string().as_str() {
@@ -107,7 +107,7 @@ impl ParseFrom<Vec<syn::Ident>> for GlobalMacroArgs {
 }
 
 impl Parse for GlobalMacroArgs {
-    fn parse(input: syn::parse::ParseStream) -> Result<Self> {
+    fn parse(input: syn::parse::ParseStream) -> CriticalResult<Self> {
         parse(input)
     }
 }
@@ -126,7 +126,7 @@ impl Default for SystemMacroArgs {
 }
 
 impl ParseFrom<Vec<syn::Path>> for SystemMacroArgs {
-    fn parse_from(vals: &Vec<syn::Path>) -> Result<Self> {
+    fn parse_from(vals: &Vec<syn::Path>) -> CriticalResult<Self> {
         let mut is_init = false;
         let states = vals.filter_map_vec(|p| {
             if p.get_ident().is_some_and(|i| i == "Init") {
@@ -152,7 +152,7 @@ impl ParseFrom<Vec<syn::Path>> for SystemMacroArgs {
 }
 
 impl Parse for SystemMacroArgs {
-    fn parse(input: syn::parse::ParseStream) -> Result<Self> {
+    fn parse(input: syn::parse::ParseStream) -> CriticalResult<Self> {
         parse(input)
     }
 }

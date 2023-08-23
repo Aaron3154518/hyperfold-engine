@@ -1,7 +1,7 @@
 use diagnostic::{CatchErr, ErrorTrait, ResultsTrait};
 use shared::syn::{
     add_use_item,
-    error::{Result, ToError},
+    error::{CriticalResult, ToError},
 };
 
 use crate::parse::{attributes::get_attributes_if_active, AstMod};
@@ -35,7 +35,7 @@ impl AstUse {
 // TODO: type redeclarations
 
 impl AstMod {
-    pub fn visit_item_use(&mut self, i: syn::ItemUse) -> Result<()> {
+    pub fn visit_item_use(&mut self, i: syn::ItemUse) -> CriticalResult<()> {
         if let Some(attrs) = get_attributes_if_active(&i.attrs, &self.path, &Vec::new())? {
             let mut uses = Vec::new();
             self.visit_use_tree(i.tree, &mut Vec::new(), &mut uses)?;
@@ -55,7 +55,7 @@ impl AstMod {
         i: syn::UseTree,
         path: &mut Vec<String>,
         items: &mut Vec<AstUse>,
-    ) -> Result<()> {
+    ) -> CriticalResult<()> {
         Ok(match i {
             syn::UseTree::Path(i) => self.visit_use_path(i, path, items)?,
             syn::UseTree::Name(i) => self.visit_use_name(i, path, items)?,
@@ -70,7 +70,7 @@ impl AstMod {
         i: syn::UsePath,
         path: &mut Vec<String>,
         items: &mut Vec<AstUse>,
-    ) -> Result<()> {
+    ) -> CriticalResult<()> {
         add_use_item(&self.path, path, i.ident.to_string());
         self.visit_use_tree(*i.tree, path, items)
     }
@@ -80,7 +80,7 @@ impl AstMod {
         i: syn::UseName,
         path: &mut Vec<String>,
         items: &mut Vec<AstUse>,
-    ) -> Result<()> {
+    ) -> CriticalResult<()> {
         add_use_item(&self.path, path, i.ident.to_string());
         items.push(AstUse {
             ident: path
@@ -102,7 +102,7 @@ impl AstMod {
         i: syn::UseRename,
         path: &mut Vec<String>,
         items: &mut Vec<AstUse>,
-    ) -> Result<()> {
+    ) -> CriticalResult<()> {
         items.push(AstUse {
             ident: i.rename.to_string(),
             first: path
@@ -120,7 +120,7 @@ impl AstMod {
         i: syn::UseGlob,
         path: &mut Vec<String>,
         items: &mut Vec<AstUse>,
-    ) -> Result<()> {
+    ) -> CriticalResult<()> {
         items.push(AstUse {
             ident: "*".to_string(),
             first: path
@@ -138,7 +138,7 @@ impl AstMod {
         i: syn::UseGroup,
         path: &mut Vec<String>,
         items: &mut Vec<AstUse>,
-    ) -> Result<()> {
+    ) -> CriticalResult<()> {
         let mut errs = Vec::new();
         for i in i.items {
             self.visit_use_tree(i, &mut path.to_vec(), items)

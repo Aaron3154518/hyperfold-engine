@@ -3,7 +3,7 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use shared::{
     syn::{
-        error::{GetVec, Result},
+        error::{CriticalResult, GetVec},
         vec_to_path,
     },
     traits::{CollectVec, CollectVecInto},
@@ -28,7 +28,7 @@ pub fn trait_defs<const N: usize>(
     crates: &Crates,
     trait_ident: &syn::Ident,
     item_traits: [(&CratePath, &dyn GetTraitTypes); N],
-) -> Result<TokenStream> {
+) -> CriticalResult<TokenStream> {
     let macro_cr_idx = crates.get_crate_index(Crate::Macros);
 
     let CodegenIdents { namespace, .. } = &*CODEGEN_IDENTS;

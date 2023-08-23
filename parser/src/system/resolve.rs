@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 use shared::{
     constants::TAB,
     parsing::SystemMacroArgs,
-    syn::error::{Result, ToError},
+    syn::error::{CriticalResult, ToError},
     traits::{CollectVec, CollectVecInto, PushInto, ThenOk},
 };
 
@@ -96,7 +96,7 @@ impl ComponentRefTracker {
             .chain(self.immut_refs.iter().map(|r| (r, false)))
     }
 
-    pub fn validate(&self, sys: &ItemSystem) -> Result<()> {
+    pub fn validate(&self, sys: &ItemSystem) -> CriticalResult<()> {
         let (mut_cnt, immut_cnt) = (self.mut_refs.len(), self.immut_refs.len());
 
         // TODO: one error per argument
@@ -165,7 +165,7 @@ impl ComponentRefTracker {
 }
 
 impl ItemSystem {
-    pub fn validate(&self, items: &Items) -> Result<FnArgs> {
+    pub fn validate(&self, items: &Items) -> CriticalResult<FnArgs> {
         let mut global_idxs = HashSet::new();
 
         match self.attr_args {
@@ -246,7 +246,7 @@ impl ItemSystem {
         i: usize,
         globals: &mut HashSet<usize>,
         items: &'a Items,
-    ) -> Result<&'a ItemGlobal> {
+    ) -> CriticalResult<&'a ItemGlobal> {
         items
             .globals
             .get(i)
@@ -270,7 +270,12 @@ impl ItemSystem {
             )
     }
 
-    fn validate_event<'a>(&self, arg: &FnArg, i: usize, items: &'a Items) -> Result<&'a ItemEvent> {
+    fn validate_event<'a>(
+        &self,
+        arg: &FnArg,
+        i: usize,
+        items: &'a Items,
+    ) -> CriticalResult<&'a ItemEvent> {
         items
             .events
             .get(i)
@@ -286,7 +291,7 @@ impl ItemSystem {
         is_vec: bool,
         component_refs: &mut HashMap<usize, ComponentRefTracker>,
         items: &'a Items,
-    ) -> Result<&'a ComponentSet> {
+    ) -> CriticalResult<&'a ComponentSet> {
         items
             .component_sets
             .get(i)
@@ -340,7 +345,7 @@ impl ItemSystem {
     }
 
     // Validate conditions
-    fn validate_ref(&self, arg: &FnArg, should_be_cnt: usize) -> Result<()> {
+    fn validate_ref(&self, arg: &FnArg, should_be_cnt: usize) -> CriticalResult<()> {
         (arg.ref_cnt == should_be_cnt).ok(
             (),
             arg.span
@@ -359,7 +364,7 @@ impl ItemSystem {
         )
     }
 
-    fn validate_mut(&self, arg: &FnArg, should_be_mut: bool) -> Result<()> {
+    fn validate_mut(&self, arg: &FnArg, should_be_mut: bool) -> CriticalResult<()> {
         (arg.is_mut == should_be_mut).ok(
             (),
             arg.span

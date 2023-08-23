@@ -1,7 +1,7 @@
 use diagnostic::CatchErr;
 use proc_macro2::TokenStream;
 use shared::syn::{
-    error::{Result, ToError},
+    error::{CriticalResult, ToError},
     use_path_from_syn,
 };
 use syn::spanned::Spanned;
@@ -18,7 +18,7 @@ pub struct AstMacroCall {
 
 impl AstMod {
     // Macro call
-    pub fn visit_item_macro(&mut self, i: syn::ItemMacro) -> Result<()> {
+    pub fn visit_item_macro(&mut self, i: syn::ItemMacro) -> CriticalResult<()> {
         if let Some(_) = get_attributes_if_active(&i.attrs, &self.path, &Vec::new())? {
             // Some is for macro_rules!
             if i.ident.is_none() {

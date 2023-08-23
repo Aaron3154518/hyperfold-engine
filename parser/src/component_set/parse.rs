@@ -11,7 +11,7 @@ use crate::parse::ItemPath;
 
 use shared::{
     syn::{
-        error::{CatchSynError, Result, ToError},
+        error::{CatchSynError, CriticalResult, ToError},
         get_type_generics, parse_tokens, use_path_from_syn, Parse, StreamParse,
     },
     traits::{CollectVec, PushInto},
@@ -40,7 +40,7 @@ impl LabelOp {
 }
 
 impl Parse for LabelOp {
-    fn parse(input: syn::parse::ParseStream) -> Result<Self> {
+    fn parse(input: syn::parse::ParseStream) -> CriticalResult<Self> {
         let span = input.span();
         input
             .parse::<Token!(&&)>()
@@ -51,7 +51,7 @@ impl Parse for LabelOp {
 }
 
 impl std::fmt::Display for LabelOp {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::CriticalResult {
         f.write_str(match self {
             LabelOp::And => "&&",
             LabelOp::Or => "||",
@@ -71,7 +71,7 @@ enum Expression {
 }
 
 impl Expression {
-    pub fn to_item(self, neg: bool) -> Result<AstLabelItem> {
+    pub fn to_item(self, neg: bool) -> CriticalResult<AstLabelItem> {
         let mut item = match self {
             Expression::Item(i) => i,
             Expression::Expr {
@@ -81,7 +81,7 @@ impl Expression {
                 span,
             } => {
                 let mut get_item =
-                    |items: Vec<AstLabelItem>, op: LabelOp| -> Result<AstLabelItem> {
+                    |items: Vec<AstLabelItem>, op: LabelOp| -> CriticalResult<AstLabelItem> {
                         Ok(if items.len() <= 1 {
                             items
                                 .into_iter()
@@ -138,7 +138,7 @@ impl Expression {
 }
 
 impl Parse for Expression {
-    fn parse(input: syn::parse::ParseStream) -> Result<Self> {
+    fn parse(input: syn::parse::ParseStream) -> CriticalResult<Self> {
         let span = input.span();
 
         let first = input.parse_stream()?;
@@ -191,7 +191,7 @@ impl AstLabelItem {
 }
 
 impl Parse for AstLabelItem {
-    fn parse(input: syn::parse::ParseStream) -> Result<Self> {
+    fn parse(input: syn::parse::ParseStream) -> CriticalResult<Self> {
         let mut not = false;
         while input.parse::<Token!(!)>().is_ok() {
             not = !not;
@@ -221,7 +221,7 @@ impl Parse for AstLabelItem {
 }
 
 impl std::fmt::Display for AstLabelItem {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::CriticalResult {
         match self {
             AstLabelItem::Item { not, ty, .. } => f.write_fmt(format_args!(
                 "{}{}",
@@ -249,7 +249,7 @@ pub struct AstComponentSetItem {
 }
 
 impl AstComponentSetItem {
-    pub fn from(var: String, ty: &syn::Type) -> Result<Self> {
+    pub fn from(var: String, ty: &syn::Type) -> CriticalResult<Self> {
         let span = ty.span();
         match ty {
             syn::Type::Path(ty) => {
@@ -299,7 +299,7 @@ impl AstComponentSetItem {
 }
 
 impl Parse for AstComponentSetItem {
-    fn parse(input: syn::parse::ParseStream) -> Result<Self> {
+    fn parse(input: syn::parse::ParseStream) -> CriticalResult<Self> {
         let span = input.span();
         // var : type
         let var = input
@@ -319,7 +319,7 @@ pub struct AstComponentSet {
 }
 
 impl Parse for AstComponentSet {
-    fn parse(input: syn::parse::ParseStream) -> Result<Self> {
+    fn parse(input: syn::parse::ParseStream) -> CriticalResult<Self> {
         let mut labels = None;
 
         // First ident
@@ -363,7 +363,7 @@ impl Parse for AstComponentSet {
 }
 
 impl std::fmt::Display for AstComponentSet {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::CriticalResult {
         f.write_fmt(format_args!(
             "{{\n{:#?}\n{:#?}\nLabels: {}\n}}",
             self.ident,

@@ -2,7 +2,7 @@ use diagnostic::{zip_match, ZipResults};
 use proc_macro2::TokenStream;
 use quote::quote;
 
-use shared::{syn::error::Result, traits::CollectVecInto};
+use shared::{syn::error::CriticalResult, traits::CollectVecInto};
 
 use crate::{
     component_set::ComponentSet,
@@ -44,7 +44,7 @@ pub fn manager_def() -> TokenStream {
 }
 
 // Function to set initial events on each tick
-fn init_events_fn(cr_idx: usize, items: &Items, crates: &Crates) -> Result<TokenStream> {
+fn init_events_fn(cr_idx: usize, items: &Items, crates: &Crates) -> CriticalResult<TokenStream> {
     let CodegenIdents {
         events,
         efoo_var: events_var,
@@ -74,7 +74,11 @@ fn init_events_fn(cr_idx: usize, items: &Items, crates: &Crates) -> Result<Token
     )
 }
 
-pub fn manager_impl(cr_idx: usize, items: &Items, crates: &mut Crates) -> Result<TokenStream> {
+pub fn manager_impl(
+    cr_idx: usize,
+    items: &Items,
+    crates: &mut Crates,
+) -> CriticalResult<TokenStream> {
     let CodegenIdents {
         manager,
         globals,

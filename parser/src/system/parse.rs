@@ -6,7 +6,7 @@ use syn::spanned::Spanned;
 use shared::{
     parsing::SystemMacroArgs,
     syn::{
-        error::{MutateResults, Result, ToError},
+        error::{CriticalResult, MutateResults, ToError},
         get_type_generics, parse_tokens, use_path_from_syn, ToRange,
     },
     traits::{Call, CollectVecInto, CombineOptions, PushInto, ToNone},
@@ -28,7 +28,7 @@ pub enum FnArgType {
 }
 
 impl std::fmt::Display for FnArgType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::CriticalResult {
         f.write_str(match self {
             FnArgType::Event(_) => "Event",
             FnArgType::Global(_) => "Global",
@@ -57,7 +57,7 @@ impl FnArg {
         items: &Items,
         sig: &syn::Signature,
         (m, cr, crates): ModInfo,
-    ) -> Result<Vec<Self>> {
+    ) -> CriticalResult<Vec<Self>> {
         sig.inputs
             .iter()
             .map_vec_into(|arg| match arg {
@@ -69,7 +69,7 @@ impl FnArg {
             .combine_results()
     }
 
-    fn parse_type(ty: &syn::Type, (m, cr, crates): ModInfo) -> Result<Self> {
+    fn parse_type(ty: &syn::Type, (m, cr, crates): ModInfo) -> CriticalResult<Self> {
         let ty_str = ty.to_token_stream().to_string();
         match ty {
             syn::Type::Path(p) => {
@@ -148,7 +148,7 @@ impl FnArg {
 }
 
 impl std::fmt::Display for FnArg {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::CriticalResult {
         f.write_fmt(format_args!(
             "{}{}{}",
             "&".repeat(self.ref_cnt),
@@ -172,7 +172,7 @@ impl ItemSystem {
         attr: &AstAttribute,
         items: &Items,
         (m, cr, crates): ModInfo,
-    ) -> Result<Self> {
+    ) -> CriticalResult<Self> {
         let path = m.path.to_vec().push_into(fun.sig.ident.to_string());
         parse_tokens(attr.args.clone()).and_then(|attr_args| {
             FnArg::parse(&attr_args, items, &fun.sig, (m, cr, crates)).map(|args| ItemSystem {

@@ -4,13 +4,13 @@ use syn::{parse::ParseStream, spanned::Spanned};
 
 use crate::traits::Increment;
 
-use super::error::{Result, ToError};
+use super::error::{CriticalResult, ToError};
 
 pub trait Parse<T = Self> {
-    fn parse(input: ParseStream) -> Result<T>;
+    fn parse(input: ParseStream) -> CriticalResult<T>;
 }
 
-pub struct ResultWrapper<T>(pub Result<T>);
+pub struct ResultWrapper<T>(pub CriticalResult<T>);
 
 impl<T> syn::parse::Parse for ResultWrapper<T>
 where
@@ -28,7 +28,7 @@ where
 }
 
 pub trait StreamParse {
-    fn parse_stream<T>(self) -> Result<T>
+    fn parse_stream<T>(self) -> CriticalResult<T>
     where
         T: Parse;
 
@@ -36,7 +36,7 @@ pub trait StreamParse {
 }
 
 impl StreamParse for ParseStream<'_> {
-    fn parse_stream<T>(self) -> Result<T>
+    fn parse_stream<T>(self) -> CriticalResult<T>
     where
         T: Parse,
     {
@@ -55,7 +55,7 @@ impl StreamParse for ParseStream<'_> {
     }
 }
 
-pub fn parse_tokens<T>(input: TokenStream) -> Result<T>
+pub fn parse_tokens<T>(input: TokenStream) -> CriticalResult<T>
 where
     T: Parse<T>,
 {
