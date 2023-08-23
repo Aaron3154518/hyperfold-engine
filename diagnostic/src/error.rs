@@ -27,6 +27,10 @@ impl ErrorSpan {
         self.byte_start -= off;
         self.byte_end -= off;
     }
+
+    pub fn byte_range(&self) -> Range<usize> {
+        self.byte_start..self.byte_end
+    }
 }
 
 impl Default for ErrorSpan {

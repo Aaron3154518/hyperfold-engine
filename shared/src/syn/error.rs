@@ -5,17 +5,13 @@ use std::{
 };
 
 use backtrace::Backtrace;
-use codespan_reporting::{
-    diagnostic::{Label, Severity},
-    files::SimpleFiles,
-    term::{self, Config},
-};
+use codespan_reporting::{diagnostic::Label, files::SimpleFiles};
 use diagnostic::{
     CatchErr, CodespanDiagnostic, Diagnostic, DiagnosticLevel, ErrorNote, ErrorSpan, Results, ToErr,
 };
 use syn::spanned::Spanned;
 
-use crate::traits::CollectVecInto;
+use crate::traits::{CollectVec, CollectVecInto};
 
 struct File {
     id: usize,
@@ -24,17 +20,34 @@ struct File {
     success: io::Result<()>,
 }
 
+pub struct RenderResult {
+    text: String,
+    file: String,
+    span: ErrorSpan,
+}
+
 pub struct Renderer {
     file_list: SimpleFiles<String, String>,
     files: HashMap<(usize, usize), File>,
+    def_crate: usize,
+    def_mod: usize,
 }
 
 impl Renderer {
-    pub fn new() -> Self {
-        Self {
+    pub fn new(
+        def_crate: usize,
+        def_mod: usize,
+        def_file: &str,
+        def_start_span: impl Into<ErrorSpan>,
+    ) -> Self {
+        let mut s = Self {
             file_list: SimpleFiles::new(),
             files: HashMap::new(),
-        }
+            def_crate,
+            def_mod,
+        };
+        s.add_file(def_crate, def_mod, def_file, def_start_span);
+        s
     }
 
     pub fn add_file(
@@ -43,7 +56,7 @@ impl Renderer {
         m_idx: usize,
         file: &str,
         start_span: impl Into<ErrorSpan>,
-    ) -> io::Result<()> {
+    ) {
         self.files.insert((cr_idx, m_idx), {
             let mut success = Ok(());
             File {
@@ -59,20 +72,57 @@ impl Renderer {
                 success,
             }
         });
-        Ok(())
     }
 
-    pub fn render(&self, error: &Error) -> String {
-        format!(
-            "{}{}",
-            match &self.success {
-                Ok(_) => String::new(),
-                Err(e) => format!("Could not product error message: {e}"),
-            },
-            diagnostic::render(&self.files, &diagnostic)
-                .unwrap_or_else(|e| format!("Could not produce error message: {e}"))
-        )
+    pub fn render<D>(&self, diagnostic: &D) -> RenderResult
+    where
+        D: SpanTrait + DiagnosticTrait,
+    {
+        self.render_at(diagnostic.diagnostic(), *diagnostic.span())
     }
+
+    pub fn render_at(&self, mut diagnostic: CodespanDiagnostic<usize>, span: Span) -> RenderResult {
+        const HEADER: &str = "Diagnostic Error";
+
+        // Default span is first byte of the default file
+        let (cr_idx, m_idx) = span
+            .cr_idx
+            .zip(span.m_idx)
+            .unwrap_or((self.def_crate, self.def_mod));
+        let mut span = span.span.unwrap_or_default();
+
+        // Attempt to generate the primary label for this diagnostic
+        let file = match self.files.get(&(cr_idx, m_idx)) {
+            Some(f) => {
+                span.subtract_bytes(f.start_span.byte_start);
+                diagnostic
+                    .labels
+                    .push(Label::primary(f.id, span.byte_range()));
+                if let Err(e) = &f.success {
+                    diagnostic
+                        .notes
+                        .push(format!("{HEADER}: Failed to load file: {e}"))
+                }
+                f.name.to_string()
+            }
+            None => {
+                diagnostic.notes.push(format!(
+                    "{HEADER}: The file for mod {m_idx} in crate {cr_idx} has not been loaded"
+                ));
+                String::new()
+            }
+        };
+        RenderResult {
+            text: diagnostic::render(&self.file_list, &diagnostic)
+                .unwrap_or_else(|e| format!("{HEADER}: Failed to render diagnostic: {e}")),
+            file,
+            span,
+        }
+    }
+}
+
+pub trait DiagnosticTrait {
+    fn diagnostic(&self) -> CodespanDiagnostic<usize>;
 }
 
 // Data and trait for locating an error in a file
@@ -80,21 +130,24 @@ pub trait SpanTrait
 where
     Self: Sized,
 {
-    fn span(&mut self) -> &mut Span;
+    fn span(&self) -> &Span;
+
+    fn span_mut(&mut self) -> &mut Span;
 
     fn with_span(mut self, span: impl Into<ErrorSpan>) -> Self {
-        self.span().span = Some(span.into());
+        self.span_mut().span = Some(span.into());
         self
     }
 
     fn with_mod(mut self, cr_idx: usize, m_idx: usize) -> Self {
-        let span = self.span();
+        let span = self.span_mut();
         span.cr_idx = Some(cr_idx);
         span.m_idx = Some(m_idx);
         self
     }
 }
 
+#[derive(Copy, Clone)]
 pub struct Span {
     pub span: Option<ErrorSpan>,
     pub cr_idx: Option<usize>,
@@ -112,7 +165,11 @@ impl Span {
 }
 
 impl SpanTrait for Span {
-    fn span(&mut self) -> &mut Span {
+    fn span(&self) -> &Span {
+        self
+    }
+
+    fn span_mut(&mut self) -> &mut Span {
         self
     }
 }
@@ -133,8 +190,18 @@ impl Note {
 }
 
 impl SpanTrait for Note {
-    fn span(&mut self) -> &mut Span {
+    fn span(&self) -> &Span {
+        &self.span
+    }
+
+    fn span_mut(&mut self) -> &mut Span {
         &mut self.span
+    }
+}
+
+impl DiagnosticTrait for Note {
+    fn diagnostic(&self) -> CodespanDiagnostic<usize> {
+        CodespanDiagnostic::note().with_message(self.msg.to_string())
     }
 }
 
@@ -196,18 +263,6 @@ impl Error {
         self.msg.to_string()
     }
 
-    pub fn get_diagnostic(&self) -> CodespanDiagnostic<usize> {
-        match self.level {
-            DiagnosticLevel::Error | DiagnosticLevel::Ice | DiagnosticLevel::FailureNote => {
-                CodespanDiagnostic::error()
-            }
-            DiagnosticLevel::Warning => CodespanDiagnostic::warning(),
-            DiagnosticLevel::Note => CodespanDiagnostic::note(),
-            DiagnosticLevel::Help => CodespanDiagnostic::help(),
-        }
-        .with_message(&self.msg)
-    }
-
     pub fn get_notes(&self) -> impl Iterator<Item = &Note> {
         self.notes.iter().chain(self.backtrace.iter())
     }
@@ -222,47 +277,40 @@ impl Error {
             .collect()
     }
 
-    pub fn render(self, renderer: &Renderer) -> Diagnostic {
-        let file_idx = renderer.file_idx();
-        let Self {
-            mut diagnostic,
-            span,
-            notes: labels,
-        } = self.with_file(file_idx);
-        diagnostic.notes.extend(labels.iter().map(|(span, msg)| {
-            renderer.render(
-                &CodespanDiagnostic::note()
-                    .with_message(msg)
-                    .with_labels(vec![Label::primary(
-                        file_idx,
-                        span.byte_start..span.byte_end,
-                    )]),
-            )
-        }));
-        let file = renderer.file_name();
-        Diagnostic::from_span(
-            diagnostic.message.to_string(),
-            file.to_string(),
-            match diagnostic.severity {
-                Severity::Error => DiagnosticLevel::Error,
-                Severity::Warning | Severity::Bug => DiagnosticLevel::Warning,
-                Severity::Note => DiagnosticLevel::Note,
-                Severity::Help => DiagnosticLevel::Help,
-            },
-            Some(renderer.render(&diagnostic)),
-            span.unwrap_or_default(),
-        )
-        .with_notes(labels.into_iter().map(|(span, msg)| ErrorNote {
-            span,
-            msg,
-            file: file.to_string(),
-        }))
+    pub fn render(&self, renderer: &Renderer) -> Diagnostic {
+        let (diagnostic_notes, error_notes) = self.notes.unzip_vec(|note| {
+            let RenderResult { text, file, span } = renderer.render(note);
+            let msg = note.msg.to_string();
+            (text, ErrorNote { span, msg, file })
+        });
+        let RenderResult { text, file, span } =
+            renderer.render_at(self.diagnostic().with_notes(diagnostic_notes), *self.span());
+        Diagnostic::from_span(self.msg.to_string(), file, self.level, Some(text), span)
+            .with_notes(error_notes)
     }
 }
 
 impl SpanTrait for Error {
-    fn span(&mut self) -> &mut Span {
+    fn span(&self) -> &Span {
+        &self.span
+    }
+
+    fn span_mut(&mut self) -> &mut Span {
         &mut self.span
+    }
+}
+
+impl DiagnosticTrait for Error {
+    fn diagnostic(&self) -> CodespanDiagnostic<usize> {
+        match self.level {
+            DiagnosticLevel::Error | DiagnosticLevel::Ice | DiagnosticLevel::FailureNote => {
+                CodespanDiagnostic::error()
+            }
+            DiagnosticLevel::Warning => CodespanDiagnostic::warning(),
+            DiagnosticLevel::Note => CodespanDiagnostic::note(),
+            DiagnosticLevel::Help => CodespanDiagnostic::help(),
+        }
+        .with_message(&self.msg)
     }
 }
 
