@@ -322,19 +322,22 @@ pub struct AstComponentSet {
     pub ident: syn::Ident,
     pub args: Vec<AstComponentSetItem>,
     pub labels: Option<AstLabelItem>,
+    pub label_ident: Option<syn::Ident>,
 }
 
 impl Parse for AstComponentSet {
     fn parse(input: syn::parse::ParseStream) -> CriticalResult<Self> {
         let mut labels = None;
+        let mut label_ident = None;
 
         // First ident
         let mut first_ident: syn::Ident = input.parse().catch_syn_err("Expected ident")?;
         if first_ident == "labels" {
             // Labels
+            label_ident = Some(first_ident);
             labels = input
                 .parse::<proc_macro2::Group>()
-                .catch_err(first_ident.error("Expected parentheses after labels"))
+                .catch_err(label_ident.error("Expected parentheses after labels"))
                 .and_then(|g| {
                     let stream = g.stream();
                     Ok(match stream.is_empty() {
@@ -364,6 +367,7 @@ impl Parse for AstComponentSet {
             ident: first_ident,
             args,
             labels,
+            label_ident,
         })
     }
 }

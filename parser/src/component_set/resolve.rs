@@ -1,4 +1,4 @@
-use diagnostic::{CombineResults, ZipResults};
+use diagnostic::{err, CombineResults, ZipResults};
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
 use std::{collections::VecDeque, fmt::Display, ops::Neg};
@@ -14,10 +14,10 @@ use crate::parse::{
 };
 use shared::{
     syn::{
-        error::{CriticalResult, MutateResults},
+        error::{CriticalResult, MutateResults, Result, ToError},
         get_fn_name, parse_tokens, ToRange,
     },
-    traits::{Call, CollectVec, CollectVecInto, PushInto, ThenNone},
+    traits::{Call, CollectVec, CollectVecInto, MapOr, PushInto, ThenNone},
 };
 
 // Resolve Ast structs to actual items
@@ -182,7 +182,7 @@ impl ComponentSet {
             .is_some_and(|sym| sym.comp.args.is_singleton)
     }
 
-    pub fn parse(tokens: TokenStream, (m, cr, crates): ModInfo) -> CriticalResult<Self> {
+    pub fn parse(tokens: TokenStream, (m, cr, crates): ModInfo) -> Result<Self> {
         let span = tokens.span();
         parse_tokens(tokens).and_then(|cs| Self::resolve(cs, (m, cr, crates)))
     }
@@ -192,9 +192,10 @@ impl ComponentSet {
             ident,
             args,
             labels,
+            label_ident,
         }: AstComponentSet,
         (m, cr, crates): ModInfo,
-    ) -> CriticalResult<Self> {
+    ) -> Result<Self> {
         args.into_iter()
             .map_vec_into(|arg| ComponentSetItem::resolve(arg, (m, cr, crates)))
             .combine_results()
@@ -202,6 +203,7 @@ impl ComponentSet {
                 LabelItem::resolve(l, (m, cr, crates)).map(|t| Some(t))
             }))
             .map(|(args, labels)| {
+                let mut warnings = Vec::new();
                 let labels = labels.map(|item| {
                     item.evaluate_labels(
                         args.iter()
@@ -210,26 +212,33 @@ impl ComponentSet {
                     )
                     .call_into(|labels| {
                         match labels {
-                            // TODO: warning
-                            ComponentSetLabels::Constant(false) => {
-                                // m.warn(
-                                //     format!(
-                                //     "In Component set '{ident}': Label expression is never true"
-                                // ),
-                                //     item.span(),
-                                // );
+                            ComponentSetLabels::Constant(val) => {
+                                warnings.push(
+                                    ItemSpan::new(
+                                        cr,
+                                        m,
+                                        label_ident.as_ref().unwrap_or(&ident).span(),
+                                    )
+                                    .warning(format!(
+                                        "Label expression is {} true",
+                                        val.map_or("always", "never")
+                                    )),
+                                );
                             }
                             _ => (),
                         }
                         labels
                     })
                 });
-                Self {
-                    path: ItemPath::new(cr.idx, m.path.to_vec().push_into(ident.to_string())),
-                    labels,
-                    args,
-                    span: ident.span(),
-                }
+                err(
+                    Self {
+                        path: ItemPath::new(cr.idx, m.path.to_vec().push_into(ident.to_string())),
+                        labels,
+                        args,
+                        span: ident.span(),
+                    },
+                    warnings,
+                )
             })
     }
 }

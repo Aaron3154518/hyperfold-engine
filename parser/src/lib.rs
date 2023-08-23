@@ -19,7 +19,7 @@ use resolve::Items;
 use component_set::ComponentSetLabels;
 use parse::{AstCrate, ComponentSymbol};
 use shared::{
-    syn::error::{MutateResults, Renderer, WarningResult},
+    syn::error::{MutateResults, Renderer},
     traits::{Call, CollectVec, CollectVecInto, ExtendInto, GetSlice},
 };
 use utils::paths::Crate;
@@ -61,13 +61,11 @@ pub fn parse(entry: PathBuf) {
     let mut t = Timer::new();
 
     let (renderer, errors) = match AstCrate::parse(entry) {
-        Ok(WarningResult {
-            value: mut crates,
-            mut errors,
-        }) => {
+        Ok(res) => {
             t.step("Parsed Crates (Success)");
 
-            let items = Items::resolve(&mut crates).record_errs(&mut errors);
+            let (mut crates, mut errors) = res.take();
+            let (items, warnings) = Items::resolve(&mut crates).record_errs(&mut errors).take();
             t.step("Resolved Items");
 
             let macro_cr_idx = crates.get_crate_index(Crate::Macros);
@@ -101,6 +99,9 @@ pub fn parse(entry: PathBuf) {
 
             write_codegen(code).record_errs(&mut errors);
             t.step("Wrote Codegen");
+
+            // Add in warnings
+            errors.extend(warnings);
 
             let mut renderer = Renderer::new(
                 MAIN,

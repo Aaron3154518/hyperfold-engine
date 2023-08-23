@@ -147,7 +147,7 @@ where
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub struct Span {
     pub span: Option<ErrorSpan>,
     pub cr_idx: Option<usize>,
@@ -175,7 +175,7 @@ impl SpanTrait for Span {
 }
 
 // Note to add information to an Error
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Note {
     pub msg: String,
     pub span: Span,
@@ -207,6 +207,7 @@ impl DiagnosticTrait for Note {
 }
 
 // Contains data to render an error (or warning)
+#[derive(Debug)]
 pub struct Error {
     pub level: DiagnosticLevel,
     pub msg: String,

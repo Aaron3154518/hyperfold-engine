@@ -231,7 +231,7 @@ impl Items {
         &mut self,
         errors: &mut Vec<Error>,
         crates: &mut Crates,
-        f: impl Fn(&Self, &mut Vec<NewItem>, ModInfo) -> CriticalResult<()>,
+        mut f: impl FnMut(&Self, &mut Vec<NewItem>, ModInfo) -> CriticalResult<()>,
     ) {
         let macro_cr_idx = crates.get_crate_index(Crate::Macros);
 
@@ -276,8 +276,10 @@ impl Items {
         }
     }
 
-    pub fn resolve(crates: &mut Crates) -> WarningResult<Self> {
+    // Returns errs first, warnings inside
+    pub fn resolve(crates: &mut Crates) -> WarningResult<WarningResult<Self>> {
         let mut errs = Vec::new();
+        let mut warnings = Vec::new();
         let mut items = Items::new();
 
         let macro_cr_idx = crates.get_crate_index(Crate::Macros);
@@ -339,10 +341,10 @@ impl Items {
                         .expect_hardcoded(HardcodedSymbol::ComponentsMacro)
                         .is_ok()
                     {
-                        new_items.push(NewItem::ComponentSet(ComponentSet::parse(
-                            call.args.clone(),
-                            (m, cr, crates),
-                        )?));
+                        new_items.push(NewItem::ComponentSet(
+                            ComponentSet::parse(call.args.clone(), (m, cr, crates))?
+                                .record_errs(&mut warnings),
+                        ));
                     }
                     Ok(())
                 })
@@ -449,6 +451,6 @@ impl Items {
                 .critical()
         });
 
-        err(items, errs)
+        err(err(items, warnings), errs)
     }
 }
