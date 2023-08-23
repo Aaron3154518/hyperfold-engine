@@ -30,9 +30,9 @@ impl LabelItem {
         F: Fn(ComponentSymbol) -> syn::Ident,
     {
         match self {
-            LabelItem::Item { not, comp, .. } => {
+            LabelItem::Item { not, sym, .. } => {
                 let not = if *not { quote!(!) } else { quote!() };
-                let var = f(*comp);
+                let var = f(sym.comp);
                 quote!(#not #var)
             }
             LabelItem::Expression { op, items, .. } => {
@@ -85,11 +85,11 @@ impl ComponentSet {
     ) -> TokenStream {
         // Remove duplicate arguments
         let mut args = self.args.to_vec();
-        args.sort_by_key(|item| item.comp.idx);
-        args.dedup_by_key(|item| item.comp.idx);
+        args.sort_by_key(|item| item.sym.comp.idx);
+        args.dedup_by_key(|item| item.sym.comp.idx);
 
         // Get first arg, priority to singleton
-        let singleton_arg = args.iter().find(|item| item.comp.args.is_singleton);
+        let singleton_arg = args.iter().find(|item| item.sym.comp.args.is_singleton);
         let first_arg = singleton_arg.or(args.first());
 
         // Generate final function signatures in case we return early
@@ -133,13 +133,13 @@ impl ComponentSet {
         //   Where 'a is bound to #eids
         let init = match first {
             // Arg or label
-            Some(comp) if comp.args.is_singleton => {
-                let var = component_var(comp.idx);
+            Some(sym) if sym.comp.args.is_singleton => {
+                let var = component_var(sym.comp.idx);
                 // Option<K>
                 quote!(#comps_var.#var.get_key().and_then(|k| #eids_var.get(k)))
             }
-            Some(comp) => {
-                let var = component_var(comp.idx);
+            Some(sym) => {
+                let var = component_var(sym.comp.idx);
                 // Vec<(K, V)>
                 quote!(#comps_var.#var.keys().filter_map(|k| #eids_var.get(k).map(|k| (k, ()))).collect::<Vec<_>>())
             }
@@ -158,13 +158,13 @@ impl ComponentSet {
                 let label_expr = expr.labels.quote(&|comp| component_var(comp.idx));
                 let label_vars = expr
                     .iter_symbols()
-                    .map_vec_into(|comp| component_var(comp.idx));
+                    .map_vec_into(|sym| component_var(sym.comp.idx));
                 let num_labels = label_vars.len();
                 let label_fn = quote!(|[#(#label_vars),*]: [bool; #num_labels]| #label_expr);
                 let eval_labels = quote!(#f([#(#comps_var.#label_vars.contains_key(k)),*]));
                 match first {
                     // Option<K>
-                    Some(comp) if comp.args.is_singleton => {
+                    Some(sym) if sym.comp.args.is_singleton => {
                         quote!(
                             let #cs = #init;
                             let #f = #label_fn;
@@ -185,7 +185,7 @@ impl ComponentSet {
         // Generate final functions
         match first {
             // Option<K>
-            Some(comp) if comp.args.is_singleton => {
+            Some(sym) if sym.comp.args.is_singleton => {
                 quote!(
                     fn #get_keys_fn {
                         #init_and_filter
@@ -219,8 +219,8 @@ impl ComponentSet {
     ) -> TokenStream {
         // Remove duplicate arguments
         let mut args = self.args.to_vec();
-        args.sort_by_key(|item| item.comp.idx);
-        args.dedup_by_key(|item| item.comp.idx);
+        args.sort_by_key(|item| item.sym.comp.idx);
+        args.dedup_by_key(|item| item.sym.comp.idx);
 
         let (first_arg, first_label) = (self.first_arg(), self.first_label());
 
@@ -234,12 +234,12 @@ impl ComponentSet {
 
         match (first_arg, first_label) {
             // Option<K>
-            (Some(ComponentSetItem { comp, .. }), _) | (_, Some(comp))
-                if comp.args.is_singleton && !arg.is_vec =>
+            (Some(ComponentSetItem { sym, .. }), _) | (_, Some(sym))
+                if sym.comp.args.is_singleton && !arg.is_vec =>
             {
                 // Unique args
-                let var =
-                    args.filter_map_vec(|item| item.is_opt.then_none(component_var(item.comp.idx)));
+                let var = args
+                    .filter_map_vec(|item| item.is_opt.then_none(component_var(item.sym.comp.idx)));
 
                 let (mut arg_name, mut arg_var) = (Vec::new(), Vec::new());
                 let (mut opt_arg_name, mut opt_arg_var, mut opt_arg_get) =
@@ -253,7 +253,7 @@ impl ComponentSet {
                         false => (&mut arg_name, &mut arg_var),
                     };
                     names.push(format_ident!("{}", item.var));
-                    vars.push(component_var(item.comp.idx));
+                    vars.push(component_var(item.sym.comp.idx));
                 }
 
                 // Expression to assign vars
@@ -285,7 +285,7 @@ impl ComponentSet {
                 // Unique args
                 let (mut var, mut var_intersect) = (Vec::new(), Vec::new());
                 for item in &args {
-                    var.push(component_var(item.comp.idx));
+                    var.push(component_var(item.sym.comp.idx));
                     var_intersect.push(match item.is_opt {
                         true => intersect_opt,
                         false => intersect,
@@ -295,7 +295,7 @@ impl ComponentSet {
                 let (mut arg_name, mut arg_var) = (Vec::new(), Vec::new());
                 for item in &self.args {
                     arg_name.push(format_ident!("{}", item.var));
-                    arg_var.push(component_var(item.comp.idx));
+                    arg_var.push(component_var(item.sym.comp.idx));
                 }
 
                 // Expression to assign vars
@@ -318,7 +318,7 @@ impl ComponentSet {
                         });
                         let var_iter = args.map_vec(|item| {
                             get_fn_name(
-                                match item.comp.args.is_singleton {
+                                match item.sym.comp.args.is_singleton {
                                     true => "get_vec",
                                     false => "iter",
                                 },

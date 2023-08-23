@@ -27,3 +27,26 @@ impl ThenNone for bool {
         }
     }
 }
+
+// simplified match statements
+pub trait MapOr {
+    fn map_or<T>(self, t: T, f: T) -> T;
+
+    fn then_or<T>(self, t: impl FnOnce() -> T, f: impl FnOnce() -> T) -> T;
+}
+
+impl MapOr for bool {
+    fn map_or<T>(self, t: T, f: T) -> T {
+        match self {
+            true => t,
+            false => f,
+        }
+    }
+
+    fn then_or<T>(self, t: impl FnOnce() -> T, f: impl FnOnce() -> T) -> T {
+        match self {
+            true => t(),
+            false => f(),
+        }
+    }
+}

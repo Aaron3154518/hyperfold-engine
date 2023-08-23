@@ -6,7 +6,7 @@ use shared::{
     constants::TAB,
     parsing::SystemMacroArgs,
     syn::error::{CriticalResult, Note, SpanTrait, ToError},
-    traits::{CollectVec, CollectVecInto, PushInto, ThenOk},
+    traits::{CollectVec, CollectVecInto, MapOr, PushInto, ThenOk},
 };
 
 use crate::{
@@ -96,20 +96,13 @@ impl ComponentRefTracker {
             .chain(self.immut_refs.iter().map(|r| (r, false)))
     }
 
-    fn immut_ref_notes<'a>(&'a self) -> impl Iterator<Item = Note> + 'a {
-        self.immut_refs
-            .iter()
-            .map(|r| r.item_span.note("Immutable reference here"))
-    }
-
-    fn mut_ref_notes<'a>(&'a self) -> impl Iterator<Item = Note> + 'a {
-        self.mut_refs
-            .iter()
-            .map(|r| r.item_span.note("Mutable reference here"))
-    }
-
     fn ref_notes<'a>(&'a self) -> impl Iterator<Item = Note> + 'a {
-        self.immut_ref_notes().chain(self.mut_ref_notes())
+        self.iter_refs().map(|(r, is_mut)| {
+            r.item_span.note(format!(
+                "{} reference here",
+                is_mut.map_or("Mutable", "Immutable")
+            ))
+        })
     }
 
     pub fn validate(&self, sys: &ItemSystem) -> CriticalResult<()> {
@@ -117,6 +110,19 @@ impl ComponentRefTracker {
 
         ((mut_cnt > 0 && immut_cnt > 0) || mut_cnt > 1).then_err(
             || {
+                // Only print one note per item
+                let mut notes = self
+                    .iter_refs()
+                    .map_vec_into(|(r, is_mut)| (r, is_mut, format!("{:#?}", r.item_span)));
+                notes.sort_by(|(_, _, s1), (_, _, s2)| s1.cmp(s2));
+                notes.dedup_by(|(_, _, s1), (_, _, s2)| s1 == s2);
+                let notes = notes.map_vec_into(|(r, is_mut, _)| {
+                    r.item_span.note(format!(
+                        "{} reference here",
+                        is_mut.map_or("Mutable", "Immutable")
+                    ))
+                });
+
                 let msg = format!(
                     "{} {}",
                     match immut_cnt {
@@ -125,6 +131,7 @@ impl ComponentRefTracker {
                     },
                     self.comp_name
                 );
+
                 // Only print one error per argument
                 let mut refs: Vec<_> = self
                     .iter_refs()
@@ -132,7 +139,7 @@ impl ComponentRefTracker {
                     .collect();
                 refs.sort_by(|(_, s1), (_, s2)| s1.cmp(s2));
                 refs.dedup_by(|(_, s1), (_, s2)| s1 == s2);
-                refs.map_vec_into(|(s, _)| s.error(msg.to_string()).with_notes(self.ref_notes()))
+                refs.map_vec_into(|(s, _)| s.error(msg.to_string()).with_notes(notes.to_vec()))
             },
             || (),
         )
@@ -276,17 +283,19 @@ impl ItemSystem {
                     .as_vec(),
             )
             .and_then(|cs| {
-                let path = cs.path.path.join("::");
+                let path = cs.path.to_string();
 
                 // Add component refs
                 for item in cs.args.iter() {
-                    if !component_refs.contains_key(&item.comp.idx) {
-                        component_refs
-                            .insert(item.comp.idx, ComponentRefTracker::new(item.ty.to_string()));
+                    if !component_refs.contains_key(&item.sym.comp.idx) {
+                        component_refs.insert(
+                            item.sym.comp.idx,
+                            ComponentRefTracker::new(item.ty.to_string()),
+                        );
                     }
 
-                    if let Some(refs) = component_refs.get_mut(&item.comp.idx) {
-                        refs.add_ref(arg.span, item.span, item.is_mut);
+                    if let Some(refs) = component_refs.get_mut(&item.sym.comp.idx) {
+                        refs.add_ref(arg.span, item.sym.span, item.is_mut);
                     }
                 }
 
@@ -294,24 +303,27 @@ impl ItemSystem {
                     true => Ok(cs),
                     // Must have a required singleton in the labels
                     false => {
-                        let err = arg
+                        let mut err = arg
                             .span
                             .error("Entity set must contain singletons or be wrapped with Vec<>");
-                        // TODO: add help
-                        // if let Some(ComponentSetLabels::Expression(e)) = &cs.labels {
-                        //     for (symbs, verb) in [(&e.false_symbols, "must"), (&e.unknown_symbols, "may")] {
-                        //         let comps = symbs
-                        //             .filter_map_vec(|c_sym|
-                        //                 c_sym.args.is_singleton
-                        //                     .then_some(items.components.get(c_sym.idx)
-                        //                     .map_or_else(|| "Unknown".to_string(),
-                        //                     |c| c.path.path.join("::")
-                        //             )));
-                        //         if !comps.is_empty() {
-                        //             errs.push(format!("{TAB}{TAB}These singleton are included as labels but {verb} be false: {}", comps.join(", ")))
-                        //         }
-                        //     }
-                        // }
+                        if let Some(ComponentSetLabels::Expression(e)) = &cs.labels {
+                            for (symbs, verb) in [
+                                (&e.false_symbols, "is forbidden"),
+                                (&e.unknown_symbols, "is not required"),
+                            ] {
+                                err = err.with_notes(symbs.filter_map_vec(|sym| {
+                                    sym.comp.args.is_singleton.then(|| {
+                                        let ty = items.components.get(sym.comp.idx).map_or_else(
+                                            || "Unknown".to_string(),
+                                            |c| c.data.path.to_string(),
+                                        );
+                                        sym.span.note(format!(
+                                            "{ty} is a Singleton but {verb} by the expression"
+                                        ))
+                                    })
+                                }));
+                            }
+                        }
                         err.as_err()
                     }
                 }

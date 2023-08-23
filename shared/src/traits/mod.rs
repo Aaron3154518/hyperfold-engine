@@ -14,7 +14,7 @@ mod result;
 mod split;
 pub mod unzip;
 
-pub use self::bool::{AndThen, ThenNone};
+pub use self::bool::{AndThen, MapOr, ThenNone};
 pub use call::Call;
 pub use catch::Catch;
 pub use collect_vec::{CollectVec, CollectVecInto};

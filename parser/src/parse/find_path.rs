@@ -25,6 +25,10 @@ impl ItemPath {
     pub fn new(cr_idx: usize, path: Vec<String>) -> Self {
         Self { cr_idx, path }
     }
+
+    pub fn to_string(&self) -> String {
+        self.path.join("::")
+    }
 }
 
 impl Default for ItemPath {

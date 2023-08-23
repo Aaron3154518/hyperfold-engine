@@ -175,6 +175,7 @@ impl SpanTrait for Span {
 }
 
 // Note to add information to an Error
+#[derive(Clone)]
 pub struct Note {
     pub msg: String,
     pub span: Span,
