@@ -1,4 +1,4 @@
-use diagnostic::{CatchErr, CombineResults, ErrForEach, ErrorSpan, ErrorTrait, ResultsTrait};
+use diagnostic::{err, CatchErr, CombineResults, ErrForEach, ErrorSpan, ErrorTrait, ResultsTrait};
 use proc_macro2::{token_stream::IntoIter, Span, TokenStream, TokenTree};
 use quote::{quote, ToTokens};
 use std::{collections::VecDeque, env::temp_dir, fs, path::PathBuf};
@@ -24,7 +24,7 @@ use shared::{
     macros::ExpandEnum,
     parsing::{ComponentMacroArgs, GlobalMacroArgs, SystemMacroArgs},
     syn::{
-        error::{Error, CriticalResult},
+        error::{CriticalResult, Error, MutateResults, WarningResult},
         parse_tokens,
     },
     traits::{
@@ -229,9 +229,10 @@ impl Items {
 
     fn add_symbols(
         &mut self,
+        errors: &mut Vec<Error>,
         crates: &mut Crates,
         f: impl Fn(&Self, &mut Vec<NewItem>, ModInfo) -> CriticalResult<()>,
-    ) -> CriticalResult<()> {
+    ) {
         let macro_cr_idx = crates.get_crate_index(Crate::Macros);
 
         // Get symbols
@@ -254,7 +255,7 @@ impl Items {
             let mut num_mods = cr.mods.len();
             let mut new_mods = Vec::new();
             for (m, (errs, items)) in cr.iter_mods_mut().zip(results) {
-                m.errs.extend(errs);
+                errors.extend(errs.with_mod(cr_idx, m.idx));
                 for item in items {
                     m.symbols.push(match item {
                         NewItem::Component(c) => self.add_component(c),
@@ -273,11 +274,9 @@ impl Items {
             }
             cr.mods.extend(new_mods);
         }
-
-        Ok(())
     }
 
-    pub fn resolve(crates: &mut Crates) -> (Self, Vec<Error>) {
+    pub fn resolve(crates: &mut Crates) -> WarningResult<Self> {
         let mut errs = Vec::new();
         let mut items = Items::new();
 
@@ -289,12 +288,12 @@ impl Items {
         }
 
         // Resolve components, globals, events, and states
-        items.add_symbols(crates, |_, new_items, (m, cr, crates)| {
+        items.add_symbols(&mut errs, crates, |_, new_items, (m, cr, crates)| {
             m.items
                 .structs_and_enums()
                 .try_for_each(|(item, attrs)| {
                     attrs
-                        .do_until(|attr| {
+                        .try_until(|attr| {
                             Ok(
                                 match resolve_path(attr.path.to_vec(), (m, cr, crates))
                                     .expect_any_hardcoded()
@@ -325,13 +324,15 @@ impl Items {
                                 },
                             )
                         })
-                        .err_or(())
+                        .discard_value()
+                        .critical()
                 })
-                .err_or(())
+                .discard_value()
+                .critical()
         });
 
         // Resolve component sets
-        items.add_symbols(crates, |_, new_items, (m, cr, crates)| {
+        items.add_symbols(&mut errs, crates, |_, new_items, (m, cr, crates)| {
             (&m.items.macro_calls)
                 .try_for_each(|call| {
                     if resolve_path(call.data.path.to_vec(), (m, cr, crates))
@@ -345,7 +346,8 @@ impl Items {
                     }
                     Ok(())
                 })
-                .err_or(())
+                .discard_value()
+                .critical()
         });
 
         // Insert namespace mod
@@ -426,7 +428,7 @@ impl Items {
         }
 
         // Resolve systems
-        items.add_symbols(crates, |items, new_items, (m, cr, crates)| {
+        items.add_symbols(&mut errs, crates, |items, new_items, (m, cr, crates)| {
             (&m.items.functions)
                 .try_for_each(|fun| {
                     if let Some(attr) = fun.attrs.iter().find(|attr| {
@@ -443,9 +445,10 @@ impl Items {
                     }
                     Ok(())
                 })
-                .err_or(())
+                .discard_value()
+                .critical()
         });
 
-        (items, errs)
+        err(items, errs)
     }
 }

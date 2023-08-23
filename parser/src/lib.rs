@@ -10,15 +10,18 @@ mod resolve;
 mod system;
 mod utils;
 
-use std::{fmt::Display, io::Write, path::PathBuf, time::Instant};
+use std::{collections::HashSet, fmt::Display, io::Write, path::PathBuf, time::Instant};
 
 use codegen::write_codegen;
-use diagnostic::{Diagnostic, DiagnosticLevel, Renderer, ResultsTrait};
+use diagnostic::{Diagnostic, DiagnosticLevel, ErrorSpan, ResultsTrait};
 use resolve::Items;
 
 use component_set::ComponentSetLabels;
 use parse::{AstCrate, ComponentSymbol};
-use shared::traits::{Call, CollectVec, CollectVecInto, GetSlice};
+use shared::{
+    syn::error::{MutateResults, Renderer, WarningResult},
+    traits::{Call, CollectVec, CollectVecInto, ExtendInto, GetSlice},
+};
 use utils::paths::Crate;
 
 struct Timer {
@@ -44,6 +47,9 @@ impl Timer {
     }
 }
 
+// TODO: no hardcode
+const MAIN: &str = "c:\\Users\\aaore\\repos\\hyperfold-games-library\\src\\main.rs";
+
 // Process:
 // 1) Parse AST, get mod/crate structure, use statements, and important syntax items
 // 2) Populate with macro symbols
@@ -54,17 +60,20 @@ impl Timer {
 pub fn parse(entry: PathBuf) {
     let mut t = Timer::new();
 
-    let errs = match AstCrate::parse(entry) {
-        Ok(mut crates) => {
+    let (renderer, errors) = match AstCrate::parse(entry) {
+        Ok(WarningResult {
+            value: mut crates,
+            mut errors,
+        }) => {
             t.step("Parsed Crates (Success)");
 
-            let (items, mut errs) = Items::resolve(&mut crates);
+            let items = Items::resolve(&mut crates).record_errs(&mut errors);
             t.step("Resolved Items");
 
             let macro_cr_idx = crates.get_crate_index(Crate::Macros);
 
-            let code = match codegen::codegen(&mut crates, &items).record_errs(&mut errs) {
-                Some(code) if errs.is_empty() && !crates.has_errors() => crates
+            let code = match codegen::codegen(&mut crates, &items).record_errs(&mut errors) {
+                Some(code) if errors.is_empty() => crates
                     .iter_except([macro_cr_idx])
                     .zip(code)
                     .map_vec_into(|(cr, c)| (cr, c.to_string())),
@@ -90,40 +99,41 @@ pub fn parse(entry: PathBuf) {
             };
             t.step("Finished Codegen");
 
-            write_codegen(code).record_errs(&mut errs);
+            write_codegen(code).record_errs(&mut errors);
             t.step("Wrote Codegen");
 
-            let mut i = 0;
-            for cr in crates.iter_mut() {
-                for m in cr.iter_mods_mut() {
-                    // TODO: Only load if there are files and load all before
-                    let span = (&m.span).into();
-                    let file = m.get_file();
-                    let renderer = Renderer::new(&file);
-                    for err in m.take_errors() {
-                        err.subtract_span(&span).render(&renderer).emit().unwrap();
-                        i += 1;
-                    }
-                }
+            let mut renderer = Renderer::new(
+                MAIN,
+                crates
+                    .get_main_mod(crates.get_crate_index(Crate::Main))
+                    .map(|m| ErrorSpan::from(&m.span))
+                    .unwrap_or_default(),
+            );
+            for (cr_idx, m_idx) in errors
+                .iter()
+                .fold(HashSet::new(), |mut hs, e| hs.extend_into(e.get_files()))
+            {
+                let (file, span) = crates
+                    .get_mod(cr_idx, m_idx)
+                    .map(|m| (m.get_file(), (&m.span).into()))
+                    .unwrap_or((MAIN.to_string(), ErrorSpan::default()));
+                renderer.add_file(cr_idx, m_idx, file, span);
             }
-            t.step(format!("Emitted {i} Module Diagnostics"));
 
-            errs
+            (renderer, errors)
         }
         Err(errs) => {
             t.step("Parsed Crates (Failed)");
-            errs
+            (Renderer::new(MAIN, ErrorSpan::default()), errs)
         }
     };
 
-    // TODO: don't hardcode file
     let mut i = 0;
-    let renderer = Renderer::new("c:\\Users\\aaore\\repos\\hyperfold-games-library\\src\\main.rs");
-    for err in errs {
+    for err in errors {
         err.render(&renderer).emit().unwrap();
         i += 1;
     }
-    t.step(format!("Emitted {i} Remaining Diagnostics"));
+    t.step(format!("Emitted {i} Diagnostics"));
 
     t.finish("Build Time");
 }

@@ -200,15 +200,7 @@ fn validate_system(
             funcs)
     })
     .flatten_results()
-    .map_err(
-        |errs| match crates.get_mod_mut(system.span.cr_idx, system.span.mod_idx) {
-            Ok(m) => {
-                m.errs.extend(errs);
-                Vec::new()
-            }
-            Err(e) => e,
-        },
-    )
+    .map_err(|errs| errs.with_mod(system.span.cr_idx, system.span.m_idx))
 }
 
 pub struct SystemsCodegenResult {
@@ -254,11 +246,12 @@ pub fn codegen_systems(
                     None => init_systems.push(sys),
                 })
             })
-            .err_or(SystemsCodegenResult {
+            .map(|_| SystemsCodegenResult {
                 init_systems,
                 systems,
                 system_events,
             })
+            .critical()
     })
     .flatten_results()
 }

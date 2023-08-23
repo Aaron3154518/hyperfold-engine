@@ -1,5 +1,13 @@
+use crate::WarningResult;
+
 // Used for operations that have critical errors (no value if error)
 pub type CriticalResult<T, E> = Result<T, Vec<E>>;
+
+impl<T, E> From<WarningResult<T, E>> for CriticalResult<T, E> {
+    fn from(value: WarningResult<T, E>) -> Self {
+        value.critical()
+    }
+}
 
 pub trait ErrorOr<T, E> {
     fn err_or(self) -> CriticalResult<T, E>;

@@ -1,3 +1,5 @@
+use crate::ErrorTrait;
+
 use super::{CriticalResult, Result};
 
 // Used for operations that have non-critical errors (still produces a value)
@@ -7,6 +9,11 @@ pub struct WarningResult<T, E> {
 }
 
 impl<T, E> WarningResult<T, E> {
+    pub fn take(self) -> (T, Vec<E>) {
+        (self.value, self.errors)
+    }
+
+    // Map value type from T -> U
     pub fn map<U>(self, f: impl FnOnce(T) -> U) -> WarningResult<U, E> {
         WarningResult {
             value: f(self.value),
@@ -14,6 +21,7 @@ impl<T, E> WarningResult<T, E> {
         }
     }
 
+    // Calls map, catching critical errors
     pub fn try_map<U>(self, f: impl FnOnce(T) -> CriticalResult<U, E>) -> Result<U, E> {
         self.map(f).extract_error()
     }
@@ -21,6 +29,14 @@ impl<T, E> WarningResult<T, E> {
     pub fn record_errs(self, errs: &mut Vec<E>) -> T {
         errs.extend(self.errors);
         self.value
+    }
+
+    pub fn critical(self) -> CriticalResult<T, E> {
+        self.errors.err_or(self.value)
+    }
+
+    pub fn discard_value(self) -> WarningResult<(), E> {
+        self.map(|_| ())
     }
 }
 

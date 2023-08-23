@@ -11,7 +11,7 @@ use diagnostic::{
 };
 use syn::spanned::Spanned;
 
-use crate::traits::{CollectVec, CollectVecInto};
+use crate::traits::CollectVec;
 
 // ------- STRUCTS -------
 // Represents a file that has been loaded into the Renderer
@@ -32,25 +32,18 @@ pub struct RenderResult {
 // Renderer handles loading files, adjusting spans, and generating diagnostic text
 pub struct Renderer {
     file_list: SimpleFiles<String, String>,
-    files: HashMap<(usize, usize), File>,
-    def_crate: usize,
-    def_mod: usize,
+    files: HashMap<Option<(usize, usize)>, File>,
+    default_file: String,
 }
 
 impl Renderer {
-    pub fn new(
-        def_crate: usize,
-        def_mod: usize,
-        def_file: &str,
-        def_start_span: impl Into<ErrorSpan>,
-    ) -> Self {
+    pub fn new(def_file: impl Into<String>, def_start_span: impl Into<ErrorSpan>) -> Self {
         let mut s = Self {
             file_list: SimpleFiles::new(),
             files: HashMap::new(),
-            def_crate,
-            def_mod,
+            default_file: def_file.into(),
         };
-        s.add_file(def_crate, def_mod, def_file, def_start_span);
+        s.add_file_impl(None, s.default_file.to_string(), def_start_span.into());
         s
     }
 
@@ -58,21 +51,25 @@ impl Renderer {
         &mut self,
         cr_idx: usize,
         m_idx: usize,
-        file: &str,
+        file: impl Into<String>,
         start_span: impl Into<ErrorSpan>,
     ) {
-        self.files.insert((cr_idx, m_idx), {
+        self.add_file_impl(Some((cr_idx, m_idx)), file.into(), start_span.into())
+    }
+
+    fn add_file_impl(&mut self, idx: Option<(usize, usize)>, file: String, start_span: ErrorSpan) {
+        self.files.insert(idx, {
             let mut success = Ok(());
             File {
                 id: self.file_list.add(
                     file.to_string(),
-                    fs::read_to_string(file).unwrap_or_else(|e| {
+                    fs::read_to_string(file.to_string()).unwrap_or_else(|e| {
                         success = Err(e);
                         String::new()
                     }),
                 ),
-                name: file.to_string(),
-                start_span: start_span.into(),
+                name: file,
+                start_span,
                 success,
             }
         });
@@ -89,14 +86,11 @@ impl Renderer {
         const HEADER: &str = "Diagnostic Error";
 
         // Default span is first byte of the default file
-        let (cr_idx, m_idx) = span
-            .cr_idx
-            .zip(span.m_idx)
-            .unwrap_or((self.def_crate, self.def_mod));
+        let idx = span.cr_idx.zip(span.m_idx);
         let mut span = span.span.unwrap_or_default();
 
         // Attempt to generate the primary label for this diagnostic
-        let file = match self.files.get(&(cr_idx, m_idx)) {
+        let file = match self.files.get(&idx) {
             Some(f) => {
                 span.subtract_bytes(f.start_span.byte_start);
                 diagnostic
@@ -111,9 +105,12 @@ impl Renderer {
             }
             None => {
                 diagnostic.notes.push(format!(
-                    "{HEADER}: The file for mod {m_idx} in crate {cr_idx} has not been loaded"
+                    "{HEADER}: The file for {} in {} has not been loaded",
+                    idx.map_or("default mod".to_string(), |(_, m)| format!("mod {m}")),
+                    idx.map_or("default crate".to_string(), |(c, _)| format!("crate {c}")),
                 ));
-                String::new()
+                span = Default::default();
+                self.default_file.to_string()
             }
         };
         RenderResult {
@@ -143,20 +140,10 @@ where
         self.span_mut().span = Some(span.into());
     }
 
-    fn with_span(mut self, span: impl Into<ErrorSpan>) -> Self {
-        self.set_span(span);
-        self
-    }
-
     fn set_mod(&mut self, cr_idx: usize, m_idx: usize) {
         let span = self.span_mut();
         span.cr_idx = Some(cr_idx);
         span.m_idx = Some(m_idx);
-    }
-
-    fn with_mod(mut self, cr_idx: usize, m_idx: usize) -> Self {
-        self.set_mod(cr_idx, m_idx);
-        self
     }
 }
 
@@ -404,16 +391,53 @@ where
 // Add span to Result
 pub trait MutateResults {
     fn with_span(self, span: impl Into<ErrorSpan>) -> Self;
+
+    fn with_mod(self, cr_idx: usize, m_idx: usize) -> Self;
 }
 
 impl<T> MutateResults for CriticalResult<T> {
     fn with_span(self, span: impl Into<ErrorSpan>) -> CriticalResult<T> {
-        let span = span.into();
-        self.map_err(|errs| errs.map_vec_into(|err| err.with_span(span)))
+        self.map_err(|errs| errs.with_span(span))
+    }
+
+    fn with_mod(self, cr_idx: usize, m_idx: usize) -> Self {
+        self.map_err(|errs| errs.with_mod(cr_idx, m_idx))
     }
 }
 
-// Get element from vec or produce MsgResult
+impl MutateResults for Vec<Error> {
+    fn with_span(mut self, span: impl Into<ErrorSpan>) -> Self {
+        let span = span.into();
+        for err in &mut self {
+            err.set_span(span);
+        }
+        self
+    }
+
+    fn with_mod(mut self, cr_idx: usize, m_idx: usize) -> Self {
+        for err in &mut self {
+            err.set_mod(cr_idx, m_idx);
+        }
+        self
+    }
+}
+
+impl<T> MutateResults for T
+where
+    T: SpanTrait,
+{
+    fn with_span(mut self, span: impl Into<ErrorSpan>) -> Self {
+        self.set_span(span);
+        self
+    }
+
+    fn with_mod(mut self, cr_idx: usize, m_idx: usize) -> Self {
+        self.set_mod(cr_idx, m_idx);
+        self
+    }
+}
+
+// Get element from vec or produce CriticalResult
 pub trait GetVec<T> {
     fn try_get<'a>(&'a self, i: usize) -> CriticalResult<&'a T>;
 

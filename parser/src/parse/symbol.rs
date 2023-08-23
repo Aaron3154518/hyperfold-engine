@@ -1,4 +1,4 @@
-use diagnostic::{CriticalResult, ToErr};
+use diagnostic::ToErr;
 use proc_macro2::Span;
 use std::{cmp::Eq, fmt::Display, hash::Hash};
 
@@ -84,7 +84,7 @@ pub enum SymbolType {
 }
 
 impl std::fmt::Display for SymbolType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::CriticalResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
             SymbolType::Component { .. } => "Component",
             SymbolType::Global { .. } => "Global",

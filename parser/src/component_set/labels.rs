@@ -7,7 +7,7 @@ use shared::{
 };
 
 use super::{parse::LabelOp, resolve::LabelItem};
-use crate::parse::ComponentSymbol;
+use crate::parse::{ComponentSymbol, ItemSpan};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum MustBe {
@@ -16,7 +16,7 @@ pub enum MustBe {
 }
 
 impl std::fmt::Display for MustBe {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::CriticalResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Value(arg0) => write!(f, "{}", if *arg0 { "True" } else { "False" }),
             Self::Unknown => write!(f, "Unknown"),
@@ -25,7 +25,7 @@ impl std::fmt::Display for MustBe {
 }
 
 impl std::fmt::Debug for MustBe {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::CriticalResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{self}")
     }
 }
@@ -43,7 +43,7 @@ impl LabelItem {
     fn combine_symbols(
         op: &LabelOp,
         items: &Vec<LabelItem>,
-        span: Span,
+        span: ItemSpan,
         truth: &HashMap<ComponentSymbol, bool>,
     ) -> ExpressionResult {
         // Filter out literals
@@ -267,7 +267,7 @@ impl ComponentSetLabels {
 }
 
 impl std::fmt::Display for ComponentSetLabels {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::CriticalResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ComponentSetLabels::Constant(v) => write!(f, "{v}"),
             ComponentSetLabels::Expression(e) => write!(f, "{}", e.labels),

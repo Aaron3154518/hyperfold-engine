@@ -10,7 +10,9 @@ use std::{
 
 use diagnostic::{err, CatchErr, CombineWarnings, ErrForEach, ErrorTrait, ToErr};
 use shared::{
-    syn::error::{CriticalResult, GetVec, Result, SpanTrait, StrToError, WarningResult},
+    syn::error::{
+        CriticalResult, GetVec, MutateResults, Result, SpanTrait, StrToError, WarningResult,
+    },
     traits::{Call, Catch, CollectVec, CollectVecInto, ExpandEnum, GetSlice, PushInto},
 };
 
@@ -74,7 +76,7 @@ impl AstCrate {
             },
         )?
         .flatten()
-        .enumer_map_vec_into(|(i, (WarningResult { value, errors }, idxs))| {
+        .enumer_map_vec_into(|(i, (WarningResult { mut value, errors }, idxs))| {
             errs.extend(errors.into_iter().map(|e| e.with_mod(idx, i)));
             value.mods = idxs;
             value.idx = i;
@@ -109,7 +111,7 @@ impl AstCrate {
             let cr_dir = crates.try_get(i)?.value.dir.to_owned();
             let (deps, new_deps) = Self::get_crate_dependencies(cr_dir.to_owned(), &crates)?;
             {
-                crates.try_get_mut(i)?.value.deps = deps;
+                crates.try_get_mut(i)?.value.deps = deps.into_iter().collect();
             }
             for path in new_deps {
                 crates.push(AstCrate::new(cr_dir.join(path), crates.len(), false)?);
@@ -140,7 +142,7 @@ impl AstCrate {
 
     fn get_crate_dependencies(
         cr_dir: PathBuf,
-        crates: &Vec<AstCrate>,
+        crates: &Vec<WarningResult<AstCrate>>,
     ) -> CriticalResult<(Vec<(usize, String)>, Vec<String>)> {
         let deps = AstCrate::parse_cargo_toml(cr_dir.to_owned())?;
         let mut new_deps = Vec::new();
@@ -155,7 +157,7 @@ impl AstCrate {
                 )
                 .trace(),
             )?;
-            cr_deps.push(match crates.iter().position(|cr| cr.dir == dep_dir) {
+            cr_deps.push(match crates.iter().position(|cr| cr.value.dir == dep_dir) {
                 Some(i) => (i, name),
                 None => {
                     new_deps.push(path);
@@ -238,8 +240,7 @@ impl AstCrate {
     }
 
     pub fn get_mods(&self, idxs: &Vec<usize>) -> CriticalResult<Vec<&AstMod>> {
-        let (mods, errs) = idxs.try_for_each(|i| self.get_mod(*i));
-        errs.err_or(mods)
+        idxs.try_for_each(|i| self.get_mod(*i)).critical()
     }
 
     pub fn find_mod<'a>(&'a self, path: &[String]) -> CriticalResult<&'a AstMod> {

@@ -3,7 +3,7 @@ use std::{
     path::{Display, PathBuf},
 };
 
-use diagnostic::{ok, CatchErr, ErrForEach, ErrorSpan, ErrorTrait, ResultsTrait, ToErr};
+use diagnostic::{err, ok, CatchErr, ErrForEach, ErrorSpan, ErrorTrait, ResultsTrait, ToErr};
 use proc_macro2::{Span, TokenStream};
 
 use syn::{spanned::Spanned, visit::Visit};
@@ -110,19 +110,21 @@ impl AstMod {
         // Resolve local use paths
         // E.g. mod Foo; use Foo::Bar;
         for use_path in root.uses.iter_mut() {
-            if let Some(m) = mods
-                .value
-                .iter()
-                .find(|m| m.root.path.last().is_some_and(|p| p == &use_path.first))
-            {
-                use_path.path = [m.root.path.to_vec(), use_path.path[1..].to_vec()].concat();
+            if let Some(m) = mods.value.iter().find(|m| {
+                m.root
+                    .value
+                    .path
+                    .last()
+                    .is_some_and(|p| p == &use_path.first)
+            }) {
+                use_path.path = [m.root.value.path.to_vec(), use_path.path[1..].to_vec()].concat();
             }
         }
 
-        Ok(mods.map(|children| Tree {
-            root: ok(root),
-            children,
-        }))
+        Ok(Tree {
+            root: err(root, mods.errors),
+            children: mods.value,
+        })
     }
 
     pub fn add_symbol(&mut self, symbol: Symbol) {
@@ -159,7 +161,7 @@ impl AstMod {
 
 // File/items
 impl AstMod {
-    fn visit_items(&mut self, items: Vec<syn::Item>) -> Vec<AstModTree> {
+    fn visit_items(&mut self, items: Vec<syn::Item>) -> WarningResult<Vec<AstModTree>> {
         let mut mods = Vec::new();
         items
             .try_for_each(|i| match i {
@@ -188,9 +190,10 @@ impl AstMod {
                         AstModType::Internal,
                         self.span,
                     );
+                    let children = new_mod.visit_items(items);
                     Ok(Tree {
-                        children: new_mod.visit_items(items),
-                        root: ok(new_mod),
+                        children: children.value,
+                        root: err(new_mod, children.errors),
                     })
                 }
                 // Parse file mod

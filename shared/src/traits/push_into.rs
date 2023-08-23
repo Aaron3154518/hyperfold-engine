@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{collections::HashSet, hash::Hash, path::PathBuf};
 
 // Add element to vec in place
 pub trait PushInto<T> {
@@ -51,6 +51,28 @@ impl PushInto<String> for PathBuf {
 
     fn pop_item(&mut self) -> &mut Self {
         self.pop();
+        self
+    }
+}
+
+// Extend in place
+pub trait ExtendInto<T> {
+    fn extend_into(self, t: impl IntoIterator<Item = T>) -> Self;
+}
+
+impl<T> ExtendInto<T> for Vec<T> {
+    fn extend_into(mut self, t: impl IntoIterator<Item = T>) -> Self {
+        self.extend(t);
+        self
+    }
+}
+
+impl<T> ExtendInto<T> for HashSet<T>
+where
+    T: Eq + Hash,
+{
+    fn extend_into(mut self, t: impl IntoIterator<Item = T>) -> Self {
+        self.extend(t);
         self
     }
 }

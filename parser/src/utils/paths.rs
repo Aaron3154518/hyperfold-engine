@@ -49,7 +49,7 @@ impl CratePath {
 }
 
 impl std::fmt::Display for CratePath {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::CriticalResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{:#?}{}::{}",

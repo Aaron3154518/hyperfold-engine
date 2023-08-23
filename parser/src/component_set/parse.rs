@@ -51,7 +51,7 @@ impl Parse for LabelOp {
 }
 
 impl std::fmt::Display for LabelOp {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::CriticalResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
             LabelOp::And => "&&",
             LabelOp::Or => "||",
@@ -188,6 +188,12 @@ impl AstLabelItem {
             }
         }
     }
+
+    pub fn span(&self) -> &Span {
+        match self {
+            AstLabelItem::Item { span, .. } | AstLabelItem::Expression { span, .. } => span,
+        }
+    }
 }
 
 impl Parse for AstLabelItem {
@@ -221,7 +227,7 @@ impl Parse for AstLabelItem {
 }
 
 impl std::fmt::Display for AstLabelItem {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::CriticalResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             AstLabelItem::Item { not, ty, .. } => f.write_fmt(format_args!(
                 "{}{}",
@@ -363,7 +369,7 @@ impl Parse for AstComponentSet {
 }
 
 impl std::fmt::Display for AstComponentSet {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::CriticalResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!(
             "{{\n{:#?}\n{:#?}\nLabels: {}\n}}",
             self.ident,

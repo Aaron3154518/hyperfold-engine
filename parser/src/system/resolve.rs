@@ -1,11 +1,11 @@
-use diagnostic::{CombineResults, ResultsTrait, ToErr};
+use diagnostic::{CombineResults, ErrorTrait, ResultsTrait, ToErr};
 use proc_macro2::Span;
 use std::collections::{HashMap, HashSet};
 
 use shared::{
     constants::TAB,
     parsing::SystemMacroArgs,
-    syn::error::{CriticalResult, ToError},
+    syn::error::{CriticalResult, Note, SpanTrait, ToError},
     traits::{CollectVec, CollectVecInto, PushInto, ThenOk},
 };
 
@@ -53,8 +53,8 @@ pub enum FnArgs {
 }
 
 struct ComponentRef {
-    set_span: Span,
-    item_span: Span,
+    arg_span: Span,
+    item_span: ItemSpan,
 }
 
 pub struct ComponentRefTracker {
@@ -72,19 +72,19 @@ impl ComponentRefTracker {
         }
     }
 
-    pub fn with_ref(mut self, set_span: Span, item_span: Span, is_mut: bool) -> Self {
-        self.add_ref(set_span, item_span, is_mut);
+    pub fn with_ref(mut self, arg_span: Span, item_span: ItemSpan, is_mut: bool) -> Self {
+        self.add_ref(arg_span, item_span, is_mut);
         self
     }
 
-    pub fn add_ref(&mut self, set_span: Span, item_span: Span, is_mut: bool) {
+    pub fn add_ref(&mut self, arg_span: Span, item_span: ItemSpan, is_mut: bool) {
         if is_mut {
             &mut self.mut_refs
         } else {
             &mut self.immut_refs
         }
         .push(ComponentRef {
-            set_span,
+            arg_span,
             item_span,
         });
     }
@@ -96,71 +96,46 @@ impl ComponentRefTracker {
             .chain(self.immut_refs.iter().map(|r| (r, false)))
     }
 
+    fn immut_ref_notes<'a>(&'a self) -> impl Iterator<Item = Note> + 'a {
+        self.immut_refs
+            .iter()
+            .map(|r| r.item_span.note("Immutable reference here"))
+    }
+
+    fn mut_ref_notes<'a>(&'a self) -> impl Iterator<Item = Note> + 'a {
+        self.mut_refs
+            .iter()
+            .map(|r| r.item_span.note("Mutable reference here"))
+    }
+
+    fn ref_notes<'a>(&'a self) -> impl Iterator<Item = Note> + 'a {
+        self.immut_ref_notes().chain(self.mut_ref_notes())
+    }
+
     pub fn validate(&self, sys: &ItemSystem) -> CriticalResult<()> {
         let (mut_cnt, immut_cnt) = (self.mut_refs.len(), self.immut_refs.len());
 
-        // TODO: one error per argument
-        // TODO: remove duplicate items (e.g. same argument twice)
-        (mut_cnt > 0 && immut_cnt > 0)
-            .then_err(
-                || {
-                    let notes = || {
-                        self.iter_refs().map(|(r, is_mut)| {
-                            (
-                                (&r.item_span).into(),
-                                format!(
-                                    "{} reference here",
-                                    if is_mut { "Mutable" } else { "Immutable" }
-                                ),
-                            )
-                        })
-                    };
-                    self.iter_refs().map_vec_into(|(r, is_mut)| {
-                        r.set_span
-                            .error(format!(
-                                "Cannot have both mutable and immutable references to {}",
-                                self.comp_name
-                            ))
-                            .with_notes(notes())
-                    })
-                },
-                || (),
-            )
-            .and_then(|_| {
-                let notes = || {
-                    self.mut_refs
-                        .iter()
-                        .map(|r| ((&r.item_span).into(), "Mutable reference here".to_string()))
-                };
-                (mut_cnt > 1).err(
-                    self.mut_refs.map_vec(|r| {
-                        r.set_span
-                            .error(format!(
-                                "Cannot have multiple mutable references to {}",
-                                self.comp_name
-                            ))
-                            .with_notes(notes())
-                    }),
-                    (),
-                )
-            })
-        // TODO: add hint
-        // .map_err(|mut errs| {
-        //     if !self.mut_refs.is_empty() {
-        //         errs.push(format!(
-        //             "{TAB}Mutable references in '{}'",
-        //             self.mut_refs.join("', '")
-        //         ));
-        //     }
-
-        //     if !self.immut_refs.is_empty() {
-        //         errs.push(format!(
-        //             "{TAB}Immutable references in '{}'",
-        //             self.immut_refs.join("', '")
-        //         ));
-        //     }
-        //     errs
-        // })
+        ((mut_cnt > 0 && immut_cnt > 0) || mut_cnt > 1).then_err(
+            || {
+                let msg = format!(
+                    "{} {}",
+                    match immut_cnt {
+                        0 => "Cannot have multiple mutable references to",
+                        _ => "Cannot have both mutable and immutable references to",
+                    },
+                    self.comp_name
+                );
+                // Only print one error per argument
+                let mut refs: Vec<_> = self
+                    .iter_refs()
+                    .map(|(r, _)| (r.arg_span, format!("{:#?}", r.arg_span)))
+                    .collect();
+                refs.sort_by(|(_, s1), (_, s2)| s1.cmp(s2));
+                refs.dedup_by(|(_, s1), (_, s2)| s1 == s2);
+                refs.map_vec_into(|(s, _)| s.error(msg.to_string()).with_notes(self.ref_notes()))
+            },
+            || (),
+        )
     }
 }
 

@@ -9,7 +9,8 @@ use super::{
     parse::{AstComponentSet, AstComponentSetItem, AstLabelItem, LabelOp},
 };
 use crate::parse::{
-    resolve_path, ComponentSymbol, DiscardSymbol, ItemPath, MatchSymbol, ModInfo, ModInfoMut,
+    resolve_path, ComponentSymbol, DiscardSymbol, ItemPath, ItemSpan, MatchSymbol, ModInfo,
+    ModInfoMut, WithItemSpan,
 };
 use shared::{
     syn::{
@@ -25,32 +26,34 @@ pub enum LabelItem {
     Item {
         not: bool,
         comp: ComponentSymbol,
-        span: Span,
+        span: ItemSpan,
     },
     Expression {
         op: LabelOp,
         items: Vec<LabelItem>,
-        span: Span,
+        span: ItemSpan,
     },
 }
 
 impl LabelItem {
     fn resolve(item: AstLabelItem, (m, cr, crates): ModInfo) -> CriticalResult<Self> {
+        let span = ItemSpan::new(cr, m, *item.span());
         match item {
-            AstLabelItem::Item { not, ty, span } => resolve_path(ty, (m, cr, crates))
+            AstLabelItem::Item { not, ty, .. } => resolve_path(ty, (m, cr, crates))
                 .expect_component()
                 .discard_symbol()
-                .with_span(&span)
+                .with_item_span(&span)
                 .map(|comp| Self::Item { not, comp, span }),
-            AstLabelItem::Expression { op, items, span } => items
+            AstLabelItem::Expression { op, items, .. } => items
                 .into_iter()
                 .map_vec_into(|item| Self::resolve(item, (m, cr, crates)))
                 .combine_results()
+                .with_item_span(&span)
                 .map(|items| Self::Expression { op, items, span }),
         }
     }
 
-    pub fn span(&self) -> &Span {
+    pub fn span(&self) -> &ItemSpan {
         match self {
             LabelItem::Item { span, .. } | LabelItem::Expression { span, .. } => span,
         }
@@ -58,7 +61,7 @@ impl LabelItem {
 }
 
 impl std::fmt::Display for LabelItem {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::CriticalResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             LabelItem::Item { not, comp, .. } => {
                 f.write_fmt(format_args!("{}{}", if *not { "!" } else { "" }, comp.idx))
@@ -81,7 +84,7 @@ pub struct ComponentSetItem {
     pub ref_cnt: usize,
     pub is_mut: bool,
     pub is_opt: bool,
-    pub span: Span,
+    pub span: ItemSpan,
 }
 
 impl ComponentSetItem {
@@ -96,10 +99,11 @@ impl ComponentSetItem {
         }: AstComponentSetItem,
         (m, cr, crates): ModInfo,
     ) -> CriticalResult<Self> {
+        let span = ItemSpan::new(cr, m, span);
         resolve_path(ty.path.to_vec(), (m, cr, crates))
             .expect_component()
             .discard_symbol()
-            .with_span(&span)
+            .with_item_span(&span)
             .map(|comp| Self {
                 var,
                 ty: ty.path.join("::"),
@@ -223,7 +227,7 @@ impl ComponentSet {
 }
 
 impl std::fmt::Display for ComponentSet {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::CriticalResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!(
             "{{\n{}\n{:#?}\nLabels: {}\n}}",
             self.path.path.join("::"),

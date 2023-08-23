@@ -28,7 +28,7 @@ pub enum FnArgType {
 }
 
 impl std::fmt::Display for FnArgType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::CriticalResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
             FnArgType::Event(_) => "Event",
             FnArgType::Global(_) => "Global",
@@ -148,7 +148,7 @@ impl FnArg {
 }
 
 impl std::fmt::Display for FnArg {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::CriticalResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!(
             "{}{}{}",
             "&".repeat(self.ref_cnt),

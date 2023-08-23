@@ -24,7 +24,7 @@ pub use find::FindFrom;
 pub use get::{End, Get2D, GetFirst, GetSlice};
 pub use increment::Increment;
 pub use option::{CombineOptions, MapNone, NoneOr};
-pub use push_into::PushInto;
+pub use push_into::{ExtendInto, PushInto};
 pub use range::RangeTrait;
 pub use result::{GetResult, HandleErr, ThenOk};
 pub use split::{SplitAround, SplitAroundCopy, SplitCollect};

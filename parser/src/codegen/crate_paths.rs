@@ -100,17 +100,6 @@ impl Crates {
             })
     }
 
-    pub fn has_errors(&self) -> bool {
-        for cr in &self.crates {
-            for m in cr.iter_mods() {
-                if !m.errs.is_empty() {
-                    return true;
-                }
-            }
-        }
-        false
-    }
-
     // Create crate paths
     pub fn get_crate_path(&self, start_idx: usize, end_idx: usize) -> Option<Vec<String>> {
         self.paths.get2d(start_idx, end_idx).and_then(|v| v.clone())
@@ -199,20 +188,28 @@ impl Crates {
         self.crate_idxs[cr as usize]
     }
 
-    pub fn get_mod<'a>(&'a self, cr_idx: usize, mod_idx: usize) -> CriticalResult<&'a AstMod> {
+    pub fn get_mod(&self, cr_idx: usize, mod_idx: usize) -> CriticalResult<&AstMod> {
         self.crates
             .try_get(cr_idx)
             .and_then(|cr| cr.mods.try_get(mod_idx))
     }
 
-    pub fn get_mod_mut<'a>(
-        &'a mut self,
-        cr_idx: usize,
-        mod_idx: usize,
-    ) -> CriticalResult<&'a mut AstMod> {
+    pub fn get_mod_mut(&mut self, cr_idx: usize, mod_idx: usize) -> CriticalResult<&mut AstMod> {
         self.crates
             .try_get_mut(cr_idx)
             .and_then(|cr| cr.mods.try_get_mut(mod_idx))
+    }
+
+    pub fn get_main_mod(&self, cr_idx: usize) -> CriticalResult<&AstMod> {
+        self.crates
+            .try_get(cr_idx)
+            .and_then(|cr| cr.mods.try_get(cr.main))
+    }
+
+    pub fn get_main_mod_mut(&mut self, cr_idx: usize) -> CriticalResult<&mut AstMod> {
+        self.crates
+            .try_get_mut(cr_idx)
+            .and_then(|cr| cr.mods.try_get_mut(cr.main))
     }
 
     // Iterate crates except macros crate
