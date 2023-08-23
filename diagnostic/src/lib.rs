@@ -6,8 +6,6 @@ mod result;
 mod span;
 mod writer;
 
-use std::fs;
-
 use codespan_reporting::{
     files::SimpleFiles,
     term::{self, Config},
@@ -20,54 +18,13 @@ pub use diagnostic::*;
 pub use error::*;
 pub use result::*;
 
-pub struct Renderer {
-    files: SimpleFiles<String, String>,
-    file_name: String,
-    file_idx: usize,
-    success: Result<(), std::io::Error>,
-}
-
-impl Renderer {
-    pub fn new(file: &str) -> Self {
-        let mut files = SimpleFiles::new();
-        let mut success = Ok(());
-        let file_idx = files.add(
-            file.to_string(),
-            fs::read_to_string(file).unwrap_or_else(|e| {
-                success = Err(e);
-                String::new()
-            }),
-        );
-        Self {
-            file_name: file.to_string(),
-            file_idx,
-            files,
-            success,
-        }
-    }
-
-    pub fn file_idx(&self) -> usize {
-        self.file_idx
-    }
-
-    pub fn file_name(&self) -> String {
-        self.file_name.to_string()
-    }
-
-    pub fn render(&self, diagnostic: &CodespanDiagnostic<usize>) -> String {
-        let mut writer = Writer::empty();
-        let config = Config::default();
-        format!(
-            "{}{}",
-            match &self.success {
-                Ok(_) => String::new(),
-                Err(e) => format!("Couldn't open file: {e}"),
-            },
-            term::emit(&mut writer, &config, &self.files, diagnostic)
-                .map(|_| writer.to_string())
-                .unwrap_or_else(|e| format!("Could not produce error message: {e}"))
-        )
-    }
+pub fn render(
+    files: &SimpleFiles<String, String>,
+    diagnostic: &CodespanDiagnostic<usize>,
+) -> Result<String, codespan_reporting::files::Error> {
+    let mut writer = Writer::empty();
+    let config = Config::default();
+    term::emit(&mut writer, &config, files, diagnostic).map(|_| writer.to_string())
 }
 
 impl<T> From<DiagnosticLevel> for CodespanDiagnostic<T> {

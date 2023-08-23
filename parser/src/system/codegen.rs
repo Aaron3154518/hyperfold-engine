@@ -137,7 +137,7 @@ fn codegen_system(
         cr_idx,
         crates,
         items,
-        ..
+        system,
     } = cargs;
 
     match args {
@@ -155,6 +155,7 @@ fn codegen_system(
                 })
             })
             .combine_results()
+            .with_span(&system.span.span)
             .map(|component_sets| {
                 (
                     codegen_event_system(
@@ -182,7 +183,9 @@ fn validate_system(
     }: CodegenItems,
     funcs: CodegenFuncs,
 ) -> Result<(TokenStream, Option<syn::Ident>)> {
-    let func_name = crates.get_item_syn_path(cr_idx, &system.path);
+    let func_name = crates
+        .get_item_syn_path(cr_idx, &system.path)
+        .with_span(&system.span.span);
     let args = system.validate(items);
     zip_match!((func_name, args) => {
         codegen_system(
@@ -197,7 +200,6 @@ fn validate_system(
             funcs)
     })
     .flatten_results()
-    .with_span(&system.span.span)
     .map_err(
         |errs| match crates.get_mod_mut(system.span.cr_idx, system.span.mod_idx) {
             Ok(m) => {
