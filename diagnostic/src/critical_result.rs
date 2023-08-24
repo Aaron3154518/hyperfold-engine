@@ -43,20 +43,26 @@ where
 }
 
 // Replace None/Err with error type E
-pub trait CatchErr<T, E, F> {
+pub trait CatchErr<T, E, F, G> {
     fn catch_err(self, err: F) -> CriticalResult<T, E>;
+
+    fn catch_map_err(self, f: impl FnOnce(G) -> F) -> CriticalResult<T, E>;
 }
 
-impl<T, E, F, G> CatchErr<T, E, F> for Result<T, G>
+impl<T, E, F, G> CatchErr<T, E, F, G> for Result<T, G>
 where
     F: Into<E>,
 {
     fn catch_err(self, err: F) -> CriticalResult<T, E> {
         self.map_err(|_| err.into().as_vec())
     }
+
+    fn catch_map_err(self, f: impl FnOnce(G) -> F) -> CriticalResult<T, E> {
+        self.map_err(|g| f(g).into().as_vec())
+    }
 }
 
-impl<T, E, F> CatchErr<T, E, F> for Option<T>
+impl<T, E, F> CatchErr<T, E, F, ()> for Option<T>
 where
     F: Into<E>,
 {
@@ -64,6 +70,13 @@ where
         match self {
             Some(t) => Ok(t),
             None => err.into().as_err(),
+        }
+    }
+
+    fn catch_map_err(self, f: impl FnOnce(()) -> F) -> CriticalResult<T, E> {
+        match self {
+            Some(t) => Ok(t),
+            None => f(()).into().as_err(),
         }
     }
 }

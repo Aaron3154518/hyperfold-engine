@@ -7,12 +7,18 @@ use std::{
 
 use uuid::Uuid;
 
+use crate::sdl2;
+
 pub const HALF_PI: f32 = PI / 2.0;
 pub const DEG_TO_RAD: f32 = PI / 180.0;
 pub const F32_ERR: f32 = 1e-10;
 
 pub fn normalize_rad(rad: f32) -> f32 {
     ((rad % TAU) + TAU) % TAU
+}
+
+pub fn get_time() -> u32 {
+    unsafe { sdl2::SDL_GetTicks() }
 }
 
 // Math on ints that returns floats

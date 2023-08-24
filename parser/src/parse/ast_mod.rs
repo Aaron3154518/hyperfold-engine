@@ -96,9 +96,10 @@ impl AstMod {
 
     pub fn parse(file: PathBuf, path: Vec<String>, ty: AstModType) -> CriticalResult<AstModTree> {
         let file_contents = fs::read_to_string(file.to_owned())
-            .catch_err(format!("Failed to read file: {}", file.display()).trace())?;
-        let ast = syn::parse_file(&file_contents)
-            .catch_err(format!("Failed to parse file contents of: {}", file.display()).trace())?;
+            .catch_map_err(|e| format!("Failed to read file {}: {e}", file.display()).trace())?;
+        let ast = syn::parse_file(&file_contents).catch_map_err(|e| {
+            format!("Failed to parse file contents of {}: {e}", file.display()).trace()
+        })?;
         let name = path
             .last()
             .catch_err(format!("Mod path is empty: {}", path.join("::")).trace())?
