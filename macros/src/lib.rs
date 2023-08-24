@@ -127,16 +127,11 @@ pub fn event(_input: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_attribute]
-pub fn system(input: TokenStream, item: TokenStream) -> TokenStream {
+pub fn system(_input: TokenStream, item: TokenStream) -> TokenStream {
     let mut fun = parse_macro_input!(item as syn::ItemFn);
     fun.vis = parse_quote!(pub);
-    let input: proc_macro2::TokenStream = input.into();
 
-    quote!(
-        crate::system_macro! { #input }
-        #fun
-    )
-    .into()
+    quote!(#fun).into()
 }
 
 #[proc_macro_attribute]
