@@ -124,7 +124,7 @@ impl ComponentSetItem {
     pub fn get_fn(&self) -> syn::Ident {
         get_fn_name(
             if self.sym.comp.args.is_singleton {
-                "get_values"
+                "get_value"
             } else {
                 "get"
             },
