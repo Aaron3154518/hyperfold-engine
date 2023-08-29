@@ -80,6 +80,12 @@ impl From<f32> for Number {
     }
 }
 
+impl From<u32> for Number {
+    fn from(value: u32) -> Self {
+        Self::from(value as f32)
+    }
+}
+
 impl From<Number> for f32 {
     fn from(value: Number) -> Self {
         value.sign as f32 * {
@@ -172,7 +178,7 @@ impl Number {
             };
         }
 
-        Self::new(layer, exp, sign)
+        Self { exp, layer, sign }
     }
 }
 
