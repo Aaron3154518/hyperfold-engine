@@ -4,7 +4,7 @@ use num_traits::Pow;
 use shared::traits::Call;
 
 use crate::{
-    sdl2,
+    impl_as_any, sdl2,
     utils::{
         colors::BLACK,
         rect::{Align, Point, PointF, Rect},
@@ -251,6 +251,8 @@ impl Drawable for Rectangle {
         }
     }
 }
+
+impl_as_any!(Rectangle);
 
 // Circle
 #[derive(Clone, Copy)]
@@ -572,6 +574,8 @@ impl Drawable for Circle {
     }
 }
 
+impl_as_any!(Circle);
+
 // Brighten
 #[derive(Clone, Copy)]
 pub struct Brighten {
@@ -601,3 +605,5 @@ impl Drawable for Brighten {
             .draw(r)
     }
 }
+
+impl_as_any!(Brighten);

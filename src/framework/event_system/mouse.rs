@@ -3,7 +3,7 @@ use crate::components;
 use crate::ecs::events::core;
 use crate::framework::{
     physics::Position,
-    render_system::{sort_elevation, Elevation, Order},
+    render_system::{sort_elevation, Order, RenderOpts},
 };
 use crate::utils::event::{self, Event, Mouse};
 
@@ -64,7 +64,7 @@ impl DragState {
 // Handle mouse events
 components!(
     MouseArgs,
-    e: &'a Elevation,
+    opts: &'a RenderOpts,
     pos: &'a Position,
     drag_trigger: Option<&'a DragTrigger>
 );
@@ -87,8 +87,9 @@ fn mouse_event(
     }
 
     // Get entity under mouse
-    let target = sort_elevation(entities, |t| t.e, |t| t.eid, Order::Desc)
+    let target = sort_elevation(entities, |t| t.opts, |t| t.eid, Order::Desc)
         .into_iter()
+        .filter(|e| e.opts.visible)
         .find(|MouseArgs { pos, .. }| pos.0.contains_point_i32(m.0.click_pos));
 
     // New drag target

@@ -4,7 +4,7 @@ use crate::{
     components,
     ecs::{entities::Entity, events::core::PreRender},
     framework::physics::Position,
-    sdl2,
+    impl_as_any, sdl2,
     utils::{
         colors::{BLACK, GRAY},
         rect::{Align, Rect},
@@ -15,11 +15,10 @@ use crate::{
 use super::{
     drawable::{Canvas, Drawable},
     font::FontData,
-    rect_to_camera_coords,
     render_data::{Fit, RenderAsset, RenderDataTrait, RenderTexture},
     shapes::{Rectangle, ShapeTrait},
     text::{parse_text, render_text, TextToken},
-    AssetManager, Camera, RenderComponent, Renderer, Screen, Texture,
+    AssetManager, RenderComponent, Renderer, Texture,
 };
 
 pub enum TextImage {
@@ -135,7 +134,7 @@ impl RenderText {
 // This is needed to tie lifetimes to specific RenderText members
 #[macro_export]
 macro_rules! render_text {
-    ($rt: ident, $rect: ident, $r: ident, $am: ident) => {{
+    ($rt: expr, $rect: expr, $r: expr, $am: expr) => {{
         let max_w = match $rt.tex.get_render_data().dest.fit {
             Fit::None | Fit::Fit(false, _) => None,
             _ => Some($rect.w_u32()),
@@ -148,11 +147,9 @@ macro_rules! render_text {
                 &$rt.tokens,
                 &$rt.font_data,
                 max_w,
-                $rect.center(),
                 $rt.color,
                 $rt.bkgrnd,
                 $rt.align_x,
-                $rt.align_y,
             )
             .call_into(|(t, rects)| {
                 $rt.img_rects = rects;
@@ -178,10 +175,12 @@ impl Drawable for RenderText {
     }
 }
 
+impl_as_any!(RenderText);
+
 components!(
     RenderTextArgs,
     tex: &'a mut RenderComponent,
-    pos: Option<&'a Position>
+    pos: Option<&'a Position>,
 );
 
 #[macros::system]
@@ -190,19 +189,17 @@ fn update_render_text(
     mut rcs: Vec<RenderTextArgs>,
     r: &Renderer,
     am: &mut AssetManager,
-    screen: &Screen,
-    camera: &Camera,
 ) {
     let n = rcs.len();
     for i in 0..n {
-        let (left, RenderTextArgs { tex, pos, .. }, right) = rcs.split_around_mut(i);
+        let (left, args, right) = rcs.split_around_mut(i);
+        let RenderTextArgs { tex, pos, .. } = args;
         let pos = match pos {
             Some(pos) => pos,
             None => continue,
         };
         tex.try_as_mut(|rt: &mut RenderText| {
-            let rect = rect_to_camera_coords(&pos.0, screen, camera);
-            let tex = render_text!(rt, rect, r, am);
+            let tex = render_text!(rt, pos.0, r, am);
 
             // TODO: only if needed
             // Redraw images
@@ -237,9 +234,6 @@ fn update_render_text(
                     TextImage::Render(rc) => draw(rc, rect),
                 }
             }
-
-            rt.tex
-                .set_dest_rect(rect_to_camera_coords(&pos.0, screen, camera));
         });
     }
 }

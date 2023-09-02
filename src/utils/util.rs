@@ -114,6 +114,8 @@ pub trait AsType<T: 'static>: AsAny {
     }
 }
 
+impl<T: 'static, U: AsAny> AsType<T> for U {}
+
 pub trait TryAsType<U, T>
 where
     T: 'static,
@@ -139,27 +141,7 @@ where
 }
 
 #[macro_export]
-macro_rules! impl_as_any_for_trait {
-    ($tr: ident) => {
-        impl<T> crate::utils::util::AsAny for T
-        where
-            T: $tr + 'static,
-        {
-            fn as_any<'a>(&'a self) -> &'a dyn std::any::Any {
-                self
-            }
-
-            fn as_any_mut<'a>(&'a mut self) -> &'a mut dyn std::any::Any {
-                self
-            }
-        }
-
-        impl<T> crate::utils::util::AsType<T> for dyn $tr where T: $tr + 'static {}
-    };
-}
-
-#[macro_export]
-macro_rules! impl_as_any_for_type {
+macro_rules! impl_as_any {
     ($ty: ident) => {
         impl crate::utils::util::AsAny for $ty {
             fn as_any<'a>(&'a self) -> &'a dyn std::any::Any {

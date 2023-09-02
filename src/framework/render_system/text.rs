@@ -293,23 +293,19 @@ pub fn render_text(
     tokens: &Vec<TextToken>,
     font_data: &FontData,
     max_w: Option<u32>,
-    pos: PointF,
     color: sdl2::SDL_Color,
     bkgrnd: sdl2::SDL_Color,
     ax: Align,
-    ay: Align,
 ) -> (Texture, Vec<Rect>) {
     let font = am.get_font(font_data);
     let line_h = font.size().h as f32;
     let lines = split_text(tokens, font, max_w);
-    let text_r = Rect::new()
-        .with_dim(
-            lines.iter().max_by_key(|l| l.w).expect("No lines").w as f32,
-            line_h * lines.len() as f32,
-            Align::TopLeft,
-            Align::TopLeft,
-        )
-        .with_pos(pos.x, pos.y, ax, ay);
+    let text_r = Rect {
+        x: 0.0,
+        y: 0.0,
+        w: lines.iter().max_by_key(|l| l.w).expect("No lines").w as f32,
+        h: line_h * lines.len() as f32,
+    };
     let tex = Texture::new(r, text_r.w_i32() as u32, text_r.h_i32() as u32, bkgrnd);
 
     let mut imgs = Vec::new();

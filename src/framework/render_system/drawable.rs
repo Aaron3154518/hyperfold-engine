@@ -1,9 +1,17 @@
-use crate::{impl_as_any_for_trait, sdl2, utils::util::AsAny};
+use crate::{
+    sdl2,
+    utils::{rect::Rect, util::AsAny},
+};
 
 use super::{
     shapes::{Rectangle, ShapeTrait},
     AssetManager, Renderer, Texture,
 };
+
+// Trait for manipulating a Drawable
+pub trait MutateDrawable {
+    fn set_rect(&mut self, r: Rect);
+}
 
 // Trait for anything that wants to draw on a texture builder
 pub trait Drawable: AsAny {
@@ -13,8 +21,6 @@ pub trait Drawable: AsAny {
 pub trait AssetDrawable: AsAny {
     fn draw(&mut self, r: &Renderer, am: &mut AssetManager);
 }
-
-impl_as_any_for_trait!(AssetDrawable);
 
 impl<T> AssetDrawable for T
 where

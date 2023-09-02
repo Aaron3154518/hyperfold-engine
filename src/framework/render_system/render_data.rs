@@ -2,20 +2,19 @@ use uuid::Uuid;
 
 use crate::{
     components,
-    ecs::events::core::{PreRender, Update},
-    framework::physics::Position,
+    ecs::events::core::Update,
+    impl_as_any,
     sdl2::SDL_RendererFlip,
     utils::{
         rect::{Align, Dimensions, Point, Rect},
-        util::{AsType, TryAsType},
+        util::{AsAny, AsType, TryAsType},
     },
 };
 
 use super::{
-    drawable::{AssetDrawable, Drawable},
-    rect_to_camera_coords,
+    drawable::{AssetDrawable, Drawable, MutateDrawable},
     renderer::RenderOptions,
-    Asset, AssetManager, Camera, Renderer, Screen, Texture,
+    Asset, AssetManager, Renderer, Texture,
 };
 
 // RenderData
@@ -249,6 +248,12 @@ pub trait RenderDataTrait {
     }
 }
 
+impl<T: RenderDataTrait> MutateDrawable for T {
+    fn set_rect(&mut self, r: Rect) {
+        self.get_render_data_mut().set_dest_rect(r);
+    }
+}
+
 pub trait RenderDataBuilderTrait
 where
     Self: Sized + RenderDataTrait,
@@ -400,6 +405,8 @@ impl Drawable for RenderTexture {
     }
 }
 
+impl_as_any!(RenderTexture);
+
 // RenderAsset
 pub struct RenderAsset {
     asset: Asset,
@@ -459,43 +466,29 @@ impl AssetDrawable for RenderAsset {
     }
 }
 
-components!(RenderPos, tex: &'a mut RenderComponent, pos: &'a Position);
-
-#[macros::system]
-fn set_render_pos(_ev: &PreRender, screen: &Screen, camera: &Camera, entities: Vec<RenderPos>) {
-    for RenderPos { tex, pos, .. } in entities {
-        let dest = rect_to_camera_coords(&pos.0, screen, camera);
-        tex.try_as_mut(|rt: &mut RenderTexture| rt.get_render_data_mut().set_dest_rect(dest))
-            .try_as_mut(tex, |ra: &mut RenderAsset| {
-                ra.get_render_data_mut().set_dest_rect(dest)
-            });
-    }
-}
+impl_as_any!(RenderAsset);
 
 // RenderComponent
-pub trait RenderComponentTrait: AssetDrawable + RenderDataTrait {}
+pub trait RenderComponentTrait: AssetDrawable + MutateDrawable + AsAny {}
 
-impl<T> RenderComponentTrait for T where T: AssetDrawable + RenderDataTrait {}
+impl<T> RenderComponentTrait for T where T: AssetDrawable + MutateDrawable + AsAny {}
 
 #[macros::component]
-struct RenderComponent(pub(super) Box<dyn AssetDrawable>);
+struct RenderComponent(pub(super) Box<dyn RenderComponentTrait>);
 
 impl RenderComponent {
-    pub fn new(d: impl AssetDrawable + 'static) -> Self {
+    pub fn new(d: impl RenderComponentTrait + 'static) -> Self {
         Self(Box::new(d))
     }
 }
 
-impl<T> AsType<T> for RenderComponent
-where
-    T: AssetDrawable + 'static,
-{
-    fn as_type<'a>(&'a self) -> Option<&'a T> {
-        self.0.as_type()
+impl AsAny for RenderComponent {
+    fn as_any<'a>(&'a self) -> &'a dyn std::any::Any {
+        self.0.as_any()
     }
 
-    fn as_type_mut<'a>(&'a mut self) -> Option<&'a mut T> {
-        self.0.as_type_mut()
+    fn as_any_mut<'a>(&'a mut self) -> &'a mut dyn std::any::Any {
+        self.0.as_any_mut()
     }
 }
 
