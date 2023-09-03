@@ -133,12 +133,12 @@ impl RenderOpts {
         self.is_absolute(true)
     }
 
-    pub fn set_visibility(&mut self, vis: bool) {
+    pub fn set_visible(&mut self, vis: bool) {
         self.visible = vis;
     }
 
-    pub fn with_visibility(mut self, vis: bool) -> Self {
-        self.set_visibility(vis);
+    pub fn is_visible(mut self, vis: bool) -> Self {
+        self.set_visible(vis);
         self
     }
 }

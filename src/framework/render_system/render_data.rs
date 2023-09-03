@@ -480,6 +480,10 @@ impl RenderComponent {
     pub fn new(d: impl RenderComponentTrait + 'static) -> Self {
         Self(Box::new(d))
     }
+
+    pub fn set(&mut self, d: impl RenderComponentTrait + 'static) {
+        self.0 = Box::new(d)
+    }
 }
 
 impl AsAny for RenderComponent {

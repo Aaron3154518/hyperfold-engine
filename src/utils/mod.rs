@@ -1,7 +1,9 @@
 pub mod colors;
 pub mod event;
+pub mod math;
 pub mod number;
 pub mod rand;
 pub mod rect;
 pub mod timer;
+pub mod traits;
 pub mod util;
