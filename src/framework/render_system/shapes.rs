@@ -126,21 +126,16 @@ impl Rectangle {
     }
 
     pub fn fill(mut self, r: Rect) -> Self {
-        self.data.r2 = (!r.empty() && !r.invalid()).then_some(r);
+        self.data.r2 = Some(r);
         self
     }
 
     pub fn except(mut self, r: Rect) -> Self {
-        self.data.r1 = (!r.empty() && !r.invalid()).then_some(r);
+        self.data.r1 = Some(r);
         self
     }
 
     pub fn border(mut self, r: Rect, mut thickness: f32, center: bool) -> Self {
-        if r.empty() || r.invalid() {
-            (self.data.r1, self.data.r2) = (None, None);
-            return self;
-        }
-
         let (mut r1, mut r2) = (r, r);
         if center {
             thickness = thickness.abs();
@@ -160,7 +155,7 @@ impl Rectangle {
             let dw = 2.0 * thickness;
             if dw > 0.0 { &mut r2 } else { &mut r1 }.expand(dw, dw, Align::Center, Align::Center);
         }
-        self.data.r1 = (!r1.invalid()).then_some(r1);
+        self.data.r1 = Some(r1);
         self.data.r2 = Some(r2);
         self
     }

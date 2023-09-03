@@ -59,6 +59,10 @@ impl DragState {
             hold_target: None,
         }
     }
+
+    pub fn dragging(&self, id: Entity) -> bool {
+        self.dragging.is_some_and(|e| e == id)
+    }
 }
 
 // Handle mouse events
