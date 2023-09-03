@@ -119,6 +119,7 @@ fn mouse_event(
         }
     // Mouse click
     } else if m.0.clicked() {
+        drag_state.hold_target = None;
         events.new_event(Click {
             eid: target.map(|t| *t.eid),
             button: m.0,
